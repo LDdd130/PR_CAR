@@ -1,0 +1,52 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file    bno055.h
+  * @brief   GY-BNO055 9축 IMU 드라이버 (I2C1, NDOF 융합모드)
+  *          - 주소: ADD=GND → 0x28 (HAL 8-bit = 0x50)
+  *          - 배선: SCL=PB8, SDA=PB9, INT=PA0(EXTI0), RST=PB1(IMU_RST, active-low)
+  *          - 블로킹 HAL I2C (timeout 10ms) → 버스 stall 시 모터 장시간 정지 방지
+  *          ⚠ 빌드 전제: CubeMX에서 I2C1(PB8/PB9) + PA0(IMU_INT) + PB1(IMU_RST)
+  *             생성 필요. (hi2c1, IMU_RST_Pin 등은 CubeMX 생성 심볼)
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+#ifndef __BNO055_H__
+#define __BNO055_H__
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include "main.h"
+#include <stdbool.h>
+
+/* ADD 핀=GND → 7-bit 0x28 → HAL 8-bit 주소 */
+#define BNO055_I2C_ADDR_8BIT   (0x28U << 1)   /* = 0x50. ADD=3V3면 (0x29<<1)=0x52 */
+
+/* NDOF 융합 출력 (단위: degree, UNIT_SEL 기본값 기준) */
+typedef struct
+{
+    float heading;   /* yaw, 0~360° (방위) */
+    float roll;      /* ° */
+    float pitch;     /* ° */
+} BNO055_Euler;
+
+/* RST 핀 토글로 하드웨어 리셋 (Low 1ms → High → POR 부팅 ~650ms 대기) */
+void    BNO055_HardReset(void);
+
+/* 초기화: 리셋 → CHIP_ID(0xA0) 확인 → CONFIG → NORMAL → NDOF. 성공 시 true */
+bool    BNO055_Init(void);
+
+/* 오일러각 6바이트 읽기. 성공 시 *e 갱신+true, 실패 시 *e 미변경+false(직전값 유지는 호출측) */
+bool    BNO055_ReadEuler(BNO055_Euler *e);
+
+/* CALIB_STAT(0x35): [7:6]=sys [5:4]=gyr [3:2]=acc [1:0]=mag, 각 0~3(3=완료).
+ * heading은 sys/mag 캘리브(피규어-8 동작)돼야 신뢰. 실패 시 0 반환 */
+uint8_t BNO055_ReadCalibStatus(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* __BNO055_H__ */
