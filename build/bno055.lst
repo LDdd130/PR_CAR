@@ -1,0 +1,1003 @@
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccobAIQB.s 			page 1
+
+
+   1              		.cpu cortex-m4
+   2              		.arch armv7e-m
+   3              		.fpu fpv4-sp-d16
+   4              		.eabi_attribute 27, 1
+   5              		.eabi_attribute 28, 1
+   6              		.eabi_attribute 20, 1
+   7              		.eabi_attribute 21, 1
+   8              		.eabi_attribute 23, 3
+   9              		.eabi_attribute 24, 1
+  10              		.eabi_attribute 25, 1
+  11              		.eabi_attribute 26, 1
+  12              		.eabi_attribute 30, 1
+  13              		.eabi_attribute 34, 1
+  14              		.eabi_attribute 18, 4
+  15              		.file	"bno055.c"
+  16              		.text
+  17              	.Ltext0:
+  18              		.cfi_sections	.debug_frame
+  19              		.file 1 "Core/Src/bno055.c"
+  20              		.section	.text.bno_bus_recover,"ax",%progbits
+  21              		.align	1
+  22              		.syntax unified
+  23              		.thumb
+  24              		.thumb_func
+  26              	bno_bus_recover:
+  27              	.LFB134:
+   1:Core/Src/bno055.c **** /* USER CODE BEGIN Header */
+   2:Core/Src/bno055.c **** /**
+   3:Core/Src/bno055.c ****   ******************************************************************************
+   4:Core/Src/bno055.c ****   * @file    bno055.c
+   5:Core/Src/bno055.c ****   * @brief   GY-BNO055 IMU 드라이버 구현 (I2C1, NDOF). 블로킹 + 짧은 timeout.
+   6:Core/Src/bno055.c ****   ******************************************************************************
+   7:Core/Src/bno055.c ****   */
+   8:Core/Src/bno055.c **** /* USER CODE END Header */
+   9:Core/Src/bno055.c **** 
+  10:Core/Src/bno055.c **** #include "bno055.h"
+  11:Core/Src/bno055.c **** #include "i2c.h"   /* CubeMX 생성: hi2c1, MX_I2C1_Init */
+  12:Core/Src/bno055.c **** #include "delay.h" /* delay_us — 버스 복구 시퀀스 타이밍 (TIM11 시작 후에만 호출
+  13:Core/Src/bno055.c **** 
+  14:Core/Src/bno055.c **** /* ---- 레지스터 (Page 0) ---- */
+  15:Core/Src/bno055.c **** #define REG_CHIP_ID      0x00U   /* = 0xA0 */
+  16:Core/Src/bno055.c **** #define REG_PAGE_ID      0x07U
+  17:Core/Src/bno055.c **** #define REG_EUL_H_LSB    0x1AU   /* Heading LSB부터 6바이트: H,R,P (LSB/MSB) */
+  18:Core/Src/bno055.c **** #define REG_CALIB_STAT   0x35U
+  19:Core/Src/bno055.c **** #define REG_UNIT_SEL     0x3BU
+  20:Core/Src/bno055.c **** #define REG_OPR_MODE     0x3DU
+  21:Core/Src/bno055.c **** #define REG_PWR_MODE     0x3EU
+  22:Core/Src/bno055.c **** #define REG_SYS_TRIGGER  0x3FU
+  23:Core/Src/bno055.c **** 
+  24:Core/Src/bno055.c **** /* ---- 값 ---- */
+  25:Core/Src/bno055.c **** #define CHIP_ID_VAL      0xA0U
+  26:Core/Src/bno055.c **** #define OPR_MODE_CONFIG  0x00U
+  27:Core/Src/bno055.c **** #define OPR_MODE_NDOF    0x0CU   /* 9축 절대방위 융합 (지자기 포함 — 모터/L298N 자
+  28:Core/Src/bno055.c **** #define OPR_MODE_IMU     0x08U   /* gyro+accel 융합 (지자기 제외). 주행 제어용 상대 h
+  29:Core/Src/bno055.c ****                                     브러시드 모터+L298N 옆 지자기는 10~40° 점프 유�
+  30:Core/Src/bno055.c ****                                     드리프트 ~1-3°/min 이지만 제어는 수 초 윈도의 �
+  31:Core/Src/bno055.c ****                                     부팅 시 heading≈0 기준(절대 방위 아님). mag calib 
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccobAIQB.s 			page 2
+
+
+  32:Core/Src/bno055.c **** #define BNO_PWR_NORMAL   0x00U   /* (구 PWR_MODE_NORMAL — HAL legacy 매크로와 충돌해 개�
+  33:Core/Src/bno055.c **** 
+  34:Core/Src/bno055.c **** #define BNO_I2C_TIMEOUT  10U     /* ms. 버스 stall 시 모터 장시간 정지 방지 */
+  35:Core/Src/bno055.c **** #define BNO_FAIL_RECOVER 10U     /* 읽기 연속 실패 N회 → I2C 버스 복구 시도 */
+  36:Core/Src/bno055.c **** 
+  37:Core/Src/bno055.c **** /* 1° = 16 LSB (UNIT_SEL 기본 degree) */
+  38:Core/Src/bno055.c **** #define EUL_LSB_PER_DEG  16.0f
+  39:Core/Src/bno055.c **** 
+  40:Core/Src/bno055.c **** static uint8_t bno_fail_cnt = 0;
+  41:Core/Src/bno055.c **** 
+  42:Core/Src/bno055.c **** /* I2C 버스 wedge 복구: 노이즈/F4 아날로그필터 errata로 slave가 SDA를 물면 재부
+  43:Core/Src/bno055.c ****  * 전 트랜잭션 실패(HAL_BUSY 고착) → IMU 영구 상실. 표준 복구: SCL 수동 9클�
+  44:Core/Src/bno055.c ****  * 시프트레지스터를 비워 SDA를 놓게 하고 STOP 생성 후 페리프 재초기화.
+  45:Core/Src/bno055.c ****  * PB8=SCL/PB9=SDA 하드코딩은 i2c.c MspInit과 동일 전제. 소요 <1ms — IWDG/제어주�
+  46:Core/Src/bno055.c **** static void bno_bus_recover(void)
+  47:Core/Src/bno055.c **** {
+  28              		.loc 1 47 1 view -0
+  29              		.cfi_startproc
+  30              		@ args = 0, pretend = 0, frame = 24
+  31              		@ frame_needed = 0, uses_anonymous_args = 0
+  32 0000 70B5     		push	{r4, r5, r6, lr}
+  33              	.LCFI0:
+  34              		.cfi_def_cfa_offset 16
+  35              		.cfi_offset 4, -16
+  36              		.cfi_offset 5, -12
+  37              		.cfi_offset 6, -8
+  38              		.cfi_offset 14, -4
+  39 0002 86B0     		sub	sp, sp, #24
+  40              	.LCFI1:
+  41              		.cfi_def_cfa_offset 40
+  48:Core/Src/bno055.c ****     GPIO_InitTypeDef g = {0};
+  42              		.loc 1 48 5 view .LVU1
+  43              		.loc 1 48 22 is_stmt 0 view .LVU2
+  44 0004 01AD     		add	r5, sp, #4
+  45 0006 0024     		movs	r4, #0
+  46 0008 0194     		str	r4, [sp, #4]
+  47 000a 0294     		str	r4, [sp, #8]
+  48 000c 0394     		str	r4, [sp, #12]
+  49 000e 0494     		str	r4, [sp, #16]
+  50 0010 0594     		str	r4, [sp, #20]
+  49:Core/Src/bno055.c **** 
+  50:Core/Src/bno055.c ****     HAL_I2C_DeInit(&hi2c1);
+  51              		.loc 1 50 5 is_stmt 1 view .LVU3
+  52 0012 2148     		ldr	r0, .L5
+  53 0014 FFF7FEFF 		bl	HAL_I2C_DeInit
+  54              	.LVL0:
+  51:Core/Src/bno055.c **** 
+  52:Core/Src/bno055.c ****     g.Pin   = GPIO_PIN_8 | GPIO_PIN_9;
+  55              		.loc 1 52 5 view .LVU4
+  56              		.loc 1 52 13 is_stmt 0 view .LVU5
+  57 0018 4FF44073 		mov	r3, #768
+  58 001c 0193     		str	r3, [sp, #4]
+  53:Core/Src/bno055.c ****     g.Mode  = GPIO_MODE_OUTPUT_OD;
+  59              		.loc 1 53 5 is_stmt 1 view .LVU6
+  60              		.loc 1 53 13 is_stmt 0 view .LVU7
+  61 001e 1123     		movs	r3, #17
+  62 0020 0293     		str	r3, [sp, #8]
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccobAIQB.s 			page 3
+
+
+  54:Core/Src/bno055.c ****     g.Pull  = GPIO_NOPULL;
+  63              		.loc 1 54 5 is_stmt 1 view .LVU8
+  64              		.loc 1 54 13 is_stmt 0 view .LVU9
+  65 0022 0394     		str	r4, [sp, #12]
+  55:Core/Src/bno055.c ****     g.Speed = GPIO_SPEED_FREQ_LOW;
+  66              		.loc 1 55 5 is_stmt 1 view .LVU10
+  67              		.loc 1 55 13 is_stmt 0 view .LVU11
+  68 0024 0494     		str	r4, [sp, #16]
+  56:Core/Src/bno055.c ****     HAL_GPIO_Init(GPIOB, &g);
+  69              		.loc 1 56 5 is_stmt 1 view .LVU12
+  70 0026 1D4E     		ldr	r6, .L5+4
+  71 0028 2946     		mov	r1, r5
+  72 002a 3046     		mov	r0, r6
+  73 002c FFF7FEFF 		bl	HAL_GPIO_Init
+  74              	.LVL1:
+  57:Core/Src/bno055.c **** 
+  58:Core/Src/bno055.c ****     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_9, GPIO_PIN_SET);      /* SDA 해제 시도 */
+  75              		.loc 1 58 5 view .LVU13
+  76 0030 0122     		movs	r2, #1
+  77 0032 4FF40071 		mov	r1, #512
+  78 0036 3046     		mov	r0, r6
+  79 0038 FFF7FEFF 		bl	HAL_GPIO_WritePin
+  80              	.LVL2:
+  59:Core/Src/bno055.c ****     for (int i = 0; i < 9; i++)                              /* SCL 9펄스 (~100kHz) */
+  81              		.loc 1 59 5 view .LVU14
+  82              	.LBB2:
+  83              		.loc 1 59 10 view .LVU15
+  84              		.loc 1 59 5 is_stmt 0 view .LVU16
+  85 003c 13E0     		b	.L2
+  86              	.LVL3:
+  87              	.L3:
+  60:Core/Src/bno055.c ****     {
+  61:Core/Src/bno055.c ****         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_8, GPIO_PIN_RESET);
+  88              		.loc 1 61 9 is_stmt 1 view .LVU17
+  89 003e 174D     		ldr	r5, .L5+4
+  90 0040 0022     		movs	r2, #0
+  91 0042 4FF48071 		mov	r1, #256
+  92 0046 2846     		mov	r0, r5
+  93 0048 FFF7FEFF 		bl	HAL_GPIO_WritePin
+  94              	.LVL4:
+  62:Core/Src/bno055.c ****         delay_us(5);
+  95              		.loc 1 62 9 view .LVU18
+  96 004c 0520     		movs	r0, #5
+  97 004e FFF7FEFF 		bl	delay_us
+  98              	.LVL5:
+  63:Core/Src/bno055.c ****         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_8, GPIO_PIN_SET);
+  99              		.loc 1 63 9 view .LVU19
+ 100 0052 0122     		movs	r2, #1
+ 101 0054 4FF48071 		mov	r1, #256
+ 102 0058 2846     		mov	r0, r5
+ 103 005a FFF7FEFF 		bl	HAL_GPIO_WritePin
+ 104              	.LVL6:
+  64:Core/Src/bno055.c ****         delay_us(5);
+ 105              		.loc 1 64 9 view .LVU20
+ 106 005e 0520     		movs	r0, #5
+ 107 0060 FFF7FEFF 		bl	delay_us
+ 108              	.LVL7:
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccobAIQB.s 			page 4
+
+
+  59:Core/Src/bno055.c ****     {
+ 109              		.loc 1 59 29 discriminator 3 view .LVU21
+ 110 0064 0134     		adds	r4, r4, #1
+ 111              	.LVL8:
+ 112              	.L2:
+  59:Core/Src/bno055.c ****     {
+ 113              		.loc 1 59 23 discriminator 1 view .LVU22
+ 114 0066 082C     		cmp	r4, #8
+ 115 0068 E9DD     		ble	.L3
+ 116              	.LBE2:
+  65:Core/Src/bno055.c ****     }
+  66:Core/Src/bno055.c ****     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_9, GPIO_PIN_RESET);    /* STOP 조건: SCL high 상태에서 
+ 117              		.loc 1 66 5 view .LVU23
+ 118 006a 0C4C     		ldr	r4, .L5+4
+ 119              	.LVL9:
+ 120              		.loc 1 66 5 is_stmt 0 view .LVU24
+ 121 006c 0022     		movs	r2, #0
+ 122 006e 4FF40071 		mov	r1, #512
+ 123 0072 2046     		mov	r0, r4
+ 124 0074 FFF7FEFF 		bl	HAL_GPIO_WritePin
+ 125              	.LVL10:
+  67:Core/Src/bno055.c ****     delay_us(5);
+ 126              		.loc 1 67 5 is_stmt 1 view .LVU25
+ 127 0078 0520     		movs	r0, #5
+ 128 007a FFF7FEFF 		bl	delay_us
+ 129              	.LVL11:
+  68:Core/Src/bno055.c ****     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_9, GPIO_PIN_SET);      /* SDA low→high */
+ 130              		.loc 1 68 5 view .LVU26
+ 131 007e 0122     		movs	r2, #1
+ 132 0080 4FF40071 		mov	r1, #512
+ 133 0084 2046     		mov	r0, r4
+ 134 0086 FFF7FEFF 		bl	HAL_GPIO_WritePin
+ 135              	.LVL12:
+  69:Core/Src/bno055.c ****     delay_us(5);
+ 136              		.loc 1 69 5 view .LVU27
+ 137 008a 0520     		movs	r0, #5
+ 138 008c FFF7FEFF 		bl	delay_us
+ 139              	.LVL13:
+  70:Core/Src/bno055.c **** 
+  71:Core/Src/bno055.c ****     MX_I2C1_Init();                                          /* MspInit이 AF_OD 복원 */
+ 140              		.loc 1 71 5 view .LVU28
+ 141 0090 FFF7FEFF 		bl	MX_I2C1_Init
+ 142              	.LVL14:
+  72:Core/Src/bno055.c **** }
+ 143              		.loc 1 72 1 is_stmt 0 view .LVU29
+ 144 0094 06B0     		add	sp, sp, #24
+ 145              	.LCFI2:
+ 146              		.cfi_def_cfa_offset 16
+ 147              		@ sp needed
+ 148 0096 70BD     		pop	{r4, r5, r6, pc}
+ 149              	.L6:
+ 150              		.align	2
+ 151              	.L5:
+ 152 0098 00000000 		.word	hi2c1
+ 153 009c 00040240 		.word	1073873920
+ 154              		.cfi_endproc
+ 155              	.LFE134:
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccobAIQB.s 			page 5
+
+
+ 157              		.section	.text.bno_rd,"ax",%progbits
+ 158              		.align	1
+ 159              		.syntax unified
+ 160              		.thumb
+ 161              		.thumb_func
+ 163              	bno_rd:
+ 164              	.LVL15:
+ 165              	.LFB135:
+  73:Core/Src/bno055.c **** 
+  74:Core/Src/bno055.c **** static HAL_StatusTypeDef bno_rd(uint8_t reg, uint8_t *buf, uint16_t n)
+  75:Core/Src/bno055.c **** {
+ 166              		.loc 1 75 1 is_stmt 1 view -0
+ 167              		.cfi_startproc
+ 168              		@ args = 0, pretend = 0, frame = 0
+ 169              		@ frame_needed = 0, uses_anonymous_args = 0
+ 170              		.loc 1 75 1 is_stmt 0 view .LVU31
+ 171 0000 10B5     		push	{r4, lr}
+ 172              	.LCFI3:
+ 173              		.cfi_def_cfa_offset 8
+ 174              		.cfi_offset 4, -8
+ 175              		.cfi_offset 14, -4
+ 176 0002 84B0     		sub	sp, sp, #16
+ 177              	.LCFI4:
+ 178              		.cfi_def_cfa_offset 24
+  76:Core/Src/bno055.c ****     HAL_StatusTypeDef st = HAL_I2C_Mem_Read(&hi2c1, BNO055_I2C_ADDR_8BIT, reg,
+ 179              		.loc 1 76 5 is_stmt 1 view .LVU32
+ 180              		.loc 1 76 28 is_stmt 0 view .LVU33
+ 181 0004 0A23     		movs	r3, #10
+ 182 0006 0293     		str	r3, [sp, #8]
+ 183 0008 0192     		str	r2, [sp, #4]
+ 184 000a 0091     		str	r1, [sp]
+ 185 000c 0123     		movs	r3, #1
+ 186 000e 0246     		mov	r2, r0
+ 187              	.LVL16:
+ 188              		.loc 1 76 28 view .LVU34
+ 189 0010 5021     		movs	r1, #80
+ 190              	.LVL17:
+ 191              		.loc 1 76 28 view .LVU35
+ 192 0012 0C48     		ldr	r0, .L11
+ 193              	.LVL18:
+ 194              		.loc 1 76 28 view .LVU36
+ 195 0014 FFF7FEFF 		bl	HAL_I2C_Mem_Read
+ 196              	.LVL19:
+  77:Core/Src/bno055.c ****                                             I2C_MEMADD_SIZE_8BIT, buf, n, BNO_I2C_TIMEOUT);
+  78:Core/Src/bno055.c ****     if (st == HAL_OK)
+ 197              		.loc 1 78 5 is_stmt 1 view .LVU37
+ 198              		.loc 1 78 8 is_stmt 0 view .LVU38
+ 199 0018 0446     		mov	r4, r0
+ 200 001a 28B9     		cbnz	r0, .L8
+  79:Core/Src/bno055.c ****     {
+  80:Core/Src/bno055.c ****         bno_fail_cnt = 0;
+ 201              		.loc 1 80 9 is_stmt 1 view .LVU39
+ 202              		.loc 1 80 22 is_stmt 0 view .LVU40
+ 203 001c 0A4B     		ldr	r3, .L11+4
+ 204 001e 0022     		movs	r2, #0
+ 205 0020 1A70     		strb	r2, [r3]
+ 206              	.LVL20:
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccobAIQB.s 			page 6
+
+
+ 207              	.L9:
+  81:Core/Src/bno055.c ****     }
+  82:Core/Src/bno055.c ****     else if (++bno_fail_cnt >= BNO_FAIL_RECOVER)
+  83:Core/Src/bno055.c ****     {
+  84:Core/Src/bno055.c ****         bno_bus_recover();
+  85:Core/Src/bno055.c ****         bno_fail_cnt = 0;
+  86:Core/Src/bno055.c ****     }
+  87:Core/Src/bno055.c ****     return st;
+ 208              		.loc 1 87 5 is_stmt 1 view .LVU41
+  88:Core/Src/bno055.c **** }
+ 209              		.loc 1 88 1 is_stmt 0 view .LVU42
+ 210 0022 2046     		mov	r0, r4
+ 211 0024 04B0     		add	sp, sp, #16
+ 212              	.LCFI5:
+ 213              		.cfi_remember_state
+ 214              		.cfi_def_cfa_offset 8
+ 215              		@ sp needed
+ 216 0026 10BD     		pop	{r4, pc}
+ 217              	.LVL21:
+ 218              	.L8:
+ 219              	.LCFI6:
+ 220              		.cfi_restore_state
+  82:Core/Src/bno055.c ****     {
+ 221              		.loc 1 82 10 is_stmt 1 view .LVU43
+  82:Core/Src/bno055.c ****     {
+ 222              		.loc 1 82 14 is_stmt 0 view .LVU44
+ 223 0028 074A     		ldr	r2, .L11+4
+ 224 002a 1378     		ldrb	r3, [r2]	@ zero_extendqisi2
+ 225 002c 0133     		adds	r3, r3, #1
+ 226 002e DBB2     		uxtb	r3, r3
+  82:Core/Src/bno055.c ****     {
+ 227              		.loc 1 82 13 view .LVU45
+ 228 0030 1370     		strb	r3, [r2]
+ 229 0032 092B     		cmp	r3, #9
+ 230 0034 F5D9     		bls	.L9
+  84:Core/Src/bno055.c ****         bno_fail_cnt = 0;
+ 231              		.loc 1 84 9 is_stmt 1 view .LVU46
+ 232 0036 FFF7FEFF 		bl	bno_bus_recover
+ 233              	.LVL22:
+  85:Core/Src/bno055.c ****     }
+ 234              		.loc 1 85 9 view .LVU47
+  85:Core/Src/bno055.c ****     }
+ 235              		.loc 1 85 22 is_stmt 0 view .LVU48
+ 236 003a 034B     		ldr	r3, .L11+4
+ 237 003c 0022     		movs	r2, #0
+ 238 003e 1A70     		strb	r2, [r3]
+ 239 0040 EFE7     		b	.L9
+ 240              	.L12:
+ 241 0042 00BF     		.align	2
+ 242              	.L11:
+ 243 0044 00000000 		.word	hi2c1
+ 244 0048 00000000 		.word	bno_fail_cnt
+ 245              		.cfi_endproc
+ 246              	.LFE135:
+ 248              		.section	.text.bno_wr8,"ax",%progbits
+ 249              		.align	1
+ 250              		.syntax unified
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccobAIQB.s 			page 7
+
+
+ 251              		.thumb
+ 252              		.thumb_func
+ 254              	bno_wr8:
+ 255              	.LVL23:
+ 256              	.LFB136:
+  89:Core/Src/bno055.c **** 
+  90:Core/Src/bno055.c **** static HAL_StatusTypeDef bno_wr8(uint8_t reg, uint8_t val)
+  91:Core/Src/bno055.c **** {
+ 257              		.loc 1 91 1 is_stmt 1 view -0
+ 258              		.cfi_startproc
+ 259              		@ args = 0, pretend = 0, frame = 8
+ 260              		@ frame_needed = 0, uses_anonymous_args = 0
+ 261              		.loc 1 91 1 is_stmt 0 view .LVU50
+ 262 0000 00B5     		push	{lr}
+ 263              	.LCFI7:
+ 264              		.cfi_def_cfa_offset 4
+ 265              		.cfi_offset 14, -4
+ 266 0002 87B0     		sub	sp, sp, #28
+ 267              	.LCFI8:
+ 268              		.cfi_def_cfa_offset 32
+ 269 0004 0246     		mov	r2, r0
+ 270 0006 8DF81710 		strb	r1, [sp, #23]
+  92:Core/Src/bno055.c ****     return HAL_I2C_Mem_Write(&hi2c1, BNO055_I2C_ADDR_8BIT, reg,
+ 271              		.loc 1 92 5 is_stmt 1 view .LVU51
+ 272              		.loc 1 92 12 is_stmt 0 view .LVU52
+ 273 000a 0A23     		movs	r3, #10
+ 274 000c 0293     		str	r3, [sp, #8]
+ 275 000e 0123     		movs	r3, #1
+ 276 0010 0193     		str	r3, [sp, #4]
+ 277 0012 0DF11701 		add	r1, sp, #23
+ 278              	.LVL24:
+ 279              		.loc 1 92 12 view .LVU53
+ 280 0016 0091     		str	r1, [sp]
+ 281 0018 5021     		movs	r1, #80
+ 282              	.LVL25:
+ 283              		.loc 1 92 12 view .LVU54
+ 284 001a 0248     		ldr	r0, .L15
+ 285              	.LVL26:
+ 286              		.loc 1 92 12 view .LVU55
+ 287 001c FFF7FEFF 		bl	HAL_I2C_Mem_Write
+ 288              	.LVL27:
+  93:Core/Src/bno055.c ****                              I2C_MEMADD_SIZE_8BIT, &val, 1, BNO_I2C_TIMEOUT);
+  94:Core/Src/bno055.c **** }
+ 289              		.loc 1 94 1 view .LVU56
+ 290 0020 07B0     		add	sp, sp, #28
+ 291              	.LCFI9:
+ 292              		.cfi_def_cfa_offset 4
+ 293              		@ sp needed
+ 294 0022 00BD     		pop	{pc}
+ 295              	.L16:
+ 296              		.align	2
+ 297              	.L15:
+ 298 0024 00000000 		.word	hi2c1
+ 299              		.cfi_endproc
+ 300              	.LFE136:
+ 302              		.section	.text.BNO055_HardReset,"ax",%progbits
+ 303              		.align	1
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccobAIQB.s 			page 8
+
+
+ 304              		.global	BNO055_HardReset
+ 305              		.syntax unified
+ 306              		.thumb
+ 307              		.thumb_func
+ 309              	BNO055_HardReset:
+ 310              	.LFB137:
+  95:Core/Src/bno055.c **** 
+  96:Core/Src/bno055.c **** void BNO055_HardReset(void)
+  97:Core/Src/bno055.c **** {
+ 311              		.loc 1 97 1 is_stmt 1 view -0
+ 312              		.cfi_startproc
+ 313              		@ args = 0, pretend = 0, frame = 0
+ 314              		@ frame_needed = 0, uses_anonymous_args = 0
+ 315 0000 10B5     		push	{r4, lr}
+ 316              	.LCFI10:
+ 317              		.cfi_def_cfa_offset 8
+ 318              		.cfi_offset 4, -8
+ 319              		.cfi_offset 14, -4
+  98:Core/Src/bno055.c ****     HAL_GPIO_WritePin(IMU_RST_GPIO_Port, IMU_RST_Pin, GPIO_PIN_RESET); /* active-low */
+ 320              		.loc 1 98 5 view .LVU58
+ 321 0002 094C     		ldr	r4, .L19
+ 322 0004 0022     		movs	r2, #0
+ 323 0006 0221     		movs	r1, #2
+ 324 0008 2046     		mov	r0, r4
+ 325 000a FFF7FEFF 		bl	HAL_GPIO_WritePin
+ 326              	.LVL28:
+  99:Core/Src/bno055.c ****     HAL_Delay(1);
+ 327              		.loc 1 99 5 view .LVU59
+ 328 000e 0120     		movs	r0, #1
+ 329 0010 FFF7FEFF 		bl	HAL_Delay
+ 330              	.LVL29:
+ 100:Core/Src/bno055.c ****     HAL_GPIO_WritePin(IMU_RST_GPIO_Port, IMU_RST_Pin, GPIO_PIN_SET);
+ 331              		.loc 1 100 5 view .LVU60
+ 332 0014 0122     		movs	r2, #1
+ 333 0016 0221     		movs	r1, #2
+ 334 0018 2046     		mov	r0, r4
+ 335 001a FFF7FEFF 		bl	HAL_GPIO_WritePin
+ 336              	.LVL30:
+ 101:Core/Src/bno055.c ****     HAL_Delay(700);   /* POR 부팅 ~650ms: 이후에야 I2C 응답 */
+ 337              		.loc 1 101 5 view .LVU61
+ 338 001e 4FF42F70 		mov	r0, #700
+ 339 0022 FFF7FEFF 		bl	HAL_Delay
+ 340              	.LVL31:
+ 102:Core/Src/bno055.c **** }
+ 341              		.loc 1 102 1 is_stmt 0 view .LVU62
+ 342 0026 10BD     		pop	{r4, pc}
+ 343              	.L20:
+ 344              		.align	2
+ 345              	.L19:
+ 346 0028 00040240 		.word	1073873920
+ 347              		.cfi_endproc
+ 348              	.LFE137:
+ 350              		.section	.text.BNO055_Init,"ax",%progbits
+ 351              		.align	1
+ 352              		.global	BNO055_Init
+ 353              		.syntax unified
+ 354              		.thumb
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccobAIQB.s 			page 9
+
+
+ 355              		.thumb_func
+ 357              	BNO055_Init:
+ 358              	.LFB138:
+ 103:Core/Src/bno055.c **** 
+ 104:Core/Src/bno055.c **** bool BNO055_Init(void)
+ 105:Core/Src/bno055.c **** {
+ 359              		.loc 1 105 1 is_stmt 1 view -0
+ 360              		.cfi_startproc
+ 361              		@ args = 0, pretend = 0, frame = 8
+ 362              		@ frame_needed = 0, uses_anonymous_args = 0
+ 363 0000 10B5     		push	{r4, lr}
+ 364              	.LCFI11:
+ 365              		.cfi_def_cfa_offset 8
+ 366              		.cfi_offset 4, -8
+ 367              		.cfi_offset 14, -4
+ 368 0002 82B0     		sub	sp, sp, #8
+ 369              	.LCFI12:
+ 370              		.cfi_def_cfa_offset 16
+ 106:Core/Src/bno055.c ****     uint8_t id = 0;
+ 371              		.loc 1 106 5 view .LVU64
+ 372              		.loc 1 106 13 is_stmt 0 view .LVU65
+ 373 0004 0024     		movs	r4, #0
+ 374 0006 8DF80740 		strb	r4, [sp, #7]
+ 107:Core/Src/bno055.c **** 
+ 108:Core/Src/bno055.c ****     BNO055_HardReset();
+ 375              		.loc 1 108 5 is_stmt 1 view .LVU66
+ 376 000a FFF7FEFF 		bl	BNO055_HardReset
+ 377              	.LVL32:
+ 109:Core/Src/bno055.c **** 
+ 110:Core/Src/bno055.c ****     /* 부팅 직후 NACK 가능 → 재시도 */
+ 111:Core/Src/bno055.c ****     for (int i = 0; i < 10; i++)
+ 378              		.loc 1 111 5 view .LVU67
+ 379              	.LBB3:
+ 380              		.loc 1 111 10 view .LVU68
+ 381              		.loc 1 111 5 is_stmt 0 view .LVU69
+ 382 000e 03E0     		b	.L22
+ 383              	.LVL33:
+ 384              	.L23:
+ 112:Core/Src/bno055.c ****     {
+ 113:Core/Src/bno055.c ****         if (bno_rd(REG_CHIP_ID, &id, 1) == HAL_OK && id == CHIP_ID_VAL) break;
+ 114:Core/Src/bno055.c ****         HAL_Delay(10);
+ 385              		.loc 1 114 9 is_stmt 1 view .LVU70
+ 386 0010 0A20     		movs	r0, #10
+ 387 0012 FFF7FEFF 		bl	HAL_Delay
+ 388              	.LVL34:
+ 111:Core/Src/bno055.c ****     {
+ 389              		.loc 1 111 30 discriminator 2 view .LVU71
+ 390 0016 0134     		adds	r4, r4, #1
+ 391              	.LVL35:
+ 392              	.L22:
+ 111:Core/Src/bno055.c ****     {
+ 393              		.loc 1 111 23 discriminator 1 view .LVU72
+ 394 0018 092C     		cmp	r4, #9
+ 395 001a 0BDC     		bgt	.L24
+ 113:Core/Src/bno055.c ****         HAL_Delay(10);
+ 396              		.loc 1 113 9 view .LVU73
+ 113:Core/Src/bno055.c ****         HAL_Delay(10);
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccobAIQB.s 			page 10
+
+
+ 397              		.loc 1 113 13 is_stmt 0 view .LVU74
+ 398 001c 0122     		movs	r2, #1
+ 399 001e 0DF10701 		add	r1, sp, #7
+ 400 0022 0020     		movs	r0, #0
+ 401 0024 FFF7FEFF 		bl	bno_rd
+ 402              	.LVL36:
+ 113:Core/Src/bno055.c ****         HAL_Delay(10);
+ 403              		.loc 1 113 12 discriminator 1 view .LVU75
+ 404 0028 0028     		cmp	r0, #0
+ 405 002a F1D1     		bne	.L23
+ 113:Core/Src/bno055.c ****         HAL_Delay(10);
+ 406              		.loc 1 113 57 discriminator 1 view .LVU76
+ 407 002c 9DF80730 		ldrb	r3, [sp, #7]	@ zero_extendqisi2
+ 113:Core/Src/bno055.c ****         HAL_Delay(10);
+ 408              		.loc 1 113 51 discriminator 1 view .LVU77
+ 409 0030 A02B     		cmp	r3, #160
+ 410 0032 EDD1     		bne	.L23
+ 411              	.L24:
+ 412              	.LBE3:
+ 115:Core/Src/bno055.c ****     }
+ 116:Core/Src/bno055.c ****     if (id != CHIP_ID_VAL) return false;   /* 통신/주소/전원 문제 */
+ 413              		.loc 1 116 5 is_stmt 1 view .LVU78
+ 414              		.loc 1 116 12 is_stmt 0 view .LVU79
+ 415 0034 9DF80730 		ldrb	r3, [sp, #7]	@ zero_extendqisi2
+ 416              		.loc 1 116 8 view .LVU80
+ 417 0038 A02B     		cmp	r3, #160
+ 418 003a 02D0     		beq	.L32
+ 419              		.loc 1 116 35 discriminator 1 view .LVU81
+ 420 003c 0020     		movs	r0, #0
+ 421              	.L26:
+ 117:Core/Src/bno055.c **** 
+ 118:Core/Src/bno055.c ****     /* CONFIG 모드에서 설정 */
+ 119:Core/Src/bno055.c ****     if (bno_wr8(REG_OPR_MODE, OPR_MODE_CONFIG) != HAL_OK) return false;
+ 120:Core/Src/bno055.c ****     HAL_Delay(20);
+ 121:Core/Src/bno055.c **** 
+ 122:Core/Src/bno055.c ****     bno_wr8(REG_PAGE_ID, 0x00);
+ 123:Core/Src/bno055.c ****     if (bno_wr8(REG_PWR_MODE, BNO_PWR_NORMAL) != HAL_OK) return false;
+ 124:Core/Src/bno055.c ****     HAL_Delay(10);
+ 125:Core/Src/bno055.c **** 
+ 126:Core/Src/bno055.c ****     /* CLK_SEL=0 → 내부 오실레이터(모든 보드 안전).
+ 127:Core/Src/bno055.c ****      * 보드에 32.768kHz 크리스탈 있으면 0x80(외부)로 두면 융합 정확도↑ */
+ 128:Core/Src/bno055.c ****     bno_wr8(REG_SYS_TRIGGER, 0x00);
+ 129:Core/Src/bno055.c ****     HAL_Delay(10);
+ 130:Core/Src/bno055.c **** 
+ 131:Core/Src/bno055.c ****     bno_wr8(REG_UNIT_SEL, 0x00);   /* deg, m/s^2, dps, ℃, Windows orientation */
+ 132:Core/Src/bno055.c **** 
+ 133:Core/Src/bno055.c ****     /* 융합 시작 — IMU 모드(gyro+accel, 지자기 제외). NDOF는 OPR_MODE_NDOF로 복귀 
+ 134:Core/Src/bno055.c ****     if (bno_wr8(REG_OPR_MODE, OPR_MODE_IMU) != HAL_OK) return false;
+ 135:Core/Src/bno055.c ****     HAL_Delay(20);   /* CONFIG→operating 전환 ≥7ms */
+ 136:Core/Src/bno055.c **** 
+ 137:Core/Src/bno055.c ****     return true;
+ 138:Core/Src/bno055.c **** }
+ 422              		.loc 1 138 1 view .LVU82
+ 423 003e 02B0     		add	sp, sp, #8
+ 424              	.LCFI13:
+ 425              		.cfi_remember_state
+ 426              		.cfi_def_cfa_offset 8
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccobAIQB.s 			page 11
+
+
+ 427              		@ sp needed
+ 428 0040 10BD     		pop	{r4, pc}
+ 429              	.LVL37:
+ 430              	.L32:
+ 431              	.LCFI14:
+ 432              		.cfi_restore_state
+ 119:Core/Src/bno055.c ****     HAL_Delay(20);
+ 433              		.loc 1 119 5 is_stmt 1 view .LVU83
+ 119:Core/Src/bno055.c ****     HAL_Delay(20);
+ 434              		.loc 1 119 9 is_stmt 0 view .LVU84
+ 435 0042 0021     		movs	r1, #0
+ 436 0044 3D20     		movs	r0, #61
+ 437 0046 FFF7FEFF 		bl	bno_wr8
+ 438              	.LVL38:
+ 119:Core/Src/bno055.c ****     HAL_Delay(20);
+ 439              		.loc 1 119 8 discriminator 1 view .LVU85
+ 440 004a 08B1     		cbz	r0, .L33
+ 119:Core/Src/bno055.c ****     HAL_Delay(20);
+ 441              		.loc 1 119 66 discriminator 1 view .LVU86
+ 442 004c 0020     		movs	r0, #0
+ 443 004e F6E7     		b	.L26
+ 444              	.L33:
+ 120:Core/Src/bno055.c **** 
+ 445              		.loc 1 120 5 is_stmt 1 view .LVU87
+ 446 0050 1420     		movs	r0, #20
+ 447 0052 FFF7FEFF 		bl	HAL_Delay
+ 448              	.LVL39:
+ 122:Core/Src/bno055.c ****     if (bno_wr8(REG_PWR_MODE, BNO_PWR_NORMAL) != HAL_OK) return false;
+ 449              		.loc 1 122 5 view .LVU88
+ 450 0056 0021     		movs	r1, #0
+ 451 0058 0720     		movs	r0, #7
+ 452 005a FFF7FEFF 		bl	bno_wr8
+ 453              	.LVL40:
+ 123:Core/Src/bno055.c ****     HAL_Delay(10);
+ 454              		.loc 1 123 5 view .LVU89
+ 123:Core/Src/bno055.c ****     HAL_Delay(10);
+ 455              		.loc 1 123 9 is_stmt 0 view .LVU90
+ 456 005e 0021     		movs	r1, #0
+ 457 0060 3E20     		movs	r0, #62
+ 458 0062 FFF7FEFF 		bl	bno_wr8
+ 459              	.LVL41:
+ 123:Core/Src/bno055.c ****     HAL_Delay(10);
+ 460              		.loc 1 123 8 discriminator 1 view .LVU91
+ 461 0066 08B1     		cbz	r0, .L34
+ 123:Core/Src/bno055.c ****     HAL_Delay(10);
+ 462              		.loc 1 123 65 discriminator 1 view .LVU92
+ 463 0068 0020     		movs	r0, #0
+ 464 006a E8E7     		b	.L26
+ 465              	.L34:
+ 124:Core/Src/bno055.c **** 
+ 466              		.loc 1 124 5 is_stmt 1 view .LVU93
+ 467 006c 0A20     		movs	r0, #10
+ 468 006e FFF7FEFF 		bl	HAL_Delay
+ 469              	.LVL42:
+ 128:Core/Src/bno055.c ****     HAL_Delay(10);
+ 470              		.loc 1 128 5 view .LVU94
+ 471 0072 0021     		movs	r1, #0
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccobAIQB.s 			page 12
+
+
+ 472 0074 3F20     		movs	r0, #63
+ 473 0076 FFF7FEFF 		bl	bno_wr8
+ 474              	.LVL43:
+ 129:Core/Src/bno055.c **** 
+ 475              		.loc 1 129 5 view .LVU95
+ 476 007a 0A20     		movs	r0, #10
+ 477 007c FFF7FEFF 		bl	HAL_Delay
+ 478              	.LVL44:
+ 131:Core/Src/bno055.c **** 
+ 479              		.loc 1 131 5 view .LVU96
+ 480 0080 0021     		movs	r1, #0
+ 481 0082 3B20     		movs	r0, #59
+ 482 0084 FFF7FEFF 		bl	bno_wr8
+ 483              	.LVL45:
+ 134:Core/Src/bno055.c ****     HAL_Delay(20);   /* CONFIG→operating 전환 ≥7ms */
+ 484              		.loc 1 134 5 view .LVU97
+ 134:Core/Src/bno055.c ****     HAL_Delay(20);   /* CONFIG→operating 전환 ≥7ms */
+ 485              		.loc 1 134 9 is_stmt 0 view .LVU98
+ 486 0088 0821     		movs	r1, #8
+ 487 008a 3D20     		movs	r0, #61
+ 488 008c FFF7FEFF 		bl	bno_wr8
+ 489              	.LVL46:
+ 134:Core/Src/bno055.c ****     HAL_Delay(20);   /* CONFIG→operating 전환 ≥7ms */
+ 490              		.loc 1 134 8 discriminator 1 view .LVU99
+ 491 0090 08B1     		cbz	r0, .L35
+ 134:Core/Src/bno055.c ****     HAL_Delay(20);   /* CONFIG→operating 전환 ≥7ms */
+ 492              		.loc 1 134 63 discriminator 1 view .LVU100
+ 493 0092 0020     		movs	r0, #0
+ 494 0094 D3E7     		b	.L26
+ 495              	.L35:
+ 135:Core/Src/bno055.c **** 
+ 496              		.loc 1 135 5 is_stmt 1 view .LVU101
+ 497 0096 1420     		movs	r0, #20
+ 498 0098 FFF7FEFF 		bl	HAL_Delay
+ 499              	.LVL47:
+ 137:Core/Src/bno055.c **** }
+ 500              		.loc 1 137 5 view .LVU102
+ 137:Core/Src/bno055.c **** }
+ 501              		.loc 1 137 12 is_stmt 0 view .LVU103
+ 502 009c 0120     		movs	r0, #1
+ 503 009e CEE7     		b	.L26
+ 504              		.cfi_endproc
+ 505              	.LFE138:
+ 507              		.section	.text.BNO055_ReadEuler,"ax",%progbits
+ 508              		.align	1
+ 509              		.global	BNO055_ReadEuler
+ 510              		.syntax unified
+ 511              		.thumb
+ 512              		.thumb_func
+ 514              	BNO055_ReadEuler:
+ 515              	.LVL48:
+ 516              	.LFB139:
+ 139:Core/Src/bno055.c **** 
+ 140:Core/Src/bno055.c **** bool BNO055_ReadEuler(BNO055_Euler *e)
+ 141:Core/Src/bno055.c **** {
+ 517              		.loc 1 141 1 is_stmt 1 view -0
+ 518              		.cfi_startproc
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccobAIQB.s 			page 13
+
+
+ 519              		@ args = 0, pretend = 0, frame = 8
+ 520              		@ frame_needed = 0, uses_anonymous_args = 0
+ 521              		.loc 1 141 1 is_stmt 0 view .LVU105
+ 522 0000 10B5     		push	{r4, lr}
+ 523              	.LCFI15:
+ 524              		.cfi_def_cfa_offset 8
+ 525              		.cfi_offset 4, -8
+ 526              		.cfi_offset 14, -4
+ 527 0002 82B0     		sub	sp, sp, #8
+ 528              	.LCFI16:
+ 529              		.cfi_def_cfa_offset 16
+ 530 0004 0446     		mov	r4, r0
+ 142:Core/Src/bno055.c ****     uint8_t b[6];
+ 531              		.loc 1 142 5 is_stmt 1 view .LVU106
+ 143:Core/Src/bno055.c ****     if (bno_rd(REG_EUL_H_LSB, b, 6) != HAL_OK) return false;
+ 532              		.loc 1 143 5 view .LVU107
+ 533              		.loc 1 143 9 is_stmt 0 view .LVU108
+ 534 0006 0622     		movs	r2, #6
+ 535 0008 6946     		mov	r1, sp
+ 536 000a 1A20     		movs	r0, #26
+ 537              	.LVL49:
+ 538              		.loc 1 143 9 view .LVU109
+ 539 000c FFF7FEFF 		bl	bno_rd
+ 540              	.LVL50:
+ 541              		.loc 1 143 8 discriminator 1 view .LVU110
+ 542 0010 88BB     		cbnz	r0, .L38
+ 144:Core/Src/bno055.c **** 
+ 145:Core/Src/bno055.c ****     int16_t h = (int16_t)((uint16_t)b[1] << 8 | b[0]);
+ 543              		.loc 1 145 5 is_stmt 1 view .LVU111
+ 544              		.loc 1 145 38 is_stmt 0 view .LVU112
+ 545 0012 9DF80130 		ldrb	r3, [sp, #1]	@ zero_extendqisi2
+ 546              		.loc 1 145 17 view .LVU113
+ 547 0016 1B02     		lsls	r3, r3, #8
+ 548 0018 1BB2     		sxth	r3, r3
+ 549              		.loc 1 145 50 view .LVU114
+ 550 001a 9DF80020 		ldrb	r2, [sp]	@ zero_extendqisi2
+ 551              		.loc 1 145 13 view .LVU115
+ 552 001e 1343     		orrs	r3, r3, r2
+ 553 0020 06EE903A 		vmov	s13, r3	@ int
+ 554              	.LVL51:
+ 146:Core/Src/bno055.c ****     int16_t r = (int16_t)((uint16_t)b[3] << 8 | b[2]);
+ 555              		.loc 1 146 5 is_stmt 1 view .LVU116
+ 556              		.loc 1 146 38 is_stmt 0 view .LVU117
+ 557 0024 9DF80330 		ldrb	r3, [sp, #3]	@ zero_extendqisi2
+ 558              		.loc 1 146 17 view .LVU118
+ 559 0028 1B02     		lsls	r3, r3, #8
+ 560 002a 1BB2     		sxth	r3, r3
+ 561              		.loc 1 146 50 view .LVU119
+ 562 002c 9DF80220 		ldrb	r2, [sp, #2]	@ zero_extendqisi2
+ 563              		.loc 1 146 13 view .LVU120
+ 564 0030 1343     		orrs	r3, r3, r2
+ 565 0032 07EE103A 		vmov	s14, r3	@ int
+ 566              	.LVL52:
+ 147:Core/Src/bno055.c ****     int16_t p = (int16_t)((uint16_t)b[5] << 8 | b[4]);
+ 567              		.loc 1 147 5 is_stmt 1 view .LVU121
+ 568              		.loc 1 147 38 is_stmt 0 view .LVU122
+ 569 0036 9DF80530 		ldrb	r3, [sp, #5]	@ zero_extendqisi2
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccobAIQB.s 			page 14
+
+
+ 570              		.loc 1 147 17 view .LVU123
+ 571 003a 1B02     		lsls	r3, r3, #8
+ 572 003c 1BB2     		sxth	r3, r3
+ 573              		.loc 1 147 50 view .LVU124
+ 574 003e 9DF80420 		ldrb	r2, [sp, #4]	@ zero_extendqisi2
+ 575              		.loc 1 147 13 view .LVU125
+ 576 0042 1343     		orrs	r3, r3, r2
+ 577 0044 07EE903A 		vmov	s15, r3	@ int
+ 578              	.LVL53:
+ 148:Core/Src/bno055.c **** 
+ 149:Core/Src/bno055.c ****     e->heading = (float)h / EUL_LSB_PER_DEG;
+ 579              		.loc 1 149 5 is_stmt 1 view .LVU126
+ 580              		.loc 1 149 18 is_stmt 0 view .LVU127
+ 581 0048 F8EEE66A 		vcvt.f32.s32	s13, s13
+ 582              	.LVL54:
+ 583              		.loc 1 149 27 view .LVU128
+ 584 004c 9FED0B6A 		vldr.32	s12, .L40
+ 585 0050 66EE866A 		vmul.f32	s13, s13, s12
+ 586              		.loc 1 149 16 view .LVU129
+ 587 0054 C4ED006A 		vstr.32	s13, [r4]
+ 588              	.LVL55:
+ 150:Core/Src/bno055.c ****     e->roll    = (float)r / EUL_LSB_PER_DEG;
+ 589              		.loc 1 150 5 is_stmt 1 view .LVU130
+ 590              		.loc 1 150 18 is_stmt 0 view .LVU131
+ 591 0058 B8EEC77A 		vcvt.f32.s32	s14, s14
+ 592              	.LVL56:
+ 593              		.loc 1 150 27 view .LVU132
+ 594 005c 27EE067A 		vmul.f32	s14, s14, s12
+ 595              		.loc 1 150 16 view .LVU133
+ 596 0060 84ED017A 		vstr.32	s14, [r4, #4]
+ 151:Core/Src/bno055.c ****     e->pitch   = (float)p / EUL_LSB_PER_DEG;
+ 597              		.loc 1 151 5 is_stmt 1 view .LVU134
+ 598              		.loc 1 151 18 is_stmt 0 view .LVU135
+ 599 0064 F8EEE77A 		vcvt.f32.s32	s15, s15
+ 600              	.LVL57:
+ 601              		.loc 1 151 27 view .LVU136
+ 602 0068 67EE867A 		vmul.f32	s15, s15, s12
+ 603              		.loc 1 151 16 view .LVU137
+ 604 006c C4ED027A 		vstr.32	s15, [r4, #8]
+ 152:Core/Src/bno055.c ****     return true;
+ 605              		.loc 1 152 5 is_stmt 1 view .LVU138
+ 606              		.loc 1 152 12 is_stmt 0 view .LVU139
+ 607 0070 0120     		movs	r0, #1
+ 608              	.LVL58:
+ 609              	.L37:
+ 153:Core/Src/bno055.c **** }
+ 610              		.loc 1 153 1 view .LVU140
+ 611 0072 02B0     		add	sp, sp, #8
+ 612              	.LCFI17:
+ 613              		.cfi_remember_state
+ 614              		.cfi_def_cfa_offset 8
+ 615              		@ sp needed
+ 616 0074 10BD     		pop	{r4, pc}
+ 617              	.LVL59:
+ 618              	.L38:
+ 619              	.LCFI18:
+ 620              		.cfi_restore_state
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccobAIQB.s 			page 15
+
+
+ 143:Core/Src/bno055.c **** 
+ 621              		.loc 1 143 55 discriminator 1 view .LVU141
+ 622 0076 0020     		movs	r0, #0
+ 623 0078 FBE7     		b	.L37
+ 624              	.L41:
+ 625 007a 00BF     		.align	2
+ 626              	.L40:
+ 627 007c 0000803D 		.word	1031798784
+ 628              		.cfi_endproc
+ 629              	.LFE139:
+ 631              		.section	.text.BNO055_ReadCalibStatus,"ax",%progbits
+ 632              		.align	1
+ 633              		.global	BNO055_ReadCalibStatus
+ 634              		.syntax unified
+ 635              		.thumb
+ 636              		.thumb_func
+ 638              	BNO055_ReadCalibStatus:
+ 639              	.LFB140:
+ 154:Core/Src/bno055.c **** 
+ 155:Core/Src/bno055.c **** uint8_t BNO055_ReadCalibStatus(void)
+ 156:Core/Src/bno055.c **** {
+ 640              		.loc 1 156 1 is_stmt 1 view -0
+ 641              		.cfi_startproc
+ 642              		@ args = 0, pretend = 0, frame = 8
+ 643              		@ frame_needed = 0, uses_anonymous_args = 0
+ 644 0000 00B5     		push	{lr}
+ 645              	.LCFI19:
+ 646              		.cfi_def_cfa_offset 4
+ 647              		.cfi_offset 14, -4
+ 648 0002 83B0     		sub	sp, sp, #12
+ 649              	.LCFI20:
+ 650              		.cfi_def_cfa_offset 16
+ 157:Core/Src/bno055.c ****     uint8_t c = 0;
+ 651              		.loc 1 157 5 view .LVU143
+ 652              		.loc 1 157 13 is_stmt 0 view .LVU144
+ 653 0004 0023     		movs	r3, #0
+ 654 0006 8DF80730 		strb	r3, [sp, #7]
+ 158:Core/Src/bno055.c ****     (void)bno_rd(REG_CALIB_STAT, &c, 1);
+ 655              		.loc 1 158 5 is_stmt 1 view .LVU145
+ 656              		.loc 1 158 11 is_stmt 0 view .LVU146
+ 657 000a 0122     		movs	r2, #1
+ 658 000c 0DF10701 		add	r1, sp, #7
+ 659 0010 3520     		movs	r0, #53
+ 660 0012 FFF7FEFF 		bl	bno_rd
+ 661              	.LVL60:
+ 159:Core/Src/bno055.c ****     return c;
+ 662              		.loc 1 159 5 is_stmt 1 view .LVU147
+ 160:Core/Src/bno055.c **** }
+ 663              		.loc 1 160 1 is_stmt 0 view .LVU148
+ 664 0016 9DF80700 		ldrb	r0, [sp, #7]	@ zero_extendqisi2
+ 665 001a 03B0     		add	sp, sp, #12
+ 666              	.LCFI21:
+ 667              		.cfi_def_cfa_offset 4
+ 668              		@ sp needed
+ 669 001c 00BD     		pop	{pc}
+ 670              		.cfi_endproc
+ 671              	.LFE140:
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccobAIQB.s 			page 16
+
+
+ 673              		.section	.bss.bno_fail_cnt,"aw",%nobits
+ 676              	bno_fail_cnt:
+ 677 0000 00       		.space	1
+ 678              		.text
+ 679              	.Letext0:
+ 680              		.file 2 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
+ 681              		.file 3 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
+ 682              		.file 4 "Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f411xe.h"
+ 683              		.file 5 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_def.h"
+ 684              		.file 6 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_gpio.h"
+ 685              		.file 7 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_dma.h"
+ 686              		.file 8 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_i2c.h"
+ 687              		.file 9 "Core/Inc/bno055.h"
+ 688              		.file 10 "Core/Inc/delay.h"
+ 689              		.file 11 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h"
+ 690              		.file 12 "Core/Inc/i2c.h"
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccobAIQB.s 			page 17
+
+
+DEFINED SYMBOLS
+                            *ABS*:00000000 bno055.c
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:21     .text.bno_bus_recover:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:26     .text.bno_bus_recover:00000000 bno_bus_recover
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:152    .text.bno_bus_recover:00000098 $d
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:158    .text.bno_rd:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:163    .text.bno_rd:00000000 bno_rd
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:243    .text.bno_rd:00000044 $d
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:676    .bss.bno_fail_cnt:00000000 bno_fail_cnt
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:249    .text.bno_wr8:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:254    .text.bno_wr8:00000000 bno_wr8
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:298    .text.bno_wr8:00000024 $d
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:303    .text.BNO055_HardReset:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:309    .text.BNO055_HardReset:00000000 BNO055_HardReset
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:346    .text.BNO055_HardReset:00000028 $d
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:351    .text.BNO055_Init:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:357    .text.BNO055_Init:00000000 BNO055_Init
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:508    .text.BNO055_ReadEuler:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:514    .text.BNO055_ReadEuler:00000000 BNO055_ReadEuler
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:627    .text.BNO055_ReadEuler:0000007c $d
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:632    .text.BNO055_ReadCalibStatus:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:638    .text.BNO055_ReadCalibStatus:00000000 BNO055_ReadCalibStatus
+C:\Users\user\AppData\Local\Temp\ccobAIQB.s:677    .bss.bno_fail_cnt:00000000 $d
+                           .group:00000000 wm4.0.3e3bd4fae48ed4285b9fe9ad79008a8e
+                           .group:00000000 wm4.stm32f4xx_hal_conf.h.25.0cc516ee5f8f6ec9d32a682fcd0191b7
+                           .group:00000000 wm4.stm32f4xx.h.38.63e3ea23bd63a94457417730025259b6
+                           .group:00000000 wm4.stm32f411xe.h.34.f2908321cbbda12187706c23063bbc28
+                           .group:00000000 wm4._newlib_version.h.4.0eb654b64686e2bd29646258853f6c22
+                           .group:00000000 wm4.features.h.33.d554620bb17bd3b714c3fb5c268772bc
+                           .group:00000000 wm4._default_types.h.15.247e5cd201eca3442cbf5404108c4935
+                           .group:00000000 wm4._intsup.h.10.48bafbb683905c4daa4565a85aeeb264
+                           .group:00000000 wm4._stdint.h.10.c24fa3af3bc1706662bb5593a907e841
+                           .group:00000000 wm4.stdint.h.23.d53047a68f4a85177f80b422d52785ed
+                           .group:00000000 wm4.cmsis_version.h.32.0ac195c83bb4537824e6ad1c47474b79
+                           .group:00000000 wm4.core_cm4.h.66.e4ff136c4a17abc46741866f64f8e729
+                           .group:00000000 wm4.cmsis_gcc.h.26.498d0ad17a45fc9ef20fdc01caf02259
+                           .group:00000000 wm4.core_cm4.h.174.62be9b4588d49bed18171771001331df
+                           .group:00000000 wm4.mpu_armv7.h.32.83326921a797fa9d6f70449916b4b839
+                           .group:00000000 wm4.stm32f411xe.h.636.37cf950cfbbaac9e193dbe2b79c3e749
+                           .group:00000000 wm4.stm32f4xx.h.195.a4b8bf80f37cc96981498656ffe5f588
+                           .group:00000000 wm4.stm32_hal_legacy.h.22.8b7d303dc46a0b7ac6d3edf19ce2608d
+                           .group:00000000 wm4.stddef.h.39.811583f327f35b0df7808fda70b062a0
+                           .group:00000000 wm4.stm32f4xx_hal_def.h.58.3cb484e92e5ccf2e55312a4714e27917
+                           .group:00000000 wm4.stm32f4xx_hal_rcc_ex.h.20.6bc7ed2ae7969e22afc815a811faa8ee
+                           .group:00000000 wm4.stm32f4xx_hal_rcc.h.106.0887cf5d985ae88e345b0aed0ceb4729
+                           .group:00000000 wm4.stm32f4xx_hal_gpio.h.21.22da6a14b6049d6ac156577be74df1d7
+                           .group:00000000 wm4.stm32f4xx_hal_gpio_ex.h.21.985b1076fbcb2c3eb806d02fd771d120
+                           .group:00000000 wm4.stm32f4xx_hal_gpio.h.254.d7e07832f748fe8bcb575db0b8373592
+                           .group:00000000 wm4.stm32f4xx_hal_exti.h.21.2ccac119fb1c64adeb682c3dcad90241
+                           .group:00000000 wm4.stm32f4xx_hal_dma.h.21.8e4b1421c914345c23be719e5e528779
+                           .group:00000000 wm4.stm32f4xx_hal_dma.h.720.ac2d7eef74792e4026acc4d2923c5da4
+                           .group:00000000 wm4.stm32f4xx_hal_cortex.h.20.03673e4f79386680bf73ba399c19306b
+                           .group:00000000 wm4.stm32f4xx_hal_flash.h.20.2f1e0d1b7010b3a81a7980aaf712e7e5
+                           .group:00000000 wm4.stm32f4xx_hal_flash_ex.h.20.2abe4a01ce8028804a922735defa62fd
+                           .group:00000000 wm4.stm32f4xx_hal_flash.h.361.23bc19b9eac79b0956d913651841ede8
+                           .group:00000000 wm4.stm32f4xx_hal_i2c.h.21.147e96a27b1f7b1f2f8ee22132703ee3
+                           .group:00000000 wm4.stm32f4xx_hal_i2c_ex.h.21.951ef5bfa13cf131d2015c338e82e461
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccobAIQB.s 			page 18
+
+
+                           .group:00000000 wm4.stm32f4xx_hal_i2c.h.647.ade9c3447780b1cc0ece02f0ce83aedc
+                           .group:00000000 wm4.stm32f4xx_hal_iwdg.h.21.6227ccfbb99238d6637d6fd22341e211
+                           .group:00000000 wm4.stm32f4xx_hal_pwr.h.20.1905a0783a9c83adefd7df0c4b501e40
+                           .group:00000000 wm4.stm32f4xx_hal_pwr_ex.h.20.68994c4c23e76d9aeabea12988d5ec3f
+                           .group:00000000 wm4.stm32f4xx_hal_pwr.h.338.debc0a4a62ba54688e63ab53dd99c4ea
+                           .group:00000000 wm4.stm32f4xx_hal_tim.h.21.c31cbc03c25f07a932427770396c59d2
+                           .group:00000000 wm4.stm32f4xx_hal_tim_ex.h.21.918fa7fcd405cc3ba11632ed1d07a240
+                           .group:00000000 wm4.stm32f4xx_hal.h.71.02372bc31d47d29d3f67fbfe1429649e
+                           .group:00000000 wm4.main.h.60.a9fbcfa98a33cea9e599fe3b3b28e08c
+                           .group:00000000 wm4.stdbool.h.29.c08aa3eec75cf5b9b5003883f43253f0
+
+UNDEFINED SYMBOLS
+HAL_I2C_DeInit
+HAL_GPIO_Init
+HAL_GPIO_WritePin
+delay_us
+MX_I2C1_Init
+hi2c1
+HAL_I2C_Mem_Read
+HAL_I2C_Mem_Write
+HAL_Delay

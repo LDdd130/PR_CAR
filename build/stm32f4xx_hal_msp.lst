@@ -1,0 +1,240 @@
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccBJ38R1.s 			page 1
+
+
+   1              		.cpu cortex-m4
+   2              		.arch armv7e-m
+   3              		.fpu fpv4-sp-d16
+   4              		.eabi_attribute 27, 1
+   5              		.eabi_attribute 28, 1
+   6              		.eabi_attribute 20, 1
+   7              		.eabi_attribute 21, 1
+   8              		.eabi_attribute 23, 3
+   9              		.eabi_attribute 24, 1
+  10              		.eabi_attribute 25, 1
+  11              		.eabi_attribute 26, 1
+  12              		.eabi_attribute 30, 1
+  13              		.eabi_attribute 34, 1
+  14              		.eabi_attribute 18, 4
+  15              		.file	"stm32f4xx_hal_msp.c"
+  16              		.text
+  17              	.Ltext0:
+  18              		.cfi_sections	.debug_frame
+  19              		.file 1 "Core/Src/stm32f4xx_hal_msp.c"
+  20              		.section	.text.HAL_MspInit,"ax",%progbits
+  21              		.align	1
+  22              		.global	HAL_MspInit
+  23              		.syntax unified
+  24              		.thumb
+  25              		.thumb_func
+  27              	HAL_MspInit:
+  28              	.LFB134:
+   1:Core/Src/stm32f4xx_hal_msp.c **** /* USER CODE BEGIN Header */
+   2:Core/Src/stm32f4xx_hal_msp.c **** /**
+   3:Core/Src/stm32f4xx_hal_msp.c ****   ******************************************************************************
+   4:Core/Src/stm32f4xx_hal_msp.c ****   * @file         stm32f4xx_hal_msp.c
+   5:Core/Src/stm32f4xx_hal_msp.c ****   * @brief        This file provides code for the MSP Initialization
+   6:Core/Src/stm32f4xx_hal_msp.c ****   *               and de-Initialization codes.
+   7:Core/Src/stm32f4xx_hal_msp.c ****   ******************************************************************************
+   8:Core/Src/stm32f4xx_hal_msp.c ****   * @attention
+   9:Core/Src/stm32f4xx_hal_msp.c ****   *
+  10:Core/Src/stm32f4xx_hal_msp.c ****   * Copyright (c) 2026 STMicroelectronics.
+  11:Core/Src/stm32f4xx_hal_msp.c ****   * All rights reserved.
+  12:Core/Src/stm32f4xx_hal_msp.c ****   *
+  13:Core/Src/stm32f4xx_hal_msp.c ****   * This software is licensed under terms that can be found in the LICENSE file
+  14:Core/Src/stm32f4xx_hal_msp.c ****   * in the root directory of this software component.
+  15:Core/Src/stm32f4xx_hal_msp.c ****   * If no LICENSE file comes with this software, it is provided AS-IS.
+  16:Core/Src/stm32f4xx_hal_msp.c ****   *
+  17:Core/Src/stm32f4xx_hal_msp.c ****   ******************************************************************************
+  18:Core/Src/stm32f4xx_hal_msp.c ****   */
+  19:Core/Src/stm32f4xx_hal_msp.c **** /* USER CODE END Header */
+  20:Core/Src/stm32f4xx_hal_msp.c **** /* Includes ------------------------------------------------------------------*/
+  21:Core/Src/stm32f4xx_hal_msp.c **** #include "main.h"
+  22:Core/Src/stm32f4xx_hal_msp.c **** /* USER CODE BEGIN Includes */
+  23:Core/Src/stm32f4xx_hal_msp.c **** 
+  24:Core/Src/stm32f4xx_hal_msp.c **** /* USER CODE END Includes */
+  25:Core/Src/stm32f4xx_hal_msp.c **** 
+  26:Core/Src/stm32f4xx_hal_msp.c **** /* Private typedef -----------------------------------------------------------*/
+  27:Core/Src/stm32f4xx_hal_msp.c **** /* USER CODE BEGIN TD */
+  28:Core/Src/stm32f4xx_hal_msp.c **** 
+  29:Core/Src/stm32f4xx_hal_msp.c **** /* USER CODE END TD */
+  30:Core/Src/stm32f4xx_hal_msp.c **** 
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccBJ38R1.s 			page 2
+
+
+  31:Core/Src/stm32f4xx_hal_msp.c **** /* Private define ------------------------------------------------------------*/
+  32:Core/Src/stm32f4xx_hal_msp.c **** /* USER CODE BEGIN Define */
+  33:Core/Src/stm32f4xx_hal_msp.c **** 
+  34:Core/Src/stm32f4xx_hal_msp.c **** /* USER CODE END Define */
+  35:Core/Src/stm32f4xx_hal_msp.c **** 
+  36:Core/Src/stm32f4xx_hal_msp.c **** /* Private macro -------------------------------------------------------------*/
+  37:Core/Src/stm32f4xx_hal_msp.c **** /* USER CODE BEGIN Macro */
+  38:Core/Src/stm32f4xx_hal_msp.c **** 
+  39:Core/Src/stm32f4xx_hal_msp.c **** /* USER CODE END Macro */
+  40:Core/Src/stm32f4xx_hal_msp.c **** 
+  41:Core/Src/stm32f4xx_hal_msp.c **** /* Private variables ---------------------------------------------------------*/
+  42:Core/Src/stm32f4xx_hal_msp.c **** /* USER CODE BEGIN PV */
+  43:Core/Src/stm32f4xx_hal_msp.c **** 
+  44:Core/Src/stm32f4xx_hal_msp.c **** /* USER CODE END PV */
+  45:Core/Src/stm32f4xx_hal_msp.c **** 
+  46:Core/Src/stm32f4xx_hal_msp.c **** /* Private function prototypes -----------------------------------------------*/
+  47:Core/Src/stm32f4xx_hal_msp.c **** /* USER CODE BEGIN PFP */
+  48:Core/Src/stm32f4xx_hal_msp.c **** 
+  49:Core/Src/stm32f4xx_hal_msp.c **** /* USER CODE END PFP */
+  50:Core/Src/stm32f4xx_hal_msp.c **** 
+  51:Core/Src/stm32f4xx_hal_msp.c **** /* External functions --------------------------------------------------------*/
+  52:Core/Src/stm32f4xx_hal_msp.c **** /* USER CODE BEGIN ExternalFunctions */
+  53:Core/Src/stm32f4xx_hal_msp.c **** 
+  54:Core/Src/stm32f4xx_hal_msp.c **** /* USER CODE END ExternalFunctions */
+  55:Core/Src/stm32f4xx_hal_msp.c **** 
+  56:Core/Src/stm32f4xx_hal_msp.c **** /* USER CODE BEGIN 0 */
+  57:Core/Src/stm32f4xx_hal_msp.c **** 
+  58:Core/Src/stm32f4xx_hal_msp.c **** /* USER CODE END 0 */
+  59:Core/Src/stm32f4xx_hal_msp.c **** /**
+  60:Core/Src/stm32f4xx_hal_msp.c ****   * Initializes the Global MSP.
+  61:Core/Src/stm32f4xx_hal_msp.c ****   */
+  62:Core/Src/stm32f4xx_hal_msp.c **** void HAL_MspInit(void)
+  63:Core/Src/stm32f4xx_hal_msp.c **** {
+  29              		.loc 1 63 1 view -0
+  30              		.cfi_startproc
+  31              		@ args = 0, pretend = 0, frame = 8
+  32              		@ frame_needed = 0, uses_anonymous_args = 0
+  33 0000 00B5     		push	{lr}
+  34              	.LCFI0:
+  35              		.cfi_def_cfa_offset 4
+  36              		.cfi_offset 14, -4
+  37 0002 83B0     		sub	sp, sp, #12
+  38              	.LCFI1:
+  39              		.cfi_def_cfa_offset 16
+  64:Core/Src/stm32f4xx_hal_msp.c **** 
+  65:Core/Src/stm32f4xx_hal_msp.c ****   /* USER CODE BEGIN MspInit 0 */
+  66:Core/Src/stm32f4xx_hal_msp.c **** 
+  67:Core/Src/stm32f4xx_hal_msp.c ****   /* USER CODE END MspInit 0 */
+  68:Core/Src/stm32f4xx_hal_msp.c **** 
+  69:Core/Src/stm32f4xx_hal_msp.c ****   __HAL_RCC_SYSCFG_CLK_ENABLE();
+  40              		.loc 1 69 3 view .LVU1
+  41              	.LBB2:
+  42              		.loc 1 69 3 view .LVU2
+  43 0004 0022     		movs	r2, #0
+  44 0006 0092     		str	r2, [sp]
+  45              		.loc 1 69 3 view .LVU3
+  46 0008 0D4B     		ldr	r3, .L3
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccBJ38R1.s 			page 3
+
+
+  47 000a 596C     		ldr	r1, [r3, #68]
+  48 000c 41F48041 		orr	r1, r1, #16384
+  49 0010 5964     		str	r1, [r3, #68]
+  50              		.loc 1 69 3 view .LVU4
+  51 0012 596C     		ldr	r1, [r3, #68]
+  52 0014 01F48041 		and	r1, r1, #16384
+  53 0018 0091     		str	r1, [sp]
+  54              		.loc 1 69 3 view .LVU5
+  55 001a 0099     		ldr	r1, [sp]
+  56              	.LBE2:
+  57              		.loc 1 69 3 view .LVU6
+  70:Core/Src/stm32f4xx_hal_msp.c ****   __HAL_RCC_PWR_CLK_ENABLE();
+  58              		.loc 1 70 3 view .LVU7
+  59              	.LBB3:
+  60              		.loc 1 70 3 view .LVU8
+  61 001c 0192     		str	r2, [sp, #4]
+  62              		.loc 1 70 3 view .LVU9
+  63 001e 196C     		ldr	r1, [r3, #64]
+  64 0020 41F08051 		orr	r1, r1, #268435456
+  65 0024 1964     		str	r1, [r3, #64]
+  66              		.loc 1 70 3 view .LVU10
+  67 0026 1B6C     		ldr	r3, [r3, #64]
+  68 0028 03F08053 		and	r3, r3, #268435456
+  69 002c 0193     		str	r3, [sp, #4]
+  70              		.loc 1 70 3 view .LVU11
+  71 002e 019B     		ldr	r3, [sp, #4]
+  72              	.LBE3:
+  73              		.loc 1 70 3 view .LVU12
+  71:Core/Src/stm32f4xx_hal_msp.c **** 
+  72:Core/Src/stm32f4xx_hal_msp.c ****   /* System interrupt init*/
+  73:Core/Src/stm32f4xx_hal_msp.c ****   /* PendSV_IRQn interrupt configuration */
+  74:Core/Src/stm32f4xx_hal_msp.c ****   HAL_NVIC_SetPriority(PendSV_IRQn, 15, 0);
+  74              		.loc 1 74 3 view .LVU13
+  75 0030 0F21     		movs	r1, #15
+  76 0032 6FF00100 		mvn	r0, #1
+  77 0036 FFF7FEFF 		bl	HAL_NVIC_SetPriority
+  78              	.LVL0:
+  75:Core/Src/stm32f4xx_hal_msp.c **** 
+  76:Core/Src/stm32f4xx_hal_msp.c ****   /* USER CODE BEGIN MspInit 1 */
+  77:Core/Src/stm32f4xx_hal_msp.c **** 
+  78:Core/Src/stm32f4xx_hal_msp.c ****   /* USER CODE END MspInit 1 */
+  79:Core/Src/stm32f4xx_hal_msp.c **** }
+  79              		.loc 1 79 1 is_stmt 0 view .LVU14
+  80 003a 03B0     		add	sp, sp, #12
+  81              	.LCFI2:
+  82              		.cfi_def_cfa_offset 4
+  83              		@ sp needed
+  84 003c 00BD     		pop	{pc}
+  85              	.L4:
+  86 003e 00BF     		.align	2
+  87              	.L3:
+  88 0040 00380240 		.word	1073887232
+  89              		.cfi_endproc
+  90              	.LFE134:
+  92              		.text
+  93              	.Letext0:
+  94              		.file 2 "Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f411xe.h"
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccBJ38R1.s 			page 4
+
+
+  95              		.file 3 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
+  96              		.file 4 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
+  97              		.file 5 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_cortex.h"
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccBJ38R1.s 			page 5
+
+
+DEFINED SYMBOLS
+                            *ABS*:00000000 stm32f4xx_hal_msp.c
+C:\Users\user\AppData\Local\Temp\ccBJ38R1.s:21     .text.HAL_MspInit:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccBJ38R1.s:27     .text.HAL_MspInit:00000000 HAL_MspInit
+C:\Users\user\AppData\Local\Temp\ccBJ38R1.s:88     .text.HAL_MspInit:00000040 $d
+                           .group:00000000 wm4.0.3e3bd4fae48ed4285b9fe9ad79008a8e
+                           .group:00000000 wm4.stm32f4xx_hal_conf.h.25.0cc516ee5f8f6ec9d32a682fcd0191b7
+                           .group:00000000 wm4.stm32f4xx.h.38.63e3ea23bd63a94457417730025259b6
+                           .group:00000000 wm4.stm32f411xe.h.34.f2908321cbbda12187706c23063bbc28
+                           .group:00000000 wm4._newlib_version.h.4.0eb654b64686e2bd29646258853f6c22
+                           .group:00000000 wm4.features.h.33.d554620bb17bd3b714c3fb5c268772bc
+                           .group:00000000 wm4._default_types.h.15.247e5cd201eca3442cbf5404108c4935
+                           .group:00000000 wm4._intsup.h.10.48bafbb683905c4daa4565a85aeeb264
+                           .group:00000000 wm4._stdint.h.10.c24fa3af3bc1706662bb5593a907e841
+                           .group:00000000 wm4.stdint.h.23.d53047a68f4a85177f80b422d52785ed
+                           .group:00000000 wm4.cmsis_version.h.32.0ac195c83bb4537824e6ad1c47474b79
+                           .group:00000000 wm4.core_cm4.h.66.e4ff136c4a17abc46741866f64f8e729
+                           .group:00000000 wm4.cmsis_gcc.h.26.498d0ad17a45fc9ef20fdc01caf02259
+                           .group:00000000 wm4.core_cm4.h.174.62be9b4588d49bed18171771001331df
+                           .group:00000000 wm4.mpu_armv7.h.32.83326921a797fa9d6f70449916b4b839
+                           .group:00000000 wm4.stm32f411xe.h.636.37cf950cfbbaac9e193dbe2b79c3e749
+                           .group:00000000 wm4.stm32f4xx.h.195.a4b8bf80f37cc96981498656ffe5f588
+                           .group:00000000 wm4.stm32_hal_legacy.h.22.8b7d303dc46a0b7ac6d3edf19ce2608d
+                           .group:00000000 wm4.stddef.h.39.811583f327f35b0df7808fda70b062a0
+                           .group:00000000 wm4.stm32f4xx_hal_def.h.58.3cb484e92e5ccf2e55312a4714e27917
+                           .group:00000000 wm4.stm32f4xx_hal_rcc_ex.h.20.6bc7ed2ae7969e22afc815a811faa8ee
+                           .group:00000000 wm4.stm32f4xx_hal_rcc.h.106.0887cf5d985ae88e345b0aed0ceb4729
+                           .group:00000000 wm4.stm32f4xx_hal_gpio.h.21.22da6a14b6049d6ac156577be74df1d7
+                           .group:00000000 wm4.stm32f4xx_hal_gpio_ex.h.21.985b1076fbcb2c3eb806d02fd771d120
+                           .group:00000000 wm4.stm32f4xx_hal_gpio.h.254.d7e07832f748fe8bcb575db0b8373592
+                           .group:00000000 wm4.stm32f4xx_hal_exti.h.21.2ccac119fb1c64adeb682c3dcad90241
+                           .group:00000000 wm4.stm32f4xx_hal_dma.h.21.8e4b1421c914345c23be719e5e528779
+                           .group:00000000 wm4.stm32f4xx_hal_dma.h.720.ac2d7eef74792e4026acc4d2923c5da4
+                           .group:00000000 wm4.stm32f4xx_hal_cortex.h.20.03673e4f79386680bf73ba399c19306b
+                           .group:00000000 wm4.stm32f4xx_hal_flash.h.20.2f1e0d1b7010b3a81a7980aaf712e7e5
+                           .group:00000000 wm4.stm32f4xx_hal_flash_ex.h.20.2abe4a01ce8028804a922735defa62fd
+                           .group:00000000 wm4.stm32f4xx_hal_flash.h.361.23bc19b9eac79b0956d913651841ede8
+                           .group:00000000 wm4.stm32f4xx_hal_i2c.h.21.147e96a27b1f7b1f2f8ee22132703ee3
+                           .group:00000000 wm4.stm32f4xx_hal_i2c_ex.h.21.951ef5bfa13cf131d2015c338e82e461
+                           .group:00000000 wm4.stm32f4xx_hal_i2c.h.647.ade9c3447780b1cc0ece02f0ce83aedc
+                           .group:00000000 wm4.stm32f4xx_hal_iwdg.h.21.6227ccfbb99238d6637d6fd22341e211
+                           .group:00000000 wm4.stm32f4xx_hal_pwr.h.20.1905a0783a9c83adefd7df0c4b501e40
+                           .group:00000000 wm4.stm32f4xx_hal_pwr_ex.h.20.68994c4c23e76d9aeabea12988d5ec3f
+                           .group:00000000 wm4.stm32f4xx_hal_pwr.h.338.debc0a4a62ba54688e63ab53dd99c4ea
+                           .group:00000000 wm4.stm32f4xx_hal_tim.h.21.c31cbc03c25f07a932427770396c59d2
+                           .group:00000000 wm4.stm32f4xx_hal_tim_ex.h.21.918fa7fcd405cc3ba11632ed1d07a240
+                           .group:00000000 wm4.stm32f4xx_hal.h.71.02372bc31d47d29d3f67fbfe1429649e
+                           .group:00000000 wm4.main.h.60.a9fbcfa98a33cea9e599fe3b3b28e08c
+
+UNDEFINED SYMBOLS
+HAL_NVIC_SetPriority

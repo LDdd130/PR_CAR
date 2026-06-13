@@ -1,0 +1,4 @@
+Core/Src/freertos.c:171:6:StartDefaultTask	32	static
+Core/Src/freertos.c:221:6:StartTask02	56	static
+Core/Src/freertos.c:124:6:MX_FREERTOS_Init	8	static
+Core/Src/freertos.c:359:6:HAL_GPIO_EXTI_Callback	0	static

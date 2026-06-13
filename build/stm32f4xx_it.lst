@@ -1,0 +1,627 @@
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccpRJOuV.s 			page 1
+
+
+   1              		.cpu cortex-m4
+   2              		.arch armv7e-m
+   3              		.fpu fpv4-sp-d16
+   4              		.eabi_attribute 27, 1
+   5              		.eabi_attribute 28, 1
+   6              		.eabi_attribute 20, 1
+   7              		.eabi_attribute 21, 1
+   8              		.eabi_attribute 23, 3
+   9              		.eabi_attribute 24, 1
+  10              		.eabi_attribute 25, 1
+  11              		.eabi_attribute 26, 1
+  12              		.eabi_attribute 30, 1
+  13              		.eabi_attribute 34, 1
+  14              		.eabi_attribute 18, 4
+  15              		.file	"stm32f4xx_it.c"
+  16              		.text
+  17              	.Ltext0:
+  18              		.cfi_sections	.debug_frame
+  19              		.file 1 "Core/Src/stm32f4xx_it.c"
+  20              		.section	.text.NMI_Handler,"ax",%progbits
+  21              		.align	1
+  22              		.global	NMI_Handler
+  23              		.syntax unified
+  24              		.thumb
+  25              		.thumb_func
+  27              	NMI_Handler:
+  28              	.LFB138:
+   1:Core/Src/stm32f4xx_it.c **** /* USER CODE BEGIN Header */
+   2:Core/Src/stm32f4xx_it.c **** /**
+   3:Core/Src/stm32f4xx_it.c ****   ******************************************************************************
+   4:Core/Src/stm32f4xx_it.c ****   * @file    stm32f4xx_it.c
+   5:Core/Src/stm32f4xx_it.c ****   * @brief   Interrupt Service Routines.
+   6:Core/Src/stm32f4xx_it.c ****   ******************************************************************************
+   7:Core/Src/stm32f4xx_it.c ****   * @attention
+   8:Core/Src/stm32f4xx_it.c ****   *
+   9:Core/Src/stm32f4xx_it.c ****   * Copyright (c) 2026 STMicroelectronics.
+  10:Core/Src/stm32f4xx_it.c ****   * All rights reserved.
+  11:Core/Src/stm32f4xx_it.c ****   *
+  12:Core/Src/stm32f4xx_it.c ****   * This software is licensed under terms that can be found in the LICENSE file
+  13:Core/Src/stm32f4xx_it.c ****   * in the root directory of this software component.
+  14:Core/Src/stm32f4xx_it.c ****   * If no LICENSE file comes with this software, it is provided AS-IS.
+  15:Core/Src/stm32f4xx_it.c ****   *
+  16:Core/Src/stm32f4xx_it.c ****   ******************************************************************************
+  17:Core/Src/stm32f4xx_it.c ****   */
+  18:Core/Src/stm32f4xx_it.c **** /* USER CODE END Header */
+  19:Core/Src/stm32f4xx_it.c **** 
+  20:Core/Src/stm32f4xx_it.c **** /* Includes ------------------------------------------------------------------*/
+  21:Core/Src/stm32f4xx_it.c **** #include "main.h"
+  22:Core/Src/stm32f4xx_it.c **** #include "stm32f4xx_it.h"
+  23:Core/Src/stm32f4xx_it.c **** #include "FreeRTOS.h"
+  24:Core/Src/stm32f4xx_it.c **** #include "task.h"
+  25:Core/Src/stm32f4xx_it.c **** /* Private includes ----------------------------------------------------------*/
+  26:Core/Src/stm32f4xx_it.c **** /* USER CODE BEGIN Includes */
+  27:Core/Src/stm32f4xx_it.c **** #include "motor.h"   /* Car_Stop() — 폴트 시 모터 정지(런어웨이 방지) */
+  28:Core/Src/stm32f4xx_it.c **** /* USER CODE END Includes */
+  29:Core/Src/stm32f4xx_it.c **** 
+  30:Core/Src/stm32f4xx_it.c **** /* Private typedef -----------------------------------------------------------*/
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccpRJOuV.s 			page 2
+
+
+  31:Core/Src/stm32f4xx_it.c **** /* USER CODE BEGIN TD */
+  32:Core/Src/stm32f4xx_it.c **** 
+  33:Core/Src/stm32f4xx_it.c **** /* USER CODE END TD */
+  34:Core/Src/stm32f4xx_it.c **** 
+  35:Core/Src/stm32f4xx_it.c **** /* Private define ------------------------------------------------------------*/
+  36:Core/Src/stm32f4xx_it.c **** /* USER CODE BEGIN PD */
+  37:Core/Src/stm32f4xx_it.c **** 
+  38:Core/Src/stm32f4xx_it.c **** /* USER CODE END PD */
+  39:Core/Src/stm32f4xx_it.c **** 
+  40:Core/Src/stm32f4xx_it.c **** /* Private macro -------------------------------------------------------------*/
+  41:Core/Src/stm32f4xx_it.c **** /* USER CODE BEGIN PM */
+  42:Core/Src/stm32f4xx_it.c **** 
+  43:Core/Src/stm32f4xx_it.c **** /* USER CODE END PM */
+  44:Core/Src/stm32f4xx_it.c **** 
+  45:Core/Src/stm32f4xx_it.c **** /* Private variables ---------------------------------------------------------*/
+  46:Core/Src/stm32f4xx_it.c **** /* USER CODE BEGIN PV */
+  47:Core/Src/stm32f4xx_it.c **** 
+  48:Core/Src/stm32f4xx_it.c **** /* USER CODE END PV */
+  49:Core/Src/stm32f4xx_it.c **** 
+  50:Core/Src/stm32f4xx_it.c **** /* Private function prototypes -----------------------------------------------*/
+  51:Core/Src/stm32f4xx_it.c **** /* USER CODE BEGIN PFP */
+  52:Core/Src/stm32f4xx_it.c **** 
+  53:Core/Src/stm32f4xx_it.c **** /* USER CODE END PFP */
+  54:Core/Src/stm32f4xx_it.c **** 
+  55:Core/Src/stm32f4xx_it.c **** /* Private user code ---------------------------------------------------------*/
+  56:Core/Src/stm32f4xx_it.c **** /* USER CODE BEGIN 0 */
+  57:Core/Src/stm32f4xx_it.c **** 
+  58:Core/Src/stm32f4xx_it.c **** /* USER CODE END 0 */
+  59:Core/Src/stm32f4xx_it.c **** 
+  60:Core/Src/stm32f4xx_it.c **** /* External variables --------------------------------------------------------*/
+  61:Core/Src/stm32f4xx_it.c **** extern TIM_HandleTypeDef htim3;
+  62:Core/Src/stm32f4xx_it.c **** /* USER CODE BEGIN EV */
+  63:Core/Src/stm32f4xx_it.c **** 
+  64:Core/Src/stm32f4xx_it.c **** /* USER CODE END EV */
+  65:Core/Src/stm32f4xx_it.c **** 
+  66:Core/Src/stm32f4xx_it.c **** /******************************************************************************/
+  67:Core/Src/stm32f4xx_it.c **** /*           Cortex-M4 Processor Interruption and Exception Handlers          */
+  68:Core/Src/stm32f4xx_it.c **** /******************************************************************************/
+  69:Core/Src/stm32f4xx_it.c **** /**
+  70:Core/Src/stm32f4xx_it.c ****   * @brief This function handles Non maskable interrupt.
+  71:Core/Src/stm32f4xx_it.c ****   */
+  72:Core/Src/stm32f4xx_it.c **** void NMI_Handler(void)
+  73:Core/Src/stm32f4xx_it.c **** {
+  29              		.loc 1 73 1 view -0
+  30              		.cfi_startproc
+  31              		@ Volatile: function does not return.
+  32              		@ args = 0, pretend = 0, frame = 0
+  33              		@ frame_needed = 0, uses_anonymous_args = 0
+  34 0000 08B5     		push	{r3, lr}
+  35              	.LCFI0:
+  36              		.cfi_def_cfa_offset 8
+  37              		.cfi_offset 3, -8
+  38              		.cfi_offset 14, -4
+  74:Core/Src/stm32f4xx_it.c ****   /* USER CODE BEGIN NonMaskableInt_IRQn 0 */
+  75:Core/Src/stm32f4xx_it.c ****   Car_Stop();   /* HSE CSS 실패 등 NMI 시 모터 런어웨이 방지 (폴트 핸들러와 동�
+  39              		.loc 1 75 3 view .LVU1
+  40 0002 FFF7FEFF 		bl	Car_Stop
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccpRJOuV.s 			page 3
+
+
+  41              	.LVL0:
+  42              	.L2:
+  76:Core/Src/stm32f4xx_it.c ****   /* USER CODE END NonMaskableInt_IRQn 0 */
+  77:Core/Src/stm32f4xx_it.c ****   /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
+  78:Core/Src/stm32f4xx_it.c ****    while (1)
+  43              		.loc 1 78 4 view .LVU2
+  79:Core/Src/stm32f4xx_it.c ****   {
+  80:Core/Src/stm32f4xx_it.c ****   }
+  44              		.loc 1 80 3 view .LVU3
+  78:Core/Src/stm32f4xx_it.c ****   {
+  45              		.loc 1 78 10 view .LVU4
+  46 0006 FEE7     		b	.L2
+  47              		.cfi_endproc
+  48              	.LFE138:
+  50              		.section	.text.HardFault_Handler,"ax",%progbits
+  51              		.align	1
+  52              		.global	HardFault_Handler
+  53              		.syntax unified
+  54              		.thumb
+  55              		.thumb_func
+  57              	HardFault_Handler:
+  58              	.LFB139:
+  81:Core/Src/stm32f4xx_it.c ****   /* USER CODE END NonMaskableInt_IRQn 1 */
+  82:Core/Src/stm32f4xx_it.c **** }
+  83:Core/Src/stm32f4xx_it.c **** 
+  84:Core/Src/stm32f4xx_it.c **** /**
+  85:Core/Src/stm32f4xx_it.c ****   * @brief This function handles Hard fault interrupt.
+  86:Core/Src/stm32f4xx_it.c ****   */
+  87:Core/Src/stm32f4xx_it.c **** void HardFault_Handler(void)
+  88:Core/Src/stm32f4xx_it.c **** {
+  59              		.loc 1 88 1 view -0
+  60              		.cfi_startproc
+  61              		@ Volatile: function does not return.
+  62              		@ args = 0, pretend = 0, frame = 0
+  63              		@ frame_needed = 0, uses_anonymous_args = 0
+  64 0000 08B5     		push	{r3, lr}
+  65              	.LCFI1:
+  66              		.cfi_def_cfa_offset 8
+  67              		.cfi_offset 3, -8
+  68              		.cfi_offset 14, -4
+  89:Core/Src/stm32f4xx_it.c ****   /* USER CODE BEGIN HardFault_IRQn 0 */
+  90:Core/Src/stm32f4xx_it.c ****   Car_Stop();   /* 폴트 시 마지막 PWM/방향 유지로 인한 차량 런어웨이 방지 */
+  69              		.loc 1 90 3 view .LVU6
+  70 0002 FFF7FEFF 		bl	Car_Stop
+  71              	.LVL1:
+  72              	.L5:
+  91:Core/Src/stm32f4xx_it.c ****   /* USER CODE END HardFault_IRQn 0 */
+  92:Core/Src/stm32f4xx_it.c ****   while (1)
+  73              		.loc 1 92 3 view .LVU7
+  93:Core/Src/stm32f4xx_it.c ****   {
+  94:Core/Src/stm32f4xx_it.c ****     /* USER CODE BEGIN W1_HardFault_IRQn 0 */
+  95:Core/Src/stm32f4xx_it.c ****     /* USER CODE END W1_HardFault_IRQn 0 */
+  96:Core/Src/stm32f4xx_it.c ****   }
+  74              		.loc 1 96 3 view .LVU8
+  92:Core/Src/stm32f4xx_it.c ****   {
+  75              		.loc 1 92 9 view .LVU9
+  76 0006 FEE7     		b	.L5
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccpRJOuV.s 			page 4
+
+
+  77              		.cfi_endproc
+  78              	.LFE139:
+  80              		.section	.text.MemManage_Handler,"ax",%progbits
+  81              		.align	1
+  82              		.global	MemManage_Handler
+  83              		.syntax unified
+  84              		.thumb
+  85              		.thumb_func
+  87              	MemManage_Handler:
+  88              	.LFB140:
+  97:Core/Src/stm32f4xx_it.c **** }
+  98:Core/Src/stm32f4xx_it.c **** 
+  99:Core/Src/stm32f4xx_it.c **** /**
+ 100:Core/Src/stm32f4xx_it.c ****   * @brief This function handles Memory management fault.
+ 101:Core/Src/stm32f4xx_it.c ****   */
+ 102:Core/Src/stm32f4xx_it.c **** void MemManage_Handler(void)
+ 103:Core/Src/stm32f4xx_it.c **** {
+  89              		.loc 1 103 1 view -0
+  90              		.cfi_startproc
+  91              		@ Volatile: function does not return.
+  92              		@ args = 0, pretend = 0, frame = 0
+  93              		@ frame_needed = 0, uses_anonymous_args = 0
+  94 0000 08B5     		push	{r3, lr}
+  95              	.LCFI2:
+  96              		.cfi_def_cfa_offset 8
+  97              		.cfi_offset 3, -8
+  98              		.cfi_offset 14, -4
+ 104:Core/Src/stm32f4xx_it.c ****   /* USER CODE BEGIN MemoryManagement_IRQn 0 */
+ 105:Core/Src/stm32f4xx_it.c ****   Car_Stop();   /* 폴트 시 차량 런어웨이 방지 */
+  99              		.loc 1 105 3 view .LVU11
+ 100 0002 FFF7FEFF 		bl	Car_Stop
+ 101              	.LVL2:
+ 102              	.L8:
+ 106:Core/Src/stm32f4xx_it.c ****   /* USER CODE END MemoryManagement_IRQn 0 */
+ 107:Core/Src/stm32f4xx_it.c ****   while (1)
+ 103              		.loc 1 107 3 view .LVU12
+ 108:Core/Src/stm32f4xx_it.c ****   {
+ 109:Core/Src/stm32f4xx_it.c ****     /* USER CODE BEGIN W1_MemoryManagement_IRQn 0 */
+ 110:Core/Src/stm32f4xx_it.c ****     /* USER CODE END W1_MemoryManagement_IRQn 0 */
+ 111:Core/Src/stm32f4xx_it.c ****   }
+ 104              		.loc 1 111 3 view .LVU13
+ 107:Core/Src/stm32f4xx_it.c ****   {
+ 105              		.loc 1 107 9 view .LVU14
+ 106 0006 FEE7     		b	.L8
+ 107              		.cfi_endproc
+ 108              	.LFE140:
+ 110              		.section	.text.BusFault_Handler,"ax",%progbits
+ 111              		.align	1
+ 112              		.global	BusFault_Handler
+ 113              		.syntax unified
+ 114              		.thumb
+ 115              		.thumb_func
+ 117              	BusFault_Handler:
+ 118              	.LFB141:
+ 112:Core/Src/stm32f4xx_it.c **** }
+ 113:Core/Src/stm32f4xx_it.c **** 
+ 114:Core/Src/stm32f4xx_it.c **** /**
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccpRJOuV.s 			page 5
+
+
+ 115:Core/Src/stm32f4xx_it.c ****   * @brief This function handles Pre-fetch fault, memory access fault.
+ 116:Core/Src/stm32f4xx_it.c ****   */
+ 117:Core/Src/stm32f4xx_it.c **** void BusFault_Handler(void)
+ 118:Core/Src/stm32f4xx_it.c **** {
+ 119              		.loc 1 118 1 view -0
+ 120              		.cfi_startproc
+ 121              		@ Volatile: function does not return.
+ 122              		@ args = 0, pretend = 0, frame = 0
+ 123              		@ frame_needed = 0, uses_anonymous_args = 0
+ 124 0000 08B5     		push	{r3, lr}
+ 125              	.LCFI3:
+ 126              		.cfi_def_cfa_offset 8
+ 127              		.cfi_offset 3, -8
+ 128              		.cfi_offset 14, -4
+ 119:Core/Src/stm32f4xx_it.c ****   /* USER CODE BEGIN BusFault_IRQn 0 */
+ 120:Core/Src/stm32f4xx_it.c ****   Car_Stop();   /* 폴트 시 차량 런어웨이 방지 */
+ 129              		.loc 1 120 3 view .LVU16
+ 130 0002 FFF7FEFF 		bl	Car_Stop
+ 131              	.LVL3:
+ 132              	.L11:
+ 121:Core/Src/stm32f4xx_it.c ****   /* USER CODE END BusFault_IRQn 0 */
+ 122:Core/Src/stm32f4xx_it.c ****   while (1)
+ 133              		.loc 1 122 3 view .LVU17
+ 123:Core/Src/stm32f4xx_it.c ****   {
+ 124:Core/Src/stm32f4xx_it.c ****     /* USER CODE BEGIN W1_BusFault_IRQn 0 */
+ 125:Core/Src/stm32f4xx_it.c ****     /* USER CODE END W1_BusFault_IRQn 0 */
+ 126:Core/Src/stm32f4xx_it.c ****   }
+ 134              		.loc 1 126 3 view .LVU18
+ 122:Core/Src/stm32f4xx_it.c ****   {
+ 135              		.loc 1 122 9 view .LVU19
+ 136 0006 FEE7     		b	.L11
+ 137              		.cfi_endproc
+ 138              	.LFE141:
+ 140              		.section	.text.UsageFault_Handler,"ax",%progbits
+ 141              		.align	1
+ 142              		.global	UsageFault_Handler
+ 143              		.syntax unified
+ 144              		.thumb
+ 145              		.thumb_func
+ 147              	UsageFault_Handler:
+ 148              	.LFB142:
+ 127:Core/Src/stm32f4xx_it.c **** }
+ 128:Core/Src/stm32f4xx_it.c **** 
+ 129:Core/Src/stm32f4xx_it.c **** /**
+ 130:Core/Src/stm32f4xx_it.c ****   * @brief This function handles Undefined instruction or illegal state.
+ 131:Core/Src/stm32f4xx_it.c ****   */
+ 132:Core/Src/stm32f4xx_it.c **** void UsageFault_Handler(void)
+ 133:Core/Src/stm32f4xx_it.c **** {
+ 149              		.loc 1 133 1 view -0
+ 150              		.cfi_startproc
+ 151              		@ Volatile: function does not return.
+ 152              		@ args = 0, pretend = 0, frame = 0
+ 153              		@ frame_needed = 0, uses_anonymous_args = 0
+ 154 0000 08B5     		push	{r3, lr}
+ 155              	.LCFI4:
+ 156              		.cfi_def_cfa_offset 8
+ 157              		.cfi_offset 3, -8
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccpRJOuV.s 			page 6
+
+
+ 158              		.cfi_offset 14, -4
+ 134:Core/Src/stm32f4xx_it.c ****   /* USER CODE BEGIN UsageFault_IRQn 0 */
+ 135:Core/Src/stm32f4xx_it.c ****   Car_Stop();   /* 폴트 시 차량 런어웨이 방지 */
+ 159              		.loc 1 135 3 view .LVU21
+ 160 0002 FFF7FEFF 		bl	Car_Stop
+ 161              	.LVL4:
+ 162              	.L14:
+ 136:Core/Src/stm32f4xx_it.c ****   /* USER CODE END UsageFault_IRQn 0 */
+ 137:Core/Src/stm32f4xx_it.c ****   while (1)
+ 163              		.loc 1 137 3 view .LVU22
+ 138:Core/Src/stm32f4xx_it.c ****   {
+ 139:Core/Src/stm32f4xx_it.c ****     /* USER CODE BEGIN W1_UsageFault_IRQn 0 */
+ 140:Core/Src/stm32f4xx_it.c ****     /* USER CODE END W1_UsageFault_IRQn 0 */
+ 141:Core/Src/stm32f4xx_it.c ****   }
+ 164              		.loc 1 141 3 view .LVU23
+ 137:Core/Src/stm32f4xx_it.c ****   {
+ 165              		.loc 1 137 9 view .LVU24
+ 166 0006 FEE7     		b	.L14
+ 167              		.cfi_endproc
+ 168              	.LFE142:
+ 170              		.section	.text.DebugMon_Handler,"ax",%progbits
+ 171              		.align	1
+ 172              		.global	DebugMon_Handler
+ 173              		.syntax unified
+ 174              		.thumb
+ 175              		.thumb_func
+ 177              	DebugMon_Handler:
+ 178              	.LFB143:
+ 142:Core/Src/stm32f4xx_it.c **** }
+ 143:Core/Src/stm32f4xx_it.c **** 
+ 144:Core/Src/stm32f4xx_it.c **** /**
+ 145:Core/Src/stm32f4xx_it.c ****   * @brief This function handles Debug monitor.
+ 146:Core/Src/stm32f4xx_it.c ****   */
+ 147:Core/Src/stm32f4xx_it.c **** void DebugMon_Handler(void)
+ 148:Core/Src/stm32f4xx_it.c **** {
+ 179              		.loc 1 148 1 view -0
+ 180              		.cfi_startproc
+ 181              		@ args = 0, pretend = 0, frame = 0
+ 182              		@ frame_needed = 0, uses_anonymous_args = 0
+ 183              		@ link register save eliminated.
+ 149:Core/Src/stm32f4xx_it.c ****   /* USER CODE BEGIN DebugMonitor_IRQn 0 */
+ 150:Core/Src/stm32f4xx_it.c **** 
+ 151:Core/Src/stm32f4xx_it.c ****   /* USER CODE END DebugMonitor_IRQn 0 */
+ 152:Core/Src/stm32f4xx_it.c ****   /* USER CODE BEGIN DebugMonitor_IRQn 1 */
+ 153:Core/Src/stm32f4xx_it.c **** 
+ 154:Core/Src/stm32f4xx_it.c ****   /* USER CODE END DebugMonitor_IRQn 1 */
+ 155:Core/Src/stm32f4xx_it.c **** }
+ 184              		.loc 1 155 1 view .LVU26
+ 185 0000 7047     		bx	lr
+ 186              		.cfi_endproc
+ 187              	.LFE143:
+ 189              		.section	.text.SysTick_Handler,"ax",%progbits
+ 190              		.align	1
+ 191              		.global	SysTick_Handler
+ 192              		.syntax unified
+ 193              		.thumb
+ 194              		.thumb_func
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccpRJOuV.s 			page 7
+
+
+ 196              	SysTick_Handler:
+ 197              	.LFB144:
+ 156:Core/Src/stm32f4xx_it.c **** 
+ 157:Core/Src/stm32f4xx_it.c **** /**
+ 158:Core/Src/stm32f4xx_it.c ****   * @brief This function handles System tick timer.
+ 159:Core/Src/stm32f4xx_it.c ****   */
+ 160:Core/Src/stm32f4xx_it.c **** void SysTick_Handler(void)
+ 161:Core/Src/stm32f4xx_it.c **** {
+ 198              		.loc 1 161 1 view -0
+ 199              		.cfi_startproc
+ 200              		@ args = 0, pretend = 0, frame = 0
+ 201              		@ frame_needed = 0, uses_anonymous_args = 0
+ 202 0000 08B5     		push	{r3, lr}
+ 203              	.LCFI5:
+ 204              		.cfi_def_cfa_offset 8
+ 205              		.cfi_offset 3, -8
+ 206              		.cfi_offset 14, -4
+ 162:Core/Src/stm32f4xx_it.c ****   /* USER CODE BEGIN SysTick_IRQn 0 */
+ 163:Core/Src/stm32f4xx_it.c **** 
+ 164:Core/Src/stm32f4xx_it.c ****   /* USER CODE END SysTick_IRQn 0 */
+ 165:Core/Src/stm32f4xx_it.c ****   HAL_IncTick();
+ 207              		.loc 1 165 3 view .LVU28
+ 208 0002 FFF7FEFF 		bl	HAL_IncTick
+ 209              	.LVL5:
+ 166:Core/Src/stm32f4xx_it.c **** #if (INCLUDE_xTaskGetSchedulerState == 1 )
+ 167:Core/Src/stm32f4xx_it.c ****   if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED)
+ 210              		.loc 1 167 3 view .LVU29
+ 211              		.loc 1 167 7 is_stmt 0 view .LVU30
+ 212 0006 FFF7FEFF 		bl	xTaskGetSchedulerState
+ 213              	.LVL6:
+ 214              		.loc 1 167 6 discriminator 1 view .LVU31
+ 215 000a 0128     		cmp	r0, #1
+ 216 000c 00D1     		bne	.L20
+ 217              	.L17:
+ 168:Core/Src/stm32f4xx_it.c ****   {
+ 169:Core/Src/stm32f4xx_it.c **** #endif /* INCLUDE_xTaskGetSchedulerState */
+ 170:Core/Src/stm32f4xx_it.c ****   xPortSysTickHandler();
+ 171:Core/Src/stm32f4xx_it.c **** #if (INCLUDE_xTaskGetSchedulerState == 1 )
+ 172:Core/Src/stm32f4xx_it.c ****   }
+ 173:Core/Src/stm32f4xx_it.c **** #endif /* INCLUDE_xTaskGetSchedulerState */
+ 174:Core/Src/stm32f4xx_it.c ****   /* USER CODE BEGIN SysTick_IRQn 1 */
+ 175:Core/Src/stm32f4xx_it.c **** 
+ 176:Core/Src/stm32f4xx_it.c ****   /* USER CODE END SysTick_IRQn 1 */
+ 177:Core/Src/stm32f4xx_it.c **** }
+ 218              		.loc 1 177 1 view .LVU32
+ 219 000e 08BD     		pop	{r3, pc}
+ 220              	.L20:
+ 170:Core/Src/stm32f4xx_it.c **** #if (INCLUDE_xTaskGetSchedulerState == 1 )
+ 221              		.loc 1 170 3 is_stmt 1 view .LVU33
+ 222 0010 FFF7FEFF 		bl	xPortSysTickHandler
+ 223              	.LVL7:
+ 224              		.loc 1 177 1 is_stmt 0 view .LVU34
+ 225 0014 FBE7     		b	.L17
+ 226              		.cfi_endproc
+ 227              	.LFE144:
+ 229              		.section	.text.EXTI0_IRQHandler,"ax",%progbits
+ 230              		.align	1
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccpRJOuV.s 			page 8
+
+
+ 231              		.global	EXTI0_IRQHandler
+ 232              		.syntax unified
+ 233              		.thumb
+ 234              		.thumb_func
+ 236              	EXTI0_IRQHandler:
+ 237              	.LFB145:
+ 178:Core/Src/stm32f4xx_it.c **** 
+ 179:Core/Src/stm32f4xx_it.c **** /******************************************************************************/
+ 180:Core/Src/stm32f4xx_it.c **** /* STM32F4xx Peripheral Interrupt Handlers                                    */
+ 181:Core/Src/stm32f4xx_it.c **** /* Add here the Interrupt Handlers for the used peripherals.                  */
+ 182:Core/Src/stm32f4xx_it.c **** /* For the available peripheral interrupt handler names,                      */
+ 183:Core/Src/stm32f4xx_it.c **** /* please refer to the startup file (startup_stm32f4xx.s).                    */
+ 184:Core/Src/stm32f4xx_it.c **** /******************************************************************************/
+ 185:Core/Src/stm32f4xx_it.c **** 
+ 186:Core/Src/stm32f4xx_it.c **** /**
+ 187:Core/Src/stm32f4xx_it.c ****   * @brief This function handles EXTI line0 interrupt.
+ 188:Core/Src/stm32f4xx_it.c ****   */
+ 189:Core/Src/stm32f4xx_it.c **** void EXTI0_IRQHandler(void)
+ 190:Core/Src/stm32f4xx_it.c **** {
+ 238              		.loc 1 190 1 is_stmt 1 view -0
+ 239              		.cfi_startproc
+ 240              		@ args = 0, pretend = 0, frame = 0
+ 241              		@ frame_needed = 0, uses_anonymous_args = 0
+ 242 0000 08B5     		push	{r3, lr}
+ 243              	.LCFI6:
+ 244              		.cfi_def_cfa_offset 8
+ 245              		.cfi_offset 3, -8
+ 246              		.cfi_offset 14, -4
+ 191:Core/Src/stm32f4xx_it.c ****   /* USER CODE BEGIN EXTI0_IRQn 0 */
+ 192:Core/Src/stm32f4xx_it.c **** 
+ 193:Core/Src/stm32f4xx_it.c ****   /* USER CODE END EXTI0_IRQn 0 */
+ 194:Core/Src/stm32f4xx_it.c ****   HAL_GPIO_EXTI_IRQHandler(IMU_INT_Pin);
+ 247              		.loc 1 194 3 view .LVU36
+ 248 0002 0120     		movs	r0, #1
+ 249 0004 FFF7FEFF 		bl	HAL_GPIO_EXTI_IRQHandler
+ 250              	.LVL8:
+ 195:Core/Src/stm32f4xx_it.c ****   /* USER CODE BEGIN EXTI0_IRQn 1 */
+ 196:Core/Src/stm32f4xx_it.c **** 
+ 197:Core/Src/stm32f4xx_it.c ****   /* USER CODE END EXTI0_IRQn 1 */
+ 198:Core/Src/stm32f4xx_it.c **** }
+ 251              		.loc 1 198 1 is_stmt 0 view .LVU37
+ 252 0008 08BD     		pop	{r3, pc}
+ 253              		.cfi_endproc
+ 254              	.LFE145:
+ 256              		.section	.text.TIM3_IRQHandler,"ax",%progbits
+ 257              		.align	1
+ 258              		.global	TIM3_IRQHandler
+ 259              		.syntax unified
+ 260              		.thumb
+ 261              		.thumb_func
+ 263              	TIM3_IRQHandler:
+ 264              	.LFB146:
+ 199:Core/Src/stm32f4xx_it.c **** 
+ 200:Core/Src/stm32f4xx_it.c **** /**
+ 201:Core/Src/stm32f4xx_it.c ****   * @brief This function handles TIM3 global interrupt.
+ 202:Core/Src/stm32f4xx_it.c ****   */
+ 203:Core/Src/stm32f4xx_it.c **** void TIM3_IRQHandler(void)
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccpRJOuV.s 			page 9
+
+
+ 204:Core/Src/stm32f4xx_it.c **** {
+ 265              		.loc 1 204 1 is_stmt 1 view -0
+ 266              		.cfi_startproc
+ 267              		@ args = 0, pretend = 0, frame = 0
+ 268              		@ frame_needed = 0, uses_anonymous_args = 0
+ 269 0000 08B5     		push	{r3, lr}
+ 270              	.LCFI7:
+ 271              		.cfi_def_cfa_offset 8
+ 272              		.cfi_offset 3, -8
+ 273              		.cfi_offset 14, -4
+ 205:Core/Src/stm32f4xx_it.c ****   /* USER CODE BEGIN TIM3_IRQn 0 */
+ 206:Core/Src/stm32f4xx_it.c **** 
+ 207:Core/Src/stm32f4xx_it.c ****   /* USER CODE END TIM3_IRQn 0 */
+ 208:Core/Src/stm32f4xx_it.c ****   HAL_TIM_IRQHandler(&htim3);
+ 274              		.loc 1 208 3 view .LVU39
+ 275 0002 0248     		ldr	r0, .L25
+ 276 0004 FFF7FEFF 		bl	HAL_TIM_IRQHandler
+ 277              	.LVL9:
+ 209:Core/Src/stm32f4xx_it.c ****   /* USER CODE BEGIN TIM3_IRQn 1 */
+ 210:Core/Src/stm32f4xx_it.c **** 
+ 211:Core/Src/stm32f4xx_it.c ****   /* USER CODE END TIM3_IRQn 1 */
+ 212:Core/Src/stm32f4xx_it.c **** }
+ 278              		.loc 1 212 1 is_stmt 0 view .LVU40
+ 279 0008 08BD     		pop	{r3, pc}
+ 280              	.L26:
+ 281 000a 00BF     		.align	2
+ 282              	.L25:
+ 283 000c 00000000 		.word	htim3
+ 284              		.cfi_endproc
+ 285              	.LFE146:
+ 287              		.text
+ 288              	.Letext0:
+ 289              		.file 2 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
+ 290              		.file 3 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
+ 291              		.file 4 "Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f411xe.h"
+ 292              		.file 5 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_def.h"
+ 293              		.file 6 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_dma.h"
+ 294              		.file 7 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h"
+ 295              		.file 8 "Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F/portmacro.h"
+ 296              		.file 9 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_gpio.h"
+ 297              		.file 10 "Core/Inc/FreeRTOSConfig.h"
+ 298              		.file 11 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h"
+ 299              		.file 12 "Core/Inc/motor.h"
+ 300              		.file 13 "Middlewares/Third_Party/FreeRTOS/Source/include/task.h"
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccpRJOuV.s 			page 10
+
+
+DEFINED SYMBOLS
+                            *ABS*:00000000 stm32f4xx_it.c
+C:\Users\user\AppData\Local\Temp\ccpRJOuV.s:21     .text.NMI_Handler:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccpRJOuV.s:27     .text.NMI_Handler:00000000 NMI_Handler
+C:\Users\user\AppData\Local\Temp\ccpRJOuV.s:51     .text.HardFault_Handler:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccpRJOuV.s:57     .text.HardFault_Handler:00000000 HardFault_Handler
+C:\Users\user\AppData\Local\Temp\ccpRJOuV.s:81     .text.MemManage_Handler:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccpRJOuV.s:87     .text.MemManage_Handler:00000000 MemManage_Handler
+C:\Users\user\AppData\Local\Temp\ccpRJOuV.s:111    .text.BusFault_Handler:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccpRJOuV.s:117    .text.BusFault_Handler:00000000 BusFault_Handler
+C:\Users\user\AppData\Local\Temp\ccpRJOuV.s:141    .text.UsageFault_Handler:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccpRJOuV.s:147    .text.UsageFault_Handler:00000000 UsageFault_Handler
+C:\Users\user\AppData\Local\Temp\ccpRJOuV.s:171    .text.DebugMon_Handler:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccpRJOuV.s:177    .text.DebugMon_Handler:00000000 DebugMon_Handler
+C:\Users\user\AppData\Local\Temp\ccpRJOuV.s:190    .text.SysTick_Handler:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccpRJOuV.s:196    .text.SysTick_Handler:00000000 SysTick_Handler
+C:\Users\user\AppData\Local\Temp\ccpRJOuV.s:230    .text.EXTI0_IRQHandler:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccpRJOuV.s:236    .text.EXTI0_IRQHandler:00000000 EXTI0_IRQHandler
+C:\Users\user\AppData\Local\Temp\ccpRJOuV.s:257    .text.TIM3_IRQHandler:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccpRJOuV.s:263    .text.TIM3_IRQHandler:00000000 TIM3_IRQHandler
+C:\Users\user\AppData\Local\Temp\ccpRJOuV.s:283    .text.TIM3_IRQHandler:0000000c $d
+                           .group:00000000 wm4.0.3e3bd4fae48ed4285b9fe9ad79008a8e
+                           .group:00000000 wm4.stm32f4xx_hal_conf.h.25.0cc516ee5f8f6ec9d32a682fcd0191b7
+                           .group:00000000 wm4.stm32f4xx.h.38.63e3ea23bd63a94457417730025259b6
+                           .group:00000000 wm4.stm32f411xe.h.34.f2908321cbbda12187706c23063bbc28
+                           .group:00000000 wm4._newlib_version.h.4.0eb654b64686e2bd29646258853f6c22
+                           .group:00000000 wm4.features.h.33.d554620bb17bd3b714c3fb5c268772bc
+                           .group:00000000 wm4._default_types.h.15.247e5cd201eca3442cbf5404108c4935
+                           .group:00000000 wm4._intsup.h.10.48bafbb683905c4daa4565a85aeeb264
+                           .group:00000000 wm4._stdint.h.10.c24fa3af3bc1706662bb5593a907e841
+                           .group:00000000 wm4.stdint.h.23.d53047a68f4a85177f80b422d52785ed
+                           .group:00000000 wm4.cmsis_version.h.32.0ac195c83bb4537824e6ad1c47474b79
+                           .group:00000000 wm4.core_cm4.h.66.e4ff136c4a17abc46741866f64f8e729
+                           .group:00000000 wm4.cmsis_gcc.h.26.498d0ad17a45fc9ef20fdc01caf02259
+                           .group:00000000 wm4.core_cm4.h.174.62be9b4588d49bed18171771001331df
+                           .group:00000000 wm4.mpu_armv7.h.32.83326921a797fa9d6f70449916b4b839
+                           .group:00000000 wm4.stm32f411xe.h.636.37cf950cfbbaac9e193dbe2b79c3e749
+                           .group:00000000 wm4.stm32f4xx.h.195.a4b8bf80f37cc96981498656ffe5f588
+                           .group:00000000 wm4.stm32_hal_legacy.h.22.8b7d303dc46a0b7ac6d3edf19ce2608d
+                           .group:00000000 wm4.stddef.h.39.811583f327f35b0df7808fda70b062a0
+                           .group:00000000 wm4.stm32f4xx_hal_def.h.58.3cb484e92e5ccf2e55312a4714e27917
+                           .group:00000000 wm4.stm32f4xx_hal_rcc_ex.h.20.6bc7ed2ae7969e22afc815a811faa8ee
+                           .group:00000000 wm4.stm32f4xx_hal_rcc.h.106.0887cf5d985ae88e345b0aed0ceb4729
+                           .group:00000000 wm4.stm32f4xx_hal_gpio.h.21.22da6a14b6049d6ac156577be74df1d7
+                           .group:00000000 wm4.stm32f4xx_hal_gpio_ex.h.21.985b1076fbcb2c3eb806d02fd771d120
+                           .group:00000000 wm4.stm32f4xx_hal_gpio.h.254.d7e07832f748fe8bcb575db0b8373592
+                           .group:00000000 wm4.stm32f4xx_hal_exti.h.21.2ccac119fb1c64adeb682c3dcad90241
+                           .group:00000000 wm4.stm32f4xx_hal_dma.h.21.8e4b1421c914345c23be719e5e528779
+                           .group:00000000 wm4.stm32f4xx_hal_dma.h.720.ac2d7eef74792e4026acc4d2923c5da4
+                           .group:00000000 wm4.stm32f4xx_hal_cortex.h.20.03673e4f79386680bf73ba399c19306b
+                           .group:00000000 wm4.stm32f4xx_hal_flash.h.20.2f1e0d1b7010b3a81a7980aaf712e7e5
+                           .group:00000000 wm4.stm32f4xx_hal_flash_ex.h.20.2abe4a01ce8028804a922735defa62fd
+                           .group:00000000 wm4.stm32f4xx_hal_flash.h.361.23bc19b9eac79b0956d913651841ede8
+                           .group:00000000 wm4.stm32f4xx_hal_i2c.h.21.147e96a27b1f7b1f2f8ee22132703ee3
+                           .group:00000000 wm4.stm32f4xx_hal_i2c_ex.h.21.951ef5bfa13cf131d2015c338e82e461
+                           .group:00000000 wm4.stm32f4xx_hal_i2c.h.647.ade9c3447780b1cc0ece02f0ce83aedc
+                           .group:00000000 wm4.stm32f4xx_hal_iwdg.h.21.6227ccfbb99238d6637d6fd22341e211
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccpRJOuV.s 			page 11
+
+
+                           .group:00000000 wm4.stm32f4xx_hal_pwr.h.20.1905a0783a9c83adefd7df0c4b501e40
+                           .group:00000000 wm4.stm32f4xx_hal_pwr_ex.h.20.68994c4c23e76d9aeabea12988d5ec3f
+                           .group:00000000 wm4.stm32f4xx_hal_pwr.h.338.debc0a4a62ba54688e63ab53dd99c4ea
+                           .group:00000000 wm4.stm32f4xx_hal_tim.h.21.c31cbc03c25f07a932427770396c59d2
+                           .group:00000000 wm4.stm32f4xx_hal_tim_ex.h.21.918fa7fcd405cc3ba11632ed1d07a240
+                           .group:00000000 wm4.stm32f4xx_hal.h.71.02372bc31d47d29d3f67fbfe1429649e
+                           .group:00000000 wm4.main.h.60.a9fbcfa98a33cea9e599fe3b3b28e08c
+                           .group:00000000 wm4.FreeRTOSConfig.h.32.ee5fbadc0004c265a3895b3d7cbc1e86
+                           .group:00000000 wm4.projdefs.h.29.3472c8470d131a5f474bc7437ea94609
+                           .group:00000000 wm4.portmacro.h.30.ebb5f3ce711e1dad21b3172c9bc8e19f
+                           .group:00000000 wm4.portable.h.64.742f2ce568820e866a7b541b4c77966f
+                           .group:00000000 wm4.mpu_wrappers.h.29.4f9aea82ee68d943d141825e5294de63
+                           .group:00000000 wm4.newlib.h.7.decd5b9657e2c5df625d9eac6e10520c
+                           .group:00000000 wm4.ieeefp.h.77.61a77db5804869b1dadd307a77cf78c9
+                           .group:00000000 wm4.config.h.224.10ee1ad185d877c6e334e6581faab44d
+                           .group:00000000 wm4._ansi.h.31.de524f58584151836e90d8620a16f8e8
+                           .group:00000000 wm4.cdefs.h.49.56fd742369e655e7e8a7e365e706e208
+                           .group:00000000 wm4._types.h.20.dd0d04dca3800a0d2a6129b87f3adbb2
+                           .group:00000000 wm4.stddef.h.173.4903093a50a8482cb062b176ea61fac3
+                           .group:00000000 wm4._types.h.127.3bdfe3ff8ea2d0985b03d9cbe93480e3
+                           .group:00000000 wm4.reent.h.18.25503cdc8b7e55dd0d6ea7b3e5af7a03
+                           .group:00000000 wm4.lock.h.2.1461d1fff82dffe8bfddc23307f6484f
+                           .group:00000000 wm4.reent.h.78.6d702f69a6d6435d2dbe915b10150b1a
+                           .group:00000000 wm4.reent.h.96.88022c5a22979c33a20a5d76964119ed
+                           .group:00000000 wm4.stddef.h.173.1cea4f16a943c8e875db6791959c3141
+                           .group:00000000 wm4.FreeRTOS.h.136.a17c2bf78722c1d7b86ba8d45e5b5f29
+                           .group:00000000 wm4.list.h.61.5c5a38f6bc6687eed6d893e57dabd8e6
+                           .group:00000000 wm4.task.h.46.9fb92b2c1a30a52e436f6063552b709b
+
+UNDEFINED SYMBOLS
+Car_Stop
+HAL_IncTick
+xTaskGetSchedulerState
+xPortSysTickHandler
+HAL_GPIO_EXTI_IRQHandler
+HAL_TIM_IRQHandler
+htim3

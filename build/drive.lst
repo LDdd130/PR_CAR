@@ -1,0 +1,3169 @@
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 1
+
+
+   1              		.cpu cortex-m4
+   2              		.arch armv7e-m
+   3              		.fpu fpv4-sp-d16
+   4              		.eabi_attribute 27, 1
+   5              		.eabi_attribute 28, 1
+   6              		.eabi_attribute 20, 1
+   7              		.eabi_attribute 21, 1
+   8              		.eabi_attribute 23, 3
+   9              		.eabi_attribute 24, 1
+  10              		.eabi_attribute 25, 1
+  11              		.eabi_attribute 26, 1
+  12              		.eabi_attribute 30, 1
+  13              		.eabi_attribute 34, 1
+  14              		.eabi_attribute 18, 4
+  15              		.file	"drive.c"
+  16              		.text
+  17              	.Ltext0:
+  18              		.cfi_sections	.debug_frame
+  19              		.file 1 "Core/Src/drive.c"
+  20              		.section	.text.wrap180,"ax",%progbits
+  21              		.align	1
+  22              		.syntax unified
+  23              		.thumb
+  24              		.thumb_func
+  26              	wrap180:
+  27              	.LVL0:
+  28              	.LFB134:
+   1:Core/Src/drive.c **** /* USER CODE BEGIN Header */
+   2:Core/Src/drive.c **** /**
+   3:Core/Src/drive.c ****   ******************************************************************************
+   4:Core/Src/drive.c ****   * @file    drive.c
+   5:Core/Src/drive.c ****   * @brief   주행 제어기 구현 — 비블로킹 5-상태 머신 + 복도 센터링 조향
+   6:Core/Src/drive.c ****   *
+   7:Core/Src/drive.c ****   *          설계 원칙 (벽 박힘 근절):
+   8:Core/Src/drive.c ****   *          - HAL_Delay 없음: 모든 유지시간은 HAL_GetTick 타임스탬프 → 매 루프 
+   9:Core/Src/drive.c ****   *          - 회피 중 명령된 전진 이동 0: arc 폐지, SPIN(제자리 회전) 전용
+  10:Core/Src/drive.c ****   *            (곡선 회피는 CRUISE의 비례 조향이 담당)
+  11:Core/Src/drive.c ****   *          - 모든 회전/정지에 피드백: 능동 제동(BRAKE), IMU 회전각 탈출 게이
+  12:Core/Src/drive.c ****   *            스턱 감지 — 시간×듀티 개루프 없음 → 배터리 sag 면역
+  13:Core/Src/drive.c ****   *          - IMU 사망 시 전 기능이 거리-only로 자동 강등 (주행 중단 없음)
+  14:Core/Src/drive.c ****   ******************************************************************************
+  15:Core/Src/drive.c ****   */
+  16:Core/Src/drive.c **** /* USER CODE END Header */
+  17:Core/Src/drive.c **** 
+  18:Core/Src/drive.c **** #include "drive.h"
+  19:Core/Src/drive.c **** #include "motor.h"
+  20:Core/Src/drive.c **** #include <math.h>
+  21:Core/Src/drive.c **** 
+  22:Core/Src/drive.c **** /* ---- 디버그 미러 (SWD Live Expressions 등록 대상) ---- */
+  23:Core/Src/drive.c **** volatile uint8_t dbg_state      = 0;     /* DriveState (0 CRUISE / 1 BRAKE / 2 SPIN / 3 REVERSE / 4
+  24:Core/Src/drive.c ****                                             구 dbg_avoiding 대체: 0이 아니면 회피 계열 *
+  25:Core/Src/drive.c **** volatile uint8_t dbg_steer_mode = 0;     /* 0 양벽센터링 / 1 한벽(좌) / 2 한벽(우) / 3 h
+  26:Core/Src/drive.c **** volatile float   dbg_steer      = 0.0f;  /* 조향량 u [%duty], + = 좌조향 */
+  27:Core/Src/drive.c **** volatile int16_t dbg_duty_l     = 0;     /* CRUISE 좌/우 바퀴 듀티 (데드밴드 (0,30) 침�
+  28:Core/Src/drive.c **** volatile int16_t dbg_duty_r     = 0;
+  29:Core/Src/drive.c **** volatile float   dbg_hdg_err    = 0.0f;  /* heading-hold 오차 [deg] */
+  30:Core/Src/drive.c **** volatile float   dbg_yaw_rate   = 0.0f;  /* CRUISE yaw-rate [deg/s], CW(우)=+. 직진 시 0 근처
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 2
+
+
+  31:Core/Src/drive.c **** volatile float   dbg_spin_deg   = 0.0f;  /* SPIN 진입 후 누적 회전각 [deg] (TURN_MIN_DEG �
+  32:Core/Src/drive.c **** volatile uint8_t dbg_turn_dir   = 0;     /* 래치 회전 방향 0=좌 1=우 (구 main.c 미러 승
+  33:Core/Src/drive.c **** volatile uint8_t dbg_rev_cnt    = 0;     /* 직진 복귀 없이 누적된 후진 chunk 수 */
+  34:Core/Src/drive.c **** 
+  35:Core/Src/drive.c **** /* ---- 조향 모드 ---- */
+  36:Core/Src/drive.c **** #define SM_BOTH   0   /* 양벽 센터링: u = KP_WALL × (l − r) */
+  37:Core/Src/drive.c **** #define SM_LEFT   1   /* 좌벽만: 진입 시 거리 래치 후 등거리 유지 */
+  38:Core/Src/drive.c **** #define SM_RIGHT  2   /* 우벽만 */
+  39:Core/Src/drive.c **** #define SM_HDG    3   /* 무벽: IMU heading-hold */
+  40:Core/Src/drive.c **** #define SM_OPEN   4   /* 무벽 + IMU 사망: open-loop 직진 (레거시 거동) */
+  41:Core/Src/drive.c **** #define SM_INIT   255 /* CRUISE 진입 직후 — 첫 루프에 모드 래치 강제 */
+  42:Core/Src/drive.c **** 
+  43:Core/Src/drive.c **** /* ---- Narrow-course centering control ---- */
+  44:Core/Src/drive.c **** #define CENTER_MA_WIN              5U      /* Moving average window: 3~5 recommended */
+  45:Core/Src/drive.c **** #define CENTER_DEADZONE_CM         2.0f    /* Force neutral steering inside +/-2 cm */
+  46:Core/Src/drive.c **** #define CENTER_KP                  0.80f   /* Steering P gain [%duty / cm] */
+  47:Core/Src/drive.c **** #define CENTER_KD                  0.035f  /* Steering D gain [%duty / (cm/s)] */
+  48:Core/Src/drive.c **** #define CENTER_STEER_MAX_PCT       10.0f   /* Max differential steering command */
+  49:Core/Src/drive.c **** #define CENTER_BASE_SPEED_PCT      32.0f   /* Straight driving speed */
+  50:Core/Src/drive.c **** #define CENTER_MIN_SPEED_PCT       24.0f   /* Speed at max steering command */
+  51:Core/Src/drive.c **** #define CENTER_SENSOR_MAX_CM       80U     /* Clamp side sensor spikes */
+  52:Core/Src/drive.c **** 
+  53:Core/Src/drive.c **** #if (CENTER_MA_WIN < 3U) || (CENTER_MA_WIN > 5U)
+  54:Core/Src/drive.c **** #error "CENTER_MA_WIN must be 3~5"
+  55:Core/Src/drive.c **** #endif
+  56:Core/Src/drive.c **** 
+  57:Core/Src/drive.c **** /* ---- 내부 상태 ---- */
+  58:Core/Src/drive.c **** /* st만 volatile: MotorTask가 쓰고 SensorTask가 Drive_GetState()로 크로스-태스크 읽기
+  59:Core/Src/drive.c ****  * (선제 제동 게이트). 단일 워드라 원자적 — 가시성만 보장하면 됨 */
+  60:Core/Src/drive.c **** static volatile DriveState st = DS_CRUISE;
+  61:Core/Src/drive.c **** static uint32_t   t_state  = 0;    /* 현재 상태 진입 시각 */
+  62:Core/Src/drive.c **** static uint8_t    turn_dir = 0;    /* 0=좌 1=우 */
+  63:Core/Src/drive.c **** static uint8_t    swap_cnt = 0;    /* 이번 SPIN에서 방향 flip 횟수 */
+  64:Core/Src/drive.c **** static uint8_t    rev_cnt  = 0;    /* CRUISE 복귀 없이 누적된 후진 chunk (CRUISE 진입 �
+  65:Core/Src/drive.c **** static uint8_t    clear_cnt = 0;   /* 정면 트임 연속(유효 측정) 카운트 */
+  66:Core/Src/drive.c **** static float      h_entry  = 0.0f; /* SPIN 진입 heading (회전각 게이트/미러 기준) */
+  67:Core/Src/drive.c **** static float      h_ref    = 0.0f; /* heading-hold 기준 */
+  68:Core/Src/drive.c **** static float      h_stuck  = 0.0f; /* 스턱 감지 윈도 시작 heading */
+  69:Core/Src/drive.c **** static uint32_t   t_stuck  = 0;
+  70:Core/Src/drive.c **** static float      steer_u  = 0.0f; /* slew 연속성용 직전 조향량 */
+  71:Core/Src/drive.c **** static float      side_set = 0.0f; /* 한벽 모드 목표거리 */
+  72:Core/Src/drive.c **** static uint8_t    steer_mode = SM_INIT;
+  73:Core/Src/drive.c **** static float      h_prev   = 0.0f; /* yaw-rate D항: 직전 heading */
+  74:Core/Src/drive.c **** static uint32_t   t_prev   = 0;    /* yaw-rate D항: 직전 시각 */
+  75:Core/Src/drive.c **** 
+  76:Core/Src/drive.c **** /* 임의 각도차 → (-180, 180]. 입력은 0~360 값들의 차라 루프는 1~2회로 종료 */
+  77:Core/Src/drive.c **** static float wrap180(float a)
+  78:Core/Src/drive.c **** {
+  29              		.loc 1 78 1 view -0
+  30              		.cfi_startproc
+  31              		@ args = 0, pretend = 0, frame = 0
+  32              		@ frame_needed = 0, uses_anonymous_args = 0
+  33              		@ link register save eliminated.
+  79:Core/Src/drive.c ****     while (a >   180.0f) a -= 360.0f;
+  34              		.loc 1 79 5 view .LVU1
+  35              		.loc 1 79 11 is_stmt 0 view .LVU2
+  36 0000 03E0     		b	.L2
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 3
+
+
+  37              	.L3:
+  38              		.loc 1 79 26 is_stmt 1 discriminator 2 view .LVU3
+  39              		.loc 1 79 28 is_stmt 0 discriminator 2 view .LVU4
+  40 0002 DFED0C7A 		vldr.32	s15, .L6
+  41 0006 30EE670A 		vsub.f32	s0, s0, s15
+  42              	.LVL1:
+  43              	.L2:
+  44              		.loc 1 79 14 is_stmt 1 discriminator 1 view .LVU5
+  45 000a DFED0B7A 		vldr.32	s15, .L6+4
+  46 000e B4EEE70A 		vcmpe.f32	s0, s15
+  47 0012 F1EE10FA 		vmrs	APSR_nzcv, FPSCR
+  48 0016 F4DC     		bgt	.L3
+  49 0018 03E0     		b	.L4
+  50              	.L5:
+  80:Core/Src/drive.c ****     while (a <= -180.0f) a += 360.0f;
+  51              		.loc 1 80 26 discriminator 2 view .LVU6
+  52              		.loc 1 80 28 is_stmt 0 discriminator 2 view .LVU7
+  53 001a DFED067A 		vldr.32	s15, .L6
+  54 001e 30EE270A 		vadd.f32	s0, s0, s15
+  55              	.LVL2:
+  56              	.L4:
+  57              		.loc 1 80 14 is_stmt 1 discriminator 1 view .LVU8
+  58 0022 DFED067A 		vldr.32	s15, .L6+8
+  59 0026 B4EEE70A 		vcmpe.f32	s0, s15
+  60 002a F1EE10FA 		vmrs	APSR_nzcv, FPSCR
+  61 002e F4D9     		bls	.L5
+  81:Core/Src/drive.c ****     return a;
+  62              		.loc 1 81 5 view .LVU9
+  82:Core/Src/drive.c **** }
+  63              		.loc 1 82 1 is_stmt 0 view .LVU10
+  64 0030 7047     		bx	lr
+  65              	.L7:
+  66 0032 00BF     		.align	2
+  67              	.L6:
+  68 0034 0000B443 		.word	1135869952
+  69 0038 00003443 		.word	1127481344
+  70 003c 000034C3 		.word	-1020002304
+  71              		.cfi_endproc
+  72              	.LFE134:
+  74              		.section	.text.clampf,"ax",%progbits
+  75              		.align	1
+  76              		.syntax unified
+  77              		.thumb
+  78              		.thumb_func
+  80              	clampf:
+  81              	.LVL3:
+  82              	.LFB135:
+  83:Core/Src/drive.c **** 
+  84:Core/Src/drive.c **** static float clampf(float v, float lo, float hi)
+  85:Core/Src/drive.c **** {
+  83              		.loc 1 85 1 is_stmt 1 view -0
+  84              		.cfi_startproc
+  85              		@ args = 0, pretend = 0, frame = 0
+  86              		@ frame_needed = 0, uses_anonymous_args = 0
+  87              		@ link register save eliminated.
+  86:Core/Src/drive.c ****     if (v < lo) return lo;
+  88              		.loc 1 86 5 view .LVU12
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 4
+
+
+  89              		.loc 1 86 8 is_stmt 0 view .LVU13
+  90 0000 B4EEE00A 		vcmpe.f32	s0, s1
+  91 0004 F1EE10FA 		vmrs	APSR_nzcv, FPSCR
+  92 0008 05D4     		bmi	.L10
+  87:Core/Src/drive.c ****     if (v > hi) return hi;
+  93              		.loc 1 87 5 is_stmt 1 view .LVU14
+  94              		.loc 1 87 8 is_stmt 0 view .LVU15
+  95 000a B4EEC10A 		vcmpe.f32	s0, s2
+  96 000e F1EE10FA 		vmrs	APSR_nzcv, FPSCR
+  97 0012 03DC     		bgt	.L11
+  98 0014 7047     		bx	lr
+  99              	.L10:
+  86:Core/Src/drive.c ****     if (v < lo) return lo;
+ 100              		.loc 1 86 24 discriminator 1 view .LVU16
+ 101 0016 B0EE600A 		vmov.f32	s0, s1
+ 102              	.LVL4:
+  86:Core/Src/drive.c ****     if (v < lo) return lo;
+ 103              		.loc 1 86 24 discriminator 1 view .LVU17
+ 104 001a 7047     		bx	lr
+ 105              	.LVL5:
+ 106              	.L11:
+ 107              		.loc 1 87 24 discriminator 1 view .LVU18
+ 108 001c B0EE410A 		vmov.f32	s0, s2
+ 109              	.LVL6:
+  88:Core/Src/drive.c ****     return v;
+  89:Core/Src/drive.c **** }
+ 110              		.loc 1 89 1 view .LVU19
+ 111 0020 7047     		bx	lr
+ 112              		.cfi_endproc
+ 113              	.LFE135:
+ 115              		.section	.text.center_sanitize_cm,"ax",%progbits
+ 116              		.align	1
+ 117              		.syntax unified
+ 118              		.thumb
+ 119              		.thumb_func
+ 121              	center_sanitize_cm:
+ 122              	.LVL7:
+ 123              	.LFB136:
+  90:Core/Src/drive.c **** 
+  91:Core/Src/drive.c **** static uint16_t center_sanitize_cm(uint16_t cm)
+  92:Core/Src/drive.c **** {
+ 124              		.loc 1 92 1 is_stmt 1 view -0
+ 125              		.cfi_startproc
+ 126              		@ args = 0, pretend = 0, frame = 0
+ 127              		@ frame_needed = 0, uses_anonymous_args = 0
+ 128              		@ link register save eliminated.
+  93:Core/Src/drive.c ****     if (cm == 0U) return CENTER_SENSOR_MAX_CM;
+ 129              		.loc 1 93 5 view .LVU21
+ 130              		.loc 1 93 8 is_stmt 0 view .LVU22
+ 131 0000 10B1     		cbz	r0, .L14
+  94:Core/Src/drive.c ****     if (cm > CENTER_SENSOR_MAX_CM) return CENTER_SENSOR_MAX_CM;
+ 132              		.loc 1 94 5 is_stmt 1 view .LVU23
+ 133              		.loc 1 94 8 is_stmt 0 view .LVU24
+ 134 0002 5028     		cmp	r0, #80
+ 135 0004 02D8     		bhi	.L15
+ 136 0006 7047     		bx	lr
+ 137              	.L14:
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 5
+
+
+  93:Core/Src/drive.c ****     if (cm == 0U) return CENTER_SENSOR_MAX_CM;
+ 138              		.loc 1 93 26 discriminator 1 view .LVU25
+ 139 0008 5020     		movs	r0, #80
+ 140              	.LVL8:
+  93:Core/Src/drive.c ****     if (cm == 0U) return CENTER_SENSOR_MAX_CM;
+ 141              		.loc 1 93 26 discriminator 1 view .LVU26
+ 142 000a 7047     		bx	lr
+ 143              	.LVL9:
+ 144              	.L15:
+ 145              		.loc 1 94 43 discriminator 1 view .LVU27
+ 146 000c 5020     		movs	r0, #80
+ 147              	.LVL10:
+  95:Core/Src/drive.c ****     return cm;
+  96:Core/Src/drive.c **** }
+ 148              		.loc 1 96 1 view .LVU28
+ 149 000e 7047     		bx	lr
+ 150              		.cfi_endproc
+ 151              	.LFE136:
+ 153              		.section	.text.center_avg_u16,"ax",%progbits
+ 154              		.align	1
+ 155              		.syntax unified
+ 156              		.thumb
+ 157              		.thumb_func
+ 159              	center_avg_u16:
+ 160              	.LVL11:
+ 161              	.LFB137:
+  97:Core/Src/drive.c **** 
+  98:Core/Src/drive.c **** static float center_avg_u16(const uint16_t *buf, uint8_t n)
+  99:Core/Src/drive.c **** {
+ 162              		.loc 1 99 1 is_stmt 1 view -0
+ 163              		.cfi_startproc
+ 164              		@ args = 0, pretend = 0, frame = 0
+ 165              		@ frame_needed = 0, uses_anonymous_args = 0
+ 166              		@ link register save eliminated.
+ 100:Core/Src/drive.c ****     uint32_t sum = 0U;
+ 167              		.loc 1 100 5 view .LVU30
+ 101:Core/Src/drive.c **** 
+ 102:Core/Src/drive.c ****     for (uint8_t i = 0U; i < n; i++)
+ 168              		.loc 1 102 5 view .LVU31
+ 169              	.LBB2:
+ 170              		.loc 1 102 10 view .LVU32
+ 171              		.loc 1 102 18 is_stmt 0 view .LVU33
+ 172 0000 0023     		movs	r3, #0
+ 173              	.LBE2:
+ 100:Core/Src/drive.c ****     uint32_t sum = 0U;
+ 174              		.loc 1 100 14 view .LVU34
+ 175 0002 1A46     		mov	r2, r3
+ 176              	.LBB3:
+ 177              		.loc 1 102 5 view .LVU35
+ 178 0004 04E0     		b	.L17
+ 179              	.LVL12:
+ 180              	.L18:
+ 103:Core/Src/drive.c ****         sum += buf[i];
+ 181              		.loc 1 103 9 is_stmt 1 view .LVU36
+ 182              		.loc 1 103 19 is_stmt 0 view .LVU37
+ 183 0006 30F813C0 		ldrh	ip, [r0, r3, lsl #1]
+ 184              		.loc 1 103 13 view .LVU38
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 6
+
+
+ 185 000a 6244     		add	r2, r2, ip
+ 186              	.LVL13:
+ 102:Core/Src/drive.c ****         sum += buf[i];
+ 187              		.loc 1 102 34 is_stmt 1 discriminator 3 view .LVU39
+ 188 000c 0133     		adds	r3, r3, #1
+ 189              	.LVL14:
+ 102:Core/Src/drive.c ****         sum += buf[i];
+ 190              		.loc 1 102 34 is_stmt 0 discriminator 3 view .LVU40
+ 191 000e DBB2     		uxtb	r3, r3
+ 192              	.LVL15:
+ 193              	.L17:
+ 102:Core/Src/drive.c ****         sum += buf[i];
+ 194              		.loc 1 102 28 is_stmt 1 discriminator 1 view .LVU41
+ 195 0010 8B42     		cmp	r3, r1
+ 196 0012 F8D3     		bcc	.L18
+ 197              	.LBE3:
+ 104:Core/Src/drive.c **** 
+ 105:Core/Src/drive.c ****     return (float)sum / (float)n;
+ 198              		.loc 1 105 5 view .LVU42
+ 199              		.loc 1 105 12 is_stmt 0 view .LVU43
+ 200 0014 07EE902A 		vmov	s15, r2	@ int
+ 201 0018 F8EE677A 		vcvt.f32.u32	s15, s15
+ 202              		.loc 1 105 25 view .LVU44
+ 203 001c 07EE101A 		vmov	s14, r1	@ int
+ 204 0020 B8EE470A 		vcvt.f32.u32	s0, s14
+ 106:Core/Src/drive.c **** }
+ 205              		.loc 1 106 1 view .LVU45
+ 206 0024 87EE800A 		vdiv.f32	s0, s15, s0
+ 207 0028 7047     		bx	lr
+ 208              		.cfi_endproc
+ 209              	.LFE137:
+ 211              		.section	.text.enter,"ax",%progbits
+ 212              		.align	1
+ 213              		.syntax unified
+ 214              		.thumb
+ 215              		.thumb_func
+ 217              	enter:
+ 218              	.LVL16:
+ 219              	.LFB139:
+ 107:Core/Src/drive.c **** 
+ 108:Core/Src/drive.c **** static void Drive_CenteringPD_Run(const DriveInputs *in)
+ 109:Core/Src/drive.c **** {
+ 110:Core/Src/drive.c ****     static uint16_t l_buf[CENTER_MA_WIN];
+ 111:Core/Src/drive.c ****     static uint16_t r_buf[CENTER_MA_WIN];
+ 112:Core/Src/drive.c ****     static uint8_t  idx = 0U;
+ 113:Core/Src/drive.c ****     static uint8_t  count = 0U;
+ 114:Core/Src/drive.c ****     static float    prev_error = 0.0f;
+ 115:Core/Src/drive.c ****     static uint32_t prev_ms = 0U;
+ 116:Core/Src/drive.c **** 
+ 117:Core/Src/drive.c ****     l_buf[idx] = center_sanitize_cm(in->l);
+ 118:Core/Src/drive.c ****     r_buf[idx] = center_sanitize_cm(in->r);
+ 119:Core/Src/drive.c **** 
+ 120:Core/Src/drive.c ****     idx = (uint8_t)((idx + 1U) % CENTER_MA_WIN);
+ 121:Core/Src/drive.c ****     if (count < CENTER_MA_WIN)
+ 122:Core/Src/drive.c ****         count++;
+ 123:Core/Src/drive.c **** 
+ 124:Core/Src/drive.c ****     float left_cm  = center_avg_u16(l_buf, count);
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 7
+
+
+ 125:Core/Src/drive.c ****     float right_cm = center_avg_u16(r_buf, count);
+ 126:Core/Src/drive.c ****     float error = left_cm - right_cm;
+ 127:Core/Src/drive.c ****     float steer = 0.0f;
+ 128:Core/Src/drive.c **** 
+ 129:Core/Src/drive.c ****     if (fabsf(error) <= CENTER_DEADZONE_CM)
+ 130:Core/Src/drive.c ****     {
+ 131:Core/Src/drive.c ****         prev_error = 0.0f;
+ 132:Core/Src/drive.c ****     }
+ 133:Core/Src/drive.c ****     else
+ 134:Core/Src/drive.c ****     {
+ 135:Core/Src/drive.c ****         float dt = 0.02f;
+ 136:Core/Src/drive.c **** 
+ 137:Core/Src/drive.c ****         if (prev_ms != 0U && in->now > prev_ms)
+ 138:Core/Src/drive.c ****         {
+ 139:Core/Src/drive.c ****             dt = (float)(in->now - prev_ms) / 1000.0f;
+ 140:Core/Src/drive.c ****             dt = clampf(dt, 0.005f, 0.100f);
+ 141:Core/Src/drive.c ****         }
+ 142:Core/Src/drive.c **** 
+ 143:Core/Src/drive.c ****         float d_error = (error - prev_error) / dt;
+ 144:Core/Src/drive.c **** 
+ 145:Core/Src/drive.c ****         steer = (CENTER_KP * error) + (CENTER_KD * d_error);
+ 146:Core/Src/drive.c ****         steer = clampf(steer, -CENTER_STEER_MAX_PCT, CENTER_STEER_MAX_PCT);
+ 147:Core/Src/drive.c ****         prev_error = error;
+ 148:Core/Src/drive.c ****     }
+ 149:Core/Src/drive.c **** 
+ 150:Core/Src/drive.c ****     prev_ms = in->now;
+ 151:Core/Src/drive.c **** 
+ 152:Core/Src/drive.c ****     float steer_ratio = fabsf(steer) / CENTER_STEER_MAX_PCT;
+ 153:Core/Src/drive.c ****     float base = CENTER_BASE_SPEED_PCT
+ 154:Core/Src/drive.c ****                - ((CENTER_BASE_SPEED_PCT - CENTER_MIN_SPEED_PCT) * steer_ratio);
+ 155:Core/Src/drive.c ****     base = clampf(base, CENTER_MIN_SPEED_PCT, CENTER_BASE_SPEED_PCT);
+ 156:Core/Src/drive.c **** 
+ 157:Core/Src/drive.c ****     float lt = clampf(base - steer, 0.0f, 100.0f);
+ 158:Core/Src/drive.c ****     float rt = clampf(base + steer, 0.0f, 100.0f);
+ 159:Core/Src/drive.c **** 
+ 160:Core/Src/drive.c ****     Motor_Left((int8_t)(lt + 0.5f));
+ 161:Core/Src/drive.c ****     Motor_Right((int8_t)(rt + 0.5f));
+ 162:Core/Src/drive.c **** 
+ 163:Core/Src/drive.c ****     dbg_steer      = steer;
+ 164:Core/Src/drive.c ****     dbg_steer_mode = SM_BOTH;
+ 165:Core/Src/drive.c ****     dbg_duty_l     = (int16_t)(lt + 0.5f);
+ 166:Core/Src/drive.c ****     dbg_duty_r     = (int16_t)(rt + 0.5f);
+ 167:Core/Src/drive.c **** }
+ 168:Core/Src/drive.c **** 
+ 169:Core/Src/drive.c **** /* ---- 상태 진입 헬퍼 (진입 액션 + 타임스탬프) ---- */
+ 170:Core/Src/drive.c **** 
+ 171:Core/Src/drive.c **** static void enter(DriveState s, uint32_t now)
+ 172:Core/Src/drive.c **** {
+ 220              		.loc 1 172 1 is_stmt 1 view -0
+ 221              		.cfi_startproc
+ 222              		@ args = 0, pretend = 0, frame = 0
+ 223              		@ frame_needed = 0, uses_anonymous_args = 0
+ 224              		@ link register save eliminated.
+ 173:Core/Src/drive.c ****     st = s;
+ 225              		.loc 1 173 5 view .LVU47
+ 226              		.loc 1 173 8 is_stmt 0 view .LVU48
+ 227 0000 024B     		ldr	r3, .L20
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 8
+
+
+ 228 0002 1870     		strb	r0, [r3]
+ 174:Core/Src/drive.c ****     t_state = now;
+ 229              		.loc 1 174 5 is_stmt 1 view .LVU49
+ 230              		.loc 1 174 13 is_stmt 0 view .LVU50
+ 231 0004 024B     		ldr	r3, .L20+4
+ 232 0006 1960     		str	r1, [r3]
+ 175:Core/Src/drive.c **** }
+ 233              		.loc 1 175 1 view .LVU51
+ 234 0008 7047     		bx	lr
+ 235              	.L21:
+ 236 000a 00BF     		.align	2
+ 237              	.L20:
+ 238 000c 00000000 		.word	st
+ 239 0010 00000000 		.word	t_state
+ 240              		.cfi_endproc
+ 241              	.LFE139:
+ 243              		.section	.text.cruise_enter,"ax",%progbits
+ 244              		.align	1
+ 245              		.syntax unified
+ 246              		.thumb
+ 247              		.thumb_func
+ 249              	cruise_enter:
+ 250              	.LVL17:
+ 251              	.LFB140:
+ 176:Core/Src/drive.c **** 
+ 177:Core/Src/drive.c **** static void cruise_enter(const DriveInputs *in)
+ 178:Core/Src/drive.c **** {
+ 252              		.loc 1 178 1 is_stmt 1 view -0
+ 253              		.cfi_startproc
+ 254              		@ args = 0, pretend = 0, frame = 0
+ 255              		@ frame_needed = 0, uses_anonymous_args = 0
+ 256              		.loc 1 178 1 is_stmt 0 view .LVU53
+ 257 0000 08B5     		push	{r3, lr}
+ 258              	.LCFI0:
+ 259              		.cfi_def_cfa_offset 8
+ 260              		.cfi_offset 3, -8
+ 261              		.cfi_offset 14, -4
+ 262 0002 0346     		mov	r3, r0
+ 179:Core/Src/drive.c ****     h_ref      = in->heading;   /* 무벽 구간 직진 기준 — 회피 직후의 새 진행방�
+ 263              		.loc 1 179 5 is_stmt 1 view .LVU54
+ 264              		.loc 1 179 20 is_stmt 0 view .LVU55
+ 265 0004 8268     		ldr	r2, [r0, #8]	@ float
+ 266              		.loc 1 179 16 view .LVU56
+ 267 0006 0949     		ldr	r1, .L24
+ 268 0008 0A60     		str	r2, [r1]	@ float
+ 180:Core/Src/drive.c ****     steer_u    = 0.0f;
+ 269              		.loc 1 180 5 is_stmt 1 view .LVU57
+ 270              		.loc 1 180 16 is_stmt 0 view .LVU58
+ 271 000a 0949     		ldr	r1, .L24+4
+ 272 000c 0020     		movs	r0, #0
+ 273              	.LVL18:
+ 274              		.loc 1 180 16 view .LVU59
+ 275 000e 0860     		str	r0, [r1]	@ float
+ 181:Core/Src/drive.c ****     steer_mode = SM_INIT;
+ 276              		.loc 1 181 5 is_stmt 1 view .LVU60
+ 277              		.loc 1 181 16 is_stmt 0 view .LVU61
+ 278 0010 0849     		ldr	r1, .L24+8
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 9
+
+
+ 279 0012 FF20     		movs	r0, #255
+ 280 0014 0870     		strb	r0, [r1]
+ 182:Core/Src/drive.c ****     rev_cnt    = 0;
+ 281              		.loc 1 182 5 is_stmt 1 view .LVU62
+ 282              		.loc 1 182 16 is_stmt 0 view .LVU63
+ 283 0016 0020     		movs	r0, #0
+ 284 0018 0749     		ldr	r1, .L24+12
+ 285 001a 0870     		strb	r0, [r1]
+ 183:Core/Src/drive.c ****     h_prev     = in->heading;   /* yaw-rate 리셋: 회피 복귀 직후 stale heading차로 스파
+ 286              		.loc 1 183 5 is_stmt 1 view .LVU64
+ 287              		.loc 1 183 16 is_stmt 0 view .LVU65
+ 288 001c 0749     		ldr	r1, .L24+16
+ 289 001e 0A60     		str	r2, [r1]	@ float
+ 184:Core/Src/drive.c ****     t_prev     = in->now;
+ 290              		.loc 1 184 5 is_stmt 1 view .LVU66
+ 291              		.loc 1 184 20 is_stmt 0 view .LVU67
+ 292 0020 1969     		ldr	r1, [r3, #16]
+ 293              		.loc 1 184 16 view .LVU68
+ 294 0022 074B     		ldr	r3, .L24+20
+ 295              	.LVL19:
+ 296              		.loc 1 184 16 view .LVU69
+ 297 0024 1960     		str	r1, [r3]
+ 185:Core/Src/drive.c ****     enter(DS_CRUISE, in->now);
+ 298              		.loc 1 185 5 is_stmt 1 view .LVU70
+ 299 0026 FFF7FEFF 		bl	enter
+ 300              	.LVL20:
+ 186:Core/Src/drive.c **** }
+ 301              		.loc 1 186 1 is_stmt 0 view .LVU71
+ 302 002a 08BD     		pop	{r3, pc}
+ 303              	.L25:
+ 304              		.align	2
+ 305              	.L24:
+ 306 002c 00000000 		.word	h_ref
+ 307 0030 00000000 		.word	steer_u
+ 308 0034 00000000 		.word	steer_mode
+ 309 0038 00000000 		.word	rev_cnt
+ 310 003c 00000000 		.word	h_prev
+ 311 0040 00000000 		.word	t_prev
+ 312              		.cfi_endproc
+ 313              	.LFE140:
+ 315              		.section	.text.spin_enter,"ax",%progbits
+ 316              		.align	1
+ 317              		.syntax unified
+ 318              		.thumb
+ 319              		.thumb_func
+ 321              	spin_enter:
+ 322              	.LVL21:
+ 323              	.LFB142:
+ 187:Core/Src/drive.c **** 
+ 188:Core/Src/drive.c **** static void brake_enter(const DriveInputs *in)
+ 189:Core/Src/drive.c **** {
+ 190:Core/Src/drive.c ****     if (BRAKE_MS > 0) Car_Brake();   /* BRAKE_MS=0 → 레거시 코스트 폴백 */
+ 191:Core/Src/drive.c ****     else              Car_Stop();
+ 192:Core/Src/drive.c ****     enter(DS_BRAKE, in->now);
+ 193:Core/Src/drive.c **** }
+ 194:Core/Src/drive.c **** 
+ 195:Core/Src/drive.c **** /* tie_flip: 좌우 우열이 SIDE_HYST 미만(동률)일 때 직전 방향 유지(0) vs 반대로(
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 10
+
+
+ 196:Core/Src/drive.c ****  * 후진을 거쳐 들어오면 반대쪽을 시도하는 게 포켓 탈출에 유리 */
+ 197:Core/Src/drive.c **** static void spin_enter(const DriveInputs *in, uint8_t tie_flip)
+ 198:Core/Src/drive.c **** {
+ 324              		.loc 1 198 1 is_stmt 1 view -0
+ 325              		.cfi_startproc
+ 326              		@ args = 0, pretend = 0, frame = 0
+ 327              		@ frame_needed = 0, uses_anonymous_args = 0
+ 328              		.loc 1 198 1 is_stmt 0 view .LVU73
+ 329 0000 08B5     		push	{r3, lr}
+ 330              	.LCFI1:
+ 331              		.cfi_def_cfa_offset 8
+ 332              		.cfi_offset 3, -8
+ 333              		.cfi_offset 14, -4
+ 199:Core/Src/drive.c ****     if      (in->l > in->r + SIDE_HYST) turn_dir = 0;   /* 왼쪽이 더 트임 → 좌회전 */
+ 334              		.loc 1 199 5 is_stmt 1 view .LVU74
+ 335              		.loc 1 199 16 is_stmt 0 view .LVU75
+ 336 0002 4388     		ldrh	r3, [r0, #2]
+ 337              		.loc 1 199 24 view .LVU76
+ 338 0004 8288     		ldrh	r2, [r0, #4]
+ 339              		.loc 1 199 28 view .LVU77
+ 340 0006 02F1050C 		add	ip, r2, #5
+ 341              		.loc 1 199 13 view .LVU78
+ 342 000a 6345     		cmp	r3, ip
+ 343 000c 13DD     		ble	.L27
+ 344              		.loc 1 199 41 is_stmt 1 discriminator 1 view .LVU79
+ 345              		.loc 1 199 50 is_stmt 0 discriminator 1 view .LVU80
+ 346 000e 114B     		ldr	r3, .L31
+ 347 0010 0022     		movs	r2, #0
+ 348 0012 1A70     		strb	r2, [r3]
+ 349              	.L28:
+ 200:Core/Src/drive.c ****     else if (in->r > in->l + SIDE_HYST) turn_dir = 1;
+ 201:Core/Src/drive.c ****     else if (tie_flip)                  turn_dir ^= 1;
+ 202:Core/Src/drive.c ****     swap_cnt  = 0;
+ 350              		.loc 1 202 5 is_stmt 1 view .LVU81
+ 351              		.loc 1 202 15 is_stmt 0 view .LVU82
+ 352 0014 0023     		movs	r3, #0
+ 353 0016 104A     		ldr	r2, .L31+4
+ 354 0018 1370     		strb	r3, [r2]
+ 203:Core/Src/drive.c ****     clear_cnt = 0;
+ 355              		.loc 1 203 5 is_stmt 1 view .LVU83
+ 356              		.loc 1 203 15 is_stmt 0 view .LVU84
+ 357 001a 104A     		ldr	r2, .L31+8
+ 358 001c 1370     		strb	r3, [r2]
+ 204:Core/Src/drive.c ****     h_entry = in->heading;
+ 359              		.loc 1 204 5 is_stmt 1 view .LVU85
+ 360              		.loc 1 204 17 is_stmt 0 view .LVU86
+ 361 001e 8368     		ldr	r3, [r0, #8]	@ float
+ 362              		.loc 1 204 13 view .LVU87
+ 363 0020 0F4A     		ldr	r2, .L31+12
+ 364 0022 1360     		str	r3, [r2]	@ float
+ 205:Core/Src/drive.c ****     h_stuck = in->heading;
+ 365              		.loc 1 205 5 is_stmt 1 view .LVU88
+ 366              		.loc 1 205 13 is_stmt 0 view .LVU89
+ 367 0024 0F4A     		ldr	r2, .L31+16
+ 368 0026 1360     		str	r3, [r2]	@ float
+ 206:Core/Src/drive.c ****     t_stuck = in->now;
+ 369              		.loc 1 206 5 is_stmt 1 view .LVU90
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 11
+
+
+ 370              		.loc 1 206 17 is_stmt 0 view .LVU91
+ 371 0028 0169     		ldr	r1, [r0, #16]
+ 372              	.LVL22:
+ 373              		.loc 1 206 13 view .LVU92
+ 374 002a 0F4B     		ldr	r3, .L31+20
+ 375 002c 1960     		str	r1, [r3]
+ 207:Core/Src/drive.c ****     enter(DS_SPIN, in->now);
+ 376              		.loc 1 207 5 is_stmt 1 view .LVU93
+ 377 002e 0220     		movs	r0, #2
+ 378              	.LVL23:
+ 379              		.loc 1 207 5 is_stmt 0 view .LVU94
+ 380 0030 FFF7FEFF 		bl	enter
+ 381              	.LVL24:
+ 208:Core/Src/drive.c **** }
+ 382              		.loc 1 208 1 view .LVU95
+ 383 0034 08BD     		pop	{r3, pc}
+ 384              	.LVL25:
+ 385              	.L27:
+ 200:Core/Src/drive.c ****     else if (tie_flip)                  turn_dir ^= 1;
+ 386              		.loc 1 200 10 is_stmt 1 view .LVU96
+ 200:Core/Src/drive.c ****     else if (tie_flip)                  turn_dir ^= 1;
+ 387              		.loc 1 200 28 is_stmt 0 view .LVU97
+ 388 0036 0533     		adds	r3, r3, #5
+ 200:Core/Src/drive.c ****     else if (tie_flip)                  turn_dir ^= 1;
+ 389              		.loc 1 200 13 view .LVU98
+ 390 0038 9A42     		cmp	r2, r3
+ 391 003a 03DD     		ble	.L29
+ 200:Core/Src/drive.c ****     else if (tie_flip)                  turn_dir ^= 1;
+ 392              		.loc 1 200 41 is_stmt 1 discriminator 1 view .LVU99
+ 200:Core/Src/drive.c ****     else if (tie_flip)                  turn_dir ^= 1;
+ 393              		.loc 1 200 50 is_stmt 0 discriminator 1 view .LVU100
+ 394 003c 054B     		ldr	r3, .L31
+ 395 003e 0122     		movs	r2, #1
+ 396 0040 1A70     		strb	r2, [r3]
+ 397 0042 E7E7     		b	.L28
+ 398              	.L29:
+ 201:Core/Src/drive.c ****     swap_cnt  = 0;
+ 399              		.loc 1 201 10 is_stmt 1 view .LVU101
+ 201:Core/Src/drive.c ****     swap_cnt  = 0;
+ 400              		.loc 1 201 13 is_stmt 0 view .LVU102
+ 401 0044 0029     		cmp	r1, #0
+ 402 0046 E5D0     		beq	.L28
+ 201:Core/Src/drive.c ****     swap_cnt  = 0;
+ 403              		.loc 1 201 41 is_stmt 1 discriminator 1 view .LVU103
+ 201:Core/Src/drive.c ****     swap_cnt  = 0;
+ 404              		.loc 1 201 50 is_stmt 0 discriminator 1 view .LVU104
+ 405 0048 024A     		ldr	r2, .L31
+ 406 004a 1378     		ldrb	r3, [r2]	@ zero_extendqisi2
+ 407 004c 83F00103 		eor	r3, r3, #1
+ 408 0050 1370     		strb	r3, [r2]
+ 409 0052 DFE7     		b	.L28
+ 410              	.L32:
+ 411              		.align	2
+ 412              	.L31:
+ 413 0054 00000000 		.word	turn_dir
+ 414 0058 00000000 		.word	swap_cnt
+ 415 005c 00000000 		.word	clear_cnt
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 12
+
+
+ 416 0060 00000000 		.word	h_entry
+ 417 0064 00000000 		.word	h_stuck
+ 418 0068 00000000 		.word	t_stuck
+ 419              		.cfi_endproc
+ 420              	.LFE142:
+ 422              		.section	.text.side_avoid_enter,"ax",%progbits
+ 423              		.align	1
+ 424              		.syntax unified
+ 425              		.thumb
+ 426              		.thumb_func
+ 428              	side_avoid_enter:
+ 429              	.LVL26:
+ 430              	.LFB145:
+ 209:Core/Src/drive.c **** 
+ 210:Core/Src/drive.c **** static void reverse_enter(const DriveInputs *in)
+ 211:Core/Src/drive.c **** {
+ 212:Core/Src/drive.c ****     Car_Backward(DRIVE_SPEED);
+ 213:Core/Src/drive.c ****     if (rev_cnt < 255) rev_cnt++;
+ 214:Core/Src/drive.c ****     enter(DS_REVERSE, in->now);
+ 215:Core/Src/drive.c **** }
+ 216:Core/Src/drive.c **** 
+ 217:Core/Src/drive.c **** static void hold_enter(const DriveInputs *in)
+ 218:Core/Src/drive.c **** {
+ 219:Core/Src/drive.c ****     Car_Stop();   /* 정지 상태 유지엔 코스트로 충분 */
+ 220:Core/Src/drive.c ****     enter(DS_HOLD, in->now);
+ 221:Core/Src/drive.c **** }
+ 222:Core/Src/drive.c **** 
+ 223:Core/Src/drive.c **** /* 측면 박기직전: 더 가까운(박힌) 쪽 반대로 회전하도록 래치 후 진입.
+ 224:Core/Src/drive.c ****  * l<r=좌벽 박힘→우회전(turn_dir 1), r<l=우벽 박힘→좌회전(0), 동률=직전 유�
+ 225:Core/Src/drive.c **** static void side_avoid_enter(const DriveInputs *in)
+ 226:Core/Src/drive.c **** {
+ 431              		.loc 1 226 1 is_stmt 1 view -0
+ 432              		.cfi_startproc
+ 433              		@ args = 0, pretend = 0, frame = 0
+ 434              		@ frame_needed = 0, uses_anonymous_args = 0
+ 435              		.loc 1 226 1 is_stmt 0 view .LVU106
+ 436 0000 08B5     		push	{r3, lr}
+ 437              	.LCFI2:
+ 438              		.cfi_def_cfa_offset 8
+ 439              		.cfi_offset 3, -8
+ 440              		.cfi_offset 14, -4
+ 227:Core/Src/drive.c ****     if      (in->l < in->r) turn_dir = 1;   /* 좌벽 가까움 → 우회전으로 멀어짐 */
+ 441              		.loc 1 227 5 is_stmt 1 view .LVU107
+ 442              		.loc 1 227 16 is_stmt 0 view .LVU108
+ 443 0002 4288     		ldrh	r2, [r0, #2]
+ 444              		.loc 1 227 24 view .LVU109
+ 445 0004 8388     		ldrh	r3, [r0, #4]
+ 446              		.loc 1 227 13 view .LVU110
+ 447 0006 9A42     		cmp	r2, r3
+ 448 0008 07D2     		bcs	.L34
+ 449              		.loc 1 227 29 is_stmt 1 discriminator 1 view .LVU111
+ 450              		.loc 1 227 38 is_stmt 0 discriminator 1 view .LVU112
+ 451 000a 074B     		ldr	r3, .L37
+ 452 000c 0122     		movs	r2, #1
+ 453 000e 1A70     		strb	r2, [r3]
+ 454              	.L35:
+ 228:Core/Src/drive.c ****     else if (in->r < in->l) turn_dir = 0;   /* 우벽 가까움 → 좌회전 */
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 13
+
+
+ 229:Core/Src/drive.c ****     enter(DS_SIDE_AVOID, in->now);
+ 455              		.loc 1 229 5 is_stmt 1 view .LVU113
+ 456 0010 0169     		ldr	r1, [r0, #16]
+ 457 0012 0520     		movs	r0, #5
+ 458              	.LVL27:
+ 459              		.loc 1 229 5 is_stmt 0 view .LVU114
+ 460 0014 FFF7FEFF 		bl	enter
+ 461              	.LVL28:
+ 230:Core/Src/drive.c **** }
+ 462              		.loc 1 230 1 view .LVU115
+ 463 0018 08BD     		pop	{r3, pc}
+ 464              	.LVL29:
+ 465              	.L34:
+ 228:Core/Src/drive.c ****     else if (in->r < in->l) turn_dir = 0;   /* 우벽 가까움 → 좌회전 */
+ 466              		.loc 1 228 10 is_stmt 1 view .LVU116
+ 228:Core/Src/drive.c ****     else if (in->r < in->l) turn_dir = 0;   /* 우벽 가까움 → 좌회전 */
+ 467              		.loc 1 228 13 is_stmt 0 view .LVU117
+ 468 001a 9A42     		cmp	r2, r3
+ 469 001c F8D9     		bls	.L35
+ 228:Core/Src/drive.c ****     else if (in->r < in->l) turn_dir = 0;   /* 우벽 가까움 → 좌회전 */
+ 470              		.loc 1 228 29 is_stmt 1 discriminator 1 view .LVU118
+ 228:Core/Src/drive.c ****     else if (in->r < in->l) turn_dir = 0;   /* 우벽 가까움 → 좌회전 */
+ 471              		.loc 1 228 38 is_stmt 0 discriminator 1 view .LVU119
+ 472 001e 024B     		ldr	r3, .L37
+ 473 0020 0022     		movs	r2, #0
+ 474 0022 1A70     		strb	r2, [r3]
+ 475 0024 F4E7     		b	.L35
+ 476              	.L38:
+ 477 0026 00BF     		.align	2
+ 478              	.L37:
+ 479 0028 00000000 		.word	turn_dir
+ 480              		.cfi_endproc
+ 481              	.LFE145:
+ 483              		.section	.text.hold_enter,"ax",%progbits
+ 484              		.align	1
+ 485              		.syntax unified
+ 486              		.thumb
+ 487              		.thumb_func
+ 489              	hold_enter:
+ 490              	.LVL30:
+ 491              	.LFB144:
+ 218:Core/Src/drive.c ****     Car_Stop();   /* 정지 상태 유지엔 코스트로 충분 */
+ 492              		.loc 1 218 1 is_stmt 1 view -0
+ 493              		.cfi_startproc
+ 494              		@ args = 0, pretend = 0, frame = 0
+ 495              		@ frame_needed = 0, uses_anonymous_args = 0
+ 218:Core/Src/drive.c ****     Car_Stop();   /* 정지 상태 유지엔 코스트로 충분 */
+ 496              		.loc 1 218 1 is_stmt 0 view .LVU121
+ 497 0000 10B5     		push	{r4, lr}
+ 498              	.LCFI3:
+ 499              		.cfi_def_cfa_offset 8
+ 500              		.cfi_offset 4, -8
+ 501              		.cfi_offset 14, -4
+ 502 0002 0446     		mov	r4, r0
+ 219:Core/Src/drive.c ****     enter(DS_HOLD, in->now);
+ 503              		.loc 1 219 5 is_stmt 1 view .LVU122
+ 504 0004 FFF7FEFF 		bl	Car_Stop
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 14
+
+
+ 505              	.LVL31:
+ 220:Core/Src/drive.c **** }
+ 506              		.loc 1 220 5 view .LVU123
+ 507 0008 2169     		ldr	r1, [r4, #16]
+ 508 000a 0420     		movs	r0, #4
+ 509 000c FFF7FEFF 		bl	enter
+ 510              	.LVL32:
+ 221:Core/Src/drive.c **** 
+ 511              		.loc 1 221 1 is_stmt 0 view .LVU124
+ 512 0010 10BD     		pop	{r4, pc}
+ 221:Core/Src/drive.c **** 
+ 513              		.loc 1 221 1 view .LVU125
+ 514              		.cfi_endproc
+ 515              	.LFE144:
+ 517              		.section	.text.brake_enter,"ax",%progbits
+ 518              		.align	1
+ 519              		.syntax unified
+ 520              		.thumb
+ 521              		.thumb_func
+ 523              	brake_enter:
+ 524              	.LVL33:
+ 525              	.LFB141:
+ 189:Core/Src/drive.c ****     if (BRAKE_MS > 0) Car_Brake();   /* BRAKE_MS=0 → 레거시 코스트 폴백 */
+ 526              		.loc 1 189 1 is_stmt 1 view -0
+ 527              		.cfi_startproc
+ 528              		@ args = 0, pretend = 0, frame = 0
+ 529              		@ frame_needed = 0, uses_anonymous_args = 0
+ 189:Core/Src/drive.c ****     if (BRAKE_MS > 0) Car_Brake();   /* BRAKE_MS=0 → 레거시 코스트 폴백 */
+ 530              		.loc 1 189 1 is_stmt 0 view .LVU127
+ 531 0000 10B5     		push	{r4, lr}
+ 532              	.LCFI4:
+ 533              		.cfi_def_cfa_offset 8
+ 534              		.cfi_offset 4, -8
+ 535              		.cfi_offset 14, -4
+ 536 0002 0446     		mov	r4, r0
+ 190:Core/Src/drive.c ****     else              Car_Stop();
+ 537              		.loc 1 190 5 is_stmt 1 view .LVU128
+ 190:Core/Src/drive.c ****     else              Car_Stop();
+ 538              		.loc 1 190 23 discriminator 1 view .LVU129
+ 539 0004 FFF7FEFF 		bl	Car_Brake
+ 540              	.LVL34:
+ 192:Core/Src/drive.c **** }
+ 541              		.loc 1 192 5 view .LVU130
+ 542 0008 2169     		ldr	r1, [r4, #16]
+ 543 000a 0120     		movs	r0, #1
+ 544 000c FFF7FEFF 		bl	enter
+ 545              	.LVL35:
+ 193:Core/Src/drive.c **** 
+ 546              		.loc 1 193 1 is_stmt 0 view .LVU131
+ 547 0010 10BD     		pop	{r4, pc}
+ 193:Core/Src/drive.c **** 
+ 548              		.loc 1 193 1 view .LVU132
+ 549              		.cfi_endproc
+ 550              	.LFE141:
+ 552              		.section	.text.hold_run,"ax",%progbits
+ 553              		.align	1
+ 554              		.syntax unified
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 15
+
+
+ 555              		.thumb
+ 556              		.thumb_func
+ 558              	hold_run:
+ 559              	.LVL36:
+ 560              	.LFB150:
+ 231:Core/Src/drive.c **** 
+ 232:Core/Src/drive.c **** /* ---- 상태별 실행 ---- */
+ 233:Core/Src/drive.c **** 
+ 234:Core/Src/drive.c **** /* CRUISE: 조향 주행. 3모드 자동 전환(양벽/한벽/무벽) + slew + 데드밴드 spillov
+ 235:Core/Src/drive.c **** static void cruise_run(const DriveInputs *in)
+ 236:Core/Src/drive.c **** {
+ 237:Core/Src/drive.c ****     /* fail-safe: 정면 연속 무에코 → HOLD. CRUISE에서만 — SPIN/REVERSE는 전방 노�
+ 238:Core/Src/drive.c ****     if (in->front_miss >= FRONT_FAIL_LIMIT) { hold_enter(in); return; }
+ 239:Core/Src/drive.c **** 
+ 240:Core/Src/drive.c ****     /* 정면 근접 → 즉시 능동 제동 + 회피 (제동은 안전하므로 디바운스 없�
+ 241:Core/Src/drive.c ****     if (in->f < FRONT_STOP_CM) { brake_enter(in); return; }
+ 242:Core/Src/drive.c **** 
+ 243:Core/Src/drive.c ****     /* 측면 박기직전 → 비상 회피(멈춤+피벗). 정면 다음 우선 — 조향으론 
+ 244:Core/Src/drive.c ****     {
+ 245:Core/Src/drive.c ****         uint16_t smin = (in->l < in->r) ? in->l : in->r;
+ 246:Core/Src/drive.c ****         if (smin < SIDE_AVOID_CM) { side_avoid_enter(in); return; }
+ 247:Core/Src/drive.c ****     }
+ 248:Core/Src/drive.c ****     Drive_CenteringPD_Run(in);
+ 249:Core/Src/drive.c ****     return;
+ 250:Core/Src/drive.c **** }
+ 251:Core/Src/drive.c **** 
+ 252:Core/Src/drive.c **** /* BRAKE: BRAKE_MS 동안 단락 제동 유지 → 해제 후 막다른곳이면 REVERSE, 아니면
+ 253:Core/Src/drive.c **** static void brake_run(const DriveInputs *in)
+ 254:Core/Src/drive.c **** {
+ 255:Core/Src/drive.c ****     if ((in->now - t_state) < (uint32_t)BRAKE_MS) return;   /* 제동 유지 중 */
+ 256:Core/Src/drive.c **** 
+ 257:Core/Src/drive.c ****     Car_Stop();   /* 단락 제동 해제 */
+ 258:Core/Src/drive.c **** 
+ 259:Core/Src/drive.c ****     uint8_t dead_end = (in->f < FRONT_DANGER_CM &&
+ 260:Core/Src/drive.c ****                         in->l < SIDE_BLOCK_CM   &&
+ 261:Core/Src/drive.c ****                         in->r < SIDE_BLOCK_CM);
+ 262:Core/Src/drive.c ****     if (dead_end && rev_cnt < REV_MAX_CHUNKS)
+ 263:Core/Src/drive.c ****         reverse_enter(in);
+ 264:Core/Src/drive.c ****     else
+ 265:Core/Src/drive.c ****         spin_enter(in, (rev_cnt > 0));   /* 후진을 거쳤으면 동률 시 반대쪽 시도 */
+ 266:Core/Src/drive.c **** }
+ 267:Core/Src/drive.c **** 
+ 268:Core/Src/drive.c **** /* SPIN: 제자리 회전(전진 이동 0). 매 루프 센서 갱신하며 탈출각/스턱/타임�
+ 269:Core/Src/drive.c **** static void spin_run(const DriveInputs *in)
+ 270:Core/Src/drive.c **** {
+ 271:Core/Src/drive.c ****     /* 막다른 곳 → 후진 (chunk 예산 내에서만) */
+ 272:Core/Src/drive.c ****     if (in->f < FRONT_DANGER_CM && in->l < SIDE_BLOCK_CM && in->r < SIDE_BLOCK_CM
+ 273:Core/Src/drive.c ****         && rev_cnt < REV_MAX_CHUNKS)
+ 274:Core/Src/drive.c ****     {
+ 275:Core/Src/drive.c ****         reverse_enter(in);
+ 276:Core/Src/drive.c ****         return;
+ 277:Core/Src/drive.c ****     }
+ 278:Core/Src/drive.c **** 
+ 279:Core/Src/drive.c ****     if (in->imu_live)
+ 280:Core/Src/drive.c ****     {
+ 281:Core/Src/drive.c ****         dbg_spin_deg = wrap180(in->heading - h_entry);
+ 282:Core/Src/drive.c **** 
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 16
+
+
+ 283:Core/Src/drive.c ****         /* 스턱: ROT_STUCK_MS 윈도 동안 회전 명령에도 heading 정체 → 바퀴 헛돎/
+ 284:Core/Src/drive.c ****         if ((in->now - t_stuck) >= (uint32_t)ROT_STUCK_MS)
+ 285:Core/Src/drive.c ****         {
+ 286:Core/Src/drive.c ****             if (fabsf(wrap180(in->heading - h_stuck)) < ROT_STUCK_DEG
+ 287:Core/Src/drive.c ****                 && rev_cnt < REV_MAX_CHUNKS)
+ 288:Core/Src/drive.c ****             {
+ 289:Core/Src/drive.c ****                 reverse_enter(in);
+ 290:Core/Src/drive.c ****                 return;
+ 291:Core/Src/drive.c ****             }
+ 292:Core/Src/drive.c ****             h_stuck = in->heading;
+ 293:Core/Src/drive.c ****             t_stuck = in->now;
+ 294:Core/Src/drive.c ****         }
+ 295:Core/Src/drive.c ****     }
+ 296:Core/Src/drive.c **** 
+ 297:Core/Src/drive.c ****     /* 타임아웃 백스톱 (IMU 사망 시 스턱 커버): 후진 예산 있으면 후진, 없�
+ 298:Core/Src/drive.c ****     if ((in->now - t_state) > (uint32_t)SPIN_MAX_MS)
+ 299:Core/Src/drive.c ****     {
+ 300:Core/Src/drive.c ****         if (rev_cnt < REV_MAX_CHUNKS) { reverse_enter(in); return; }
+ 301:Core/Src/drive.c ****         turn_dir ^= 1;
+ 302:Core/Src/drive.c ****         t_state = in->now;
+ 303:Core/Src/drive.c ****         h_entry = in->heading;
+ 304:Core/Src/drive.c ****     }
+ 305:Core/Src/drive.c **** 
+ 306:Core/Src/drive.c ****     /* 방향 재평가: 최소유지(SPIN_COMMIT_MS) 후, 래치쪽 막힘 && 반대쪽 SIDE_HYST 
+ 307:Core/Src/drive.c ****     if ((in->now - t_state) >= (uint32_t)SPIN_COMMIT_MS && swap_cnt < SWAP_LIMIT)
+ 308:Core/Src/drive.c ****     {
+ 309:Core/Src/drive.c ****         uint16_t latched = (turn_dir == 0) ? in->l : in->r;
+ 310:Core/Src/drive.c ****         uint16_t other   = (turn_dir == 0) ? in->r : in->l;
+ 311:Core/Src/drive.c ****         if (latched < SIDE_BLOCK_CM && other > (uint16_t)(latched + SIDE_HYST))
+ 312:Core/Src/drive.c ****         {
+ 313:Core/Src/drive.c ****             turn_dir ^= 1;
+ 314:Core/Src/drive.c ****             swap_cnt++;
+ 315:Core/Src/drive.c ****             t_state = in->now;
+ 316:Core/Src/drive.c ****             h_entry = in->heading;
+ 317:Core/Src/drive.c ****         }
+ 318:Core/Src/drive.c ****     }
+ 319:Core/Src/drive.c **** 
+ 320:Core/Src/drive.c ****     /* 탈출 → CRUISE: 정면 트임이 '유효 측정으로' CLEAR_CONFIRM회 연속
+ 321:Core/Src/drive.c ****        + (IMU 시) 진입 대비 TURN_MIN_DEG 이상 회전 — 경사벽 specular 가짜-트임 �
+ 322:Core/Src/drive.c ****     if (in->f >= FRONT_CLEAR_CM && in->f_valid)
+ 323:Core/Src/drive.c ****     {
+ 324:Core/Src/drive.c ****         if (clear_cnt < 255) clear_cnt++;
+ 325:Core/Src/drive.c ****         if (clear_cnt >= CLEAR_CONFIRM &&
+ 326:Core/Src/drive.c ****             (!in->imu_live || fabsf(wrap180(in->heading - h_entry)) >= TURN_MIN_DEG))
+ 327:Core/Src/drive.c ****         {
+ 328:Core/Src/drive.c ****             cruise_enter(in);
+ 329:Core/Src/drive.c ****             return;
+ 330:Core/Src/drive.c ****         }
+ 331:Core/Src/drive.c ****     }
+ 332:Core/Src/drive.c ****     else if (in->f < FRONT_CLEAR_CM)
+ 333:Core/Src/drive.c ****     {
+ 334:Core/Src/drive.c ****         clear_cnt = 0;   /* 무효 측정(f_valid=0)은 리셋도 가산도 안 함 — 직전 카�
+ 335:Core/Src/drive.c ****     }
+ 336:Core/Src/drive.c **** 
+ 337:Core/Src/drive.c ****     /* 회전 명령 (매 루프 재가) */
+ 338:Core/Src/drive.c ****     if (turn_dir == 0) Car_PivotLeft(TURN_SPEED, TURN_INNER);
+ 339:Core/Src/drive.c ****     else               Car_PivotRight(TURN_SPEED, TURN_INNER);
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 17
+
+
+ 340:Core/Src/drive.c **** }
+ 341:Core/Src/drive.c **** 
+ 342:Core/Src/drive.c **** /* REVERSE: 후진 chunk 1회 → 제동 → BRAKE가 재평가 (막다른곳 지속=추가 chunk, 
+ 343:Core/Src/drive.c **** static void reverse_run(const DriveInputs *in)
+ 344:Core/Src/drive.c **** {
+ 345:Core/Src/drive.c ****     if ((in->now - t_state) >= (uint32_t)BACK_CHUNK_MS)
+ 346:Core/Src/drive.c ****     {
+ 347:Core/Src/drive.c ****         brake_enter(in);
+ 348:Core/Src/drive.c ****         return;
+ 349:Core/Src/drive.c ****     }
+ 350:Core/Src/drive.c ****     Car_Backward(DRIVE_SPEED);
+ 351:Core/Src/drive.c **** }
+ 352:Core/Src/drive.c **** 
+ 353:Core/Src/drive.c **** /* HOLD: 정면 센서 상실 안전정지. 에코 회복 → 즉시 복귀, 장기화 → SPIN으�
+ 354:Core/Src/drive.c **** static void hold_run(const DriveInputs *in)
+ 355:Core/Src/drive.c **** {
+ 561              		.loc 1 355 1 is_stmt 1 view -0
+ 562              		.cfi_startproc
+ 563              		@ args = 0, pretend = 0, frame = 0
+ 564              		@ frame_needed = 0, uses_anonymous_args = 0
+ 565              		.loc 1 355 1 is_stmt 0 view .LVU134
+ 566 0000 08B5     		push	{r3, lr}
+ 567              	.LCFI5:
+ 568              		.cfi_def_cfa_offset 8
+ 569              		.cfi_offset 3, -8
+ 570              		.cfi_offset 14, -4
+ 356:Core/Src/drive.c ****     if (in->f_valid)
+ 571              		.loc 1 356 5 is_stmt 1 view .LVU135
+ 572              		.loc 1 356 11 is_stmt 0 view .LVU136
+ 573 0002 8379     		ldrb	r3, [r0, #6]	@ zero_extendqisi2
+ 574              		.loc 1 356 8 view .LVU137
+ 575 0004 53B9     		cbnz	r3, .L50
+ 357:Core/Src/drive.c ****     {
+ 358:Core/Src/drive.c ****         if (in->f < FRONT_STOP_CM) brake_enter(in);
+ 359:Core/Src/drive.c ****         else                       cruise_enter(in);
+ 360:Core/Src/drive.c ****         return;
+ 361:Core/Src/drive.c ****     }
+ 362:Core/Src/drive.c ****     if ((in->now - t_state) > (uint32_t)HOLD_MAX_MS)
+ 576              		.loc 1 362 5 is_stmt 1 view .LVU138
+ 577              		.loc 1 362 12 is_stmt 0 view .LVU139
+ 578 0006 0369     		ldr	r3, [r0, #16]
+ 579              		.loc 1 362 18 view .LVU140
+ 580 0008 0B4A     		ldr	r2, .L52
+ 581 000a 1268     		ldr	r2, [r2]
+ 582 000c 9B1A     		subs	r3, r3, r2
+ 583              		.loc 1 362 8 view .LVU141
+ 584 000e 40F2DC52 		movw	r2, #1500
+ 585 0012 9342     		cmp	r3, r2
+ 586 0014 0BD8     		bhi	.L51
+ 363:Core/Src/drive.c ****     {
+ 364:Core/Src/drive.c ****         spin_enter(in, 0);   /* 회전은 무이동이라 정면 블라인드 상태로도 안전 *
+ 365:Core/Src/drive.c ****         return;
+ 366:Core/Src/drive.c ****     }
+ 367:Core/Src/drive.c ****     Car_Stop();
+ 587              		.loc 1 367 5 is_stmt 1 view .LVU142
+ 588 0016 FFF7FEFF 		bl	Car_Stop
+ 589              	.LVL37:
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 18
+
+
+ 590              	.L43:
+ 368:Core/Src/drive.c **** }
+ 591              		.loc 1 368 1 is_stmt 0 view .LVU143
+ 592 001a 08BD     		pop	{r3, pc}
+ 593              	.LVL38:
+ 594              	.L50:
+ 358:Core/Src/drive.c ****         else                       cruise_enter(in);
+ 595              		.loc 1 358 9 is_stmt 1 view .LVU144
+ 358:Core/Src/drive.c ****         else                       cruise_enter(in);
+ 596              		.loc 1 358 15 is_stmt 0 view .LVU145
+ 597 001c 0388     		ldrh	r3, [r0]
+ 358:Core/Src/drive.c ****         else                       cruise_enter(in);
+ 598              		.loc 1 358 12 view .LVU146
+ 599 001e 132B     		cmp	r3, #19
+ 600 0020 02D8     		bhi	.L45
+ 358:Core/Src/drive.c ****         else                       cruise_enter(in);
+ 601              		.loc 1 358 36 is_stmt 1 discriminator 1 view .LVU147
+ 602 0022 FFF7FEFF 		bl	brake_enter
+ 603              	.LVL39:
+ 358:Core/Src/drive.c ****         else                       cruise_enter(in);
+ 604              		.loc 1 358 36 is_stmt 0 discriminator 1 view .LVU148
+ 605 0026 F8E7     		b	.L43
+ 606              	.LVL40:
+ 607              	.L45:
+ 359:Core/Src/drive.c ****         return;
+ 608              		.loc 1 359 36 is_stmt 1 view .LVU149
+ 609 0028 FFF7FEFF 		bl	cruise_enter
+ 610              	.LVL41:
+ 360:Core/Src/drive.c ****     }
+ 611              		.loc 1 360 9 view .LVU150
+ 612 002c F5E7     		b	.L43
+ 613              	.LVL42:
+ 614              	.L51:
+ 364:Core/Src/drive.c ****         return;
+ 615              		.loc 1 364 9 view .LVU151
+ 616 002e 0021     		movs	r1, #0
+ 617 0030 FFF7FEFF 		bl	spin_enter
+ 618              	.LVL43:
+ 365:Core/Src/drive.c ****     }
+ 619              		.loc 1 365 9 view .LVU152
+ 620 0034 F1E7     		b	.L43
+ 621              	.L53:
+ 622 0036 00BF     		.align	2
+ 623              	.L52:
+ 624 0038 00000000 		.word	t_state
+ 625              		.cfi_endproc
+ 626              	.LFE150:
+ 628              		.section	.text.Drive_CenteringPD_Run,"ax",%progbits
+ 629              		.align	1
+ 630              		.syntax unified
+ 631              		.thumb
+ 632              		.thumb_func
+ 634              	Drive_CenteringPD_Run:
+ 635              	.LVL44:
+ 636              	.LFB138:
+ 109:Core/Src/drive.c ****     static uint16_t l_buf[CENTER_MA_WIN];
+ 637              		.loc 1 109 1 view -0
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 19
+
+
+ 638              		.cfi_startproc
+ 639              		@ args = 0, pretend = 0, frame = 8
+ 640              		@ frame_needed = 0, uses_anonymous_args = 0
+ 109:Core/Src/drive.c ****     static uint16_t l_buf[CENTER_MA_WIN];
+ 641              		.loc 1 109 1 is_stmt 0 view .LVU154
+ 642 0000 70B5     		push	{r4, r5, r6, lr}
+ 643              	.LCFI6:
+ 644              		.cfi_def_cfa_offset 16
+ 645              		.cfi_offset 4, -16
+ 646              		.cfi_offset 5, -12
+ 647              		.cfi_offset 6, -8
+ 648              		.cfi_offset 14, -4
+ 649 0002 2DED068B 		vpush.64	{d8, d9, d10}
+ 650              	.LCFI7:
+ 651              		.cfi_def_cfa_offset 40
+ 652              		.cfi_offset 80, -40
+ 653              		.cfi_offset 81, -36
+ 654              		.cfi_offset 82, -32
+ 655              		.cfi_offset 83, -28
+ 656              		.cfi_offset 84, -24
+ 657              		.cfi_offset 85, -20
+ 658 0006 82B0     		sub	sp, sp, #8
+ 659              	.LCFI8:
+ 660              		.cfi_def_cfa_offset 48
+ 661 0008 0546     		mov	r5, r0
+ 110:Core/Src/drive.c ****     static uint16_t r_buf[CENTER_MA_WIN];
+ 662              		.loc 1 110 5 is_stmt 1 view .LVU155
+ 111:Core/Src/drive.c ****     static uint8_t  idx = 0U;
+ 663              		.loc 1 111 5 view .LVU156
+ 112:Core/Src/drive.c ****     static uint8_t  count = 0U;
+ 664              		.loc 1 112 5 view .LVU157
+ 113:Core/Src/drive.c ****     static float    prev_error = 0.0f;
+ 665              		.loc 1 113 5 view .LVU158
+ 114:Core/Src/drive.c ****     static uint32_t prev_ms = 0U;
+ 666              		.loc 1 114 5 view .LVU159
+ 115:Core/Src/drive.c **** 
+ 667              		.loc 1 115 5 view .LVU160
+ 117:Core/Src/drive.c ****     r_buf[idx] = center_sanitize_cm(in->r);
+ 668              		.loc 1 117 5 view .LVU161
+ 117:Core/Src/drive.c ****     r_buf[idx] = center_sanitize_cm(in->r);
+ 669              		.loc 1 117 10 is_stmt 0 view .LVU162
+ 670 000a 644E     		ldr	r6, .L65
+ 671 000c 3478     		ldrb	r4, [r6]	@ zero_extendqisi2
+ 117:Core/Src/drive.c ****     r_buf[idx] = center_sanitize_cm(in->r);
+ 672              		.loc 1 117 18 view .LVU163
+ 673 000e 4088     		ldrh	r0, [r0, #2]
+ 674              	.LVL45:
+ 117:Core/Src/drive.c ****     r_buf[idx] = center_sanitize_cm(in->r);
+ 675              		.loc 1 117 18 view .LVU164
+ 676 0010 FFF7FEFF 		bl	center_sanitize_cm
+ 677              	.LVL46:
+ 117:Core/Src/drive.c ****     r_buf[idx] = center_sanitize_cm(in->r);
+ 678              		.loc 1 117 16 discriminator 1 view .LVU165
+ 679 0014 624B     		ldr	r3, .L65+4
+ 680 0016 23F81400 		strh	r0, [r3, r4, lsl #1]	@ movhi
+ 118:Core/Src/drive.c **** 
+ 681              		.loc 1 118 5 is_stmt 1 view .LVU166
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 20
+
+
+ 118:Core/Src/drive.c **** 
+ 682              		.loc 1 118 18 is_stmt 0 view .LVU167
+ 683 001a A888     		ldrh	r0, [r5, #4]
+ 684 001c FFF7FEFF 		bl	center_sanitize_cm
+ 685              	.LVL47:
+ 118:Core/Src/drive.c **** 
+ 686              		.loc 1 118 16 discriminator 1 view .LVU168
+ 687 0020 604B     		ldr	r3, .L65+8
+ 688 0022 23F81400 		strh	r0, [r3, r4, lsl #1]	@ movhi
+ 120:Core/Src/drive.c ****     if (count < CENTER_MA_WIN)
+ 689              		.loc 1 120 5 is_stmt 1 view .LVU169
+ 120:Core/Src/drive.c ****     if (count < CENTER_MA_WIN)
+ 690              		.loc 1 120 26 is_stmt 0 view .LVU170
+ 691 0026 0134     		adds	r4, r4, #1
+ 120:Core/Src/drive.c ****     if (count < CENTER_MA_WIN)
+ 692              		.loc 1 120 32 view .LVU171
+ 693 0028 5F4B     		ldr	r3, .L65+12
+ 694 002a A3FB0423 		umull	r2, r3, r3, r4
+ 695 002e 03F4FE72 		and	r2, r3, #508
+ 696 0032 02EB9303 		add	r3, r2, r3, lsr #2
+ 697 0036 E41A     		subs	r4, r4, r3
+ 120:Core/Src/drive.c ****     if (count < CENTER_MA_WIN)
+ 698              		.loc 1 120 9 view .LVU172
+ 699 0038 3470     		strb	r4, [r6]
+ 121:Core/Src/drive.c ****         count++;
+ 700              		.loc 1 121 5 is_stmt 1 view .LVU173
+ 121:Core/Src/drive.c ****         count++;
+ 701              		.loc 1 121 15 is_stmt 0 view .LVU174
+ 702 003a 5C4B     		ldr	r3, .L65+16
+ 703 003c 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 121:Core/Src/drive.c ****         count++;
+ 704              		.loc 1 121 8 view .LVU175
+ 705 003e 042B     		cmp	r3, #4
+ 706 0040 02D8     		bhi	.L55
+ 122:Core/Src/drive.c **** 
+ 707              		.loc 1 122 9 is_stmt 1 view .LVU176
+ 122:Core/Src/drive.c **** 
+ 708              		.loc 1 122 14 is_stmt 0 view .LVU177
+ 709 0042 0133     		adds	r3, r3, #1
+ 710 0044 594A     		ldr	r2, .L65+16
+ 711 0046 1370     		strb	r3, [r2]
+ 712              	.L55:
+ 124:Core/Src/drive.c ****     float right_cm = center_avg_u16(r_buf, count);
+ 713              		.loc 1 124 5 is_stmt 1 view .LVU178
+ 124:Core/Src/drive.c ****     float right_cm = center_avg_u16(r_buf, count);
+ 714              		.loc 1 124 22 is_stmt 0 view .LVU179
+ 715 0048 584B     		ldr	r3, .L65+16
+ 716 004a 1C78     		ldrb	r4, [r3]	@ zero_extendqisi2
+ 717 004c 2146     		mov	r1, r4
+ 718 004e 5448     		ldr	r0, .L65+4
+ 719 0050 FFF7FEFF 		bl	center_avg_u16
+ 720              	.LVL48:
+ 721 0054 F0EE408A 		vmov.f32	s17, s0
+ 722              	.LVL49:
+ 125:Core/Src/drive.c ****     float error = left_cm - right_cm;
+ 723              		.loc 1 125 5 is_stmt 1 view .LVU180
+ 125:Core/Src/drive.c ****     float error = left_cm - right_cm;
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 21
+
+
+ 724              		.loc 1 125 22 is_stmt 0 view .LVU181
+ 725 0058 2146     		mov	r1, r4
+ 726 005a 5248     		ldr	r0, .L65+8
+ 727 005c FFF7FEFF 		bl	center_avg_u16
+ 728              	.LVL50:
+ 126:Core/Src/drive.c ****     float steer = 0.0f;
+ 729              		.loc 1 126 5 is_stmt 1 view .LVU182
+ 126:Core/Src/drive.c ****     float steer = 0.0f;
+ 730              		.loc 1 126 11 is_stmt 0 view .LVU183
+ 731 0060 78EEC08A 		vsub.f32	s17, s17, s0
+ 732              	.LVL51:
+ 127:Core/Src/drive.c **** 
+ 733              		.loc 1 127 5 is_stmt 1 view .LVU184
+ 129:Core/Src/drive.c ****     {
+ 734              		.loc 1 129 5 view .LVU185
+ 129:Core/Src/drive.c ****     {
+ 735              		.loc 1 129 9 is_stmt 0 view .LVU186
+ 736 0064 B0EEE87A 		vabs.f32	s14, s17
+ 129:Core/Src/drive.c ****     {
+ 737              		.loc 1 129 8 view .LVU187
+ 738 0068 F0EE007A 		vmov.f32	s15, #2.0e+0
+ 739 006c B4EEE77A 		vcmpe.f32	s14, s15
+ 740 0070 F1EE10FA 		vmrs	APSR_nzcv, FPSCR
+ 741 0074 5BD8     		bhi	.L63
+ 131:Core/Src/drive.c ****     }
+ 742              		.loc 1 131 9 is_stmt 1 view .LVU188
+ 131:Core/Src/drive.c ****     }
+ 743              		.loc 1 131 20 is_stmt 0 view .LVU189
+ 744 0076 9FED4E8A 		vldr.32	s16, .L65+20
+ 745 007a 4E4B     		ldr	r3, .L65+24
+ 746 007c 83ED008A 		vstr.32	s16, [r3]
+ 747              	.LVL52:
+ 748              	.L58:
+ 150:Core/Src/drive.c **** 
+ 749              		.loc 1 150 5 is_stmt 1 view .LVU190
+ 150:Core/Src/drive.c **** 
+ 750              		.loc 1 150 17 is_stmt 0 view .LVU191
+ 751 0080 2A69     		ldr	r2, [r5, #16]
+ 150:Core/Src/drive.c **** 
+ 752              		.loc 1 150 13 view .LVU192
+ 753 0082 4D4B     		ldr	r3, .L65+28
+ 754 0084 1A60     		str	r2, [r3]
+ 152:Core/Src/drive.c ****     float base = CENTER_BASE_SPEED_PCT
+ 755              		.loc 1 152 5 is_stmt 1 view .LVU193
+ 152:Core/Src/drive.c ****     float base = CENTER_BASE_SPEED_PCT
+ 756              		.loc 1 152 25 is_stmt 0 view .LVU194
+ 757 0086 F0EEC86A 		vabs.f32	s13, s16
+ 152:Core/Src/drive.c ****     float base = CENTER_BASE_SPEED_PCT
+ 758              		.loc 1 152 11 view .LVU195
+ 759 008a B2EE047A 		vmov.f32	s14, #1.0e+1
+ 760 008e C6EE877A 		vdiv.f32	s15, s13, s14
+ 761              	.LVL53:
+ 153:Core/Src/drive.c ****                - ((CENTER_BASE_SPEED_PCT - CENTER_MIN_SPEED_PCT) * steer_ratio);
+ 762              		.loc 1 153 5 is_stmt 1 view .LVU196
+ 154:Core/Src/drive.c ****     base = clampf(base, CENTER_MIN_SPEED_PCT, CENTER_BASE_SPEED_PCT);
+ 763              		.loc 1 154 66 is_stmt 0 view .LVU197
+ 764 0092 B2EE007A 		vmov.f32	s14, #8.0e+0
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 22
+
+
+ 765 0096 67EE877A 		vmul.f32	s15, s15, s14
+ 766              	.LVL54:
+ 153:Core/Src/drive.c ****                - ((CENTER_BASE_SPEED_PCT - CENTER_MIN_SPEED_PCT) * steer_ratio);
+ 767              		.loc 1 153 11 view .LVU198
+ 768 009a 9FED481A 		vldr.32	s2, .L65+32
+ 769              	.LVL55:
+ 155:Core/Src/drive.c **** 
+ 770              		.loc 1 155 5 is_stmt 1 view .LVU199
+ 155:Core/Src/drive.c **** 
+ 771              		.loc 1 155 12 is_stmt 0 view .LVU200
+ 772 009e F3EE080A 		vmov.f32	s1, #2.4e+1
+ 773 00a2 31EE670A 		vsub.f32	s0, s2, s15
+ 774              	.LVL56:
+ 155:Core/Src/drive.c **** 
+ 775              		.loc 1 155 12 view .LVU201
+ 776 00a6 FFF7FEFF 		bl	clampf
+ 777              	.LVL57:
+ 155:Core/Src/drive.c **** 
+ 778              		.loc 1 155 12 view .LVU202
+ 779 00aa F0EE408A 		vmov.f32	s17, s0
+ 780              	.LVL58:
+ 157:Core/Src/drive.c ****     float rt = clampf(base + steer, 0.0f, 100.0f);
+ 781              		.loc 1 157 5 is_stmt 1 view .LVU203
+ 157:Core/Src/drive.c ****     float rt = clampf(base + steer, 0.0f, 100.0f);
+ 782              		.loc 1 157 16 is_stmt 0 view .LVU204
+ 783 00ae 9FED44AA 		vldr.32	s20, .L65+36
+ 784 00b2 DFED3F9A 		vldr.32	s19, .L65+20
+ 785 00b6 B0EE4A1A 		vmov.f32	s2, s20
+ 786 00ba F0EE690A 		vmov.f32	s1, s19
+ 787 00be 30EE480A 		vsub.f32	s0, s0, s16
+ 788              	.LVL59:
+ 157:Core/Src/drive.c ****     float rt = clampf(base + steer, 0.0f, 100.0f);
+ 789              		.loc 1 157 16 view .LVU205
+ 790 00c2 FFF7FEFF 		bl	clampf
+ 791              	.LVL60:
+ 792 00c6 B0EE409A 		vmov.f32	s18, s0
+ 793              	.LVL61:
+ 158:Core/Src/drive.c **** 
+ 794              		.loc 1 158 5 is_stmt 1 view .LVU206
+ 158:Core/Src/drive.c **** 
+ 795              		.loc 1 158 16 is_stmt 0 view .LVU207
+ 796 00ca B0EE4A1A 		vmov.f32	s2, s20
+ 797 00ce F0EE690A 		vmov.f32	s1, s19
+ 798 00d2 38EE280A 		vadd.f32	s0, s16, s17
+ 799              	.LVL62:
+ 158:Core/Src/drive.c **** 
+ 800              		.loc 1 158 16 view .LVU208
+ 801 00d6 FFF7FEFF 		bl	clampf
+ 802              	.LVL63:
+ 803 00da F0EE408A 		vmov.f32	s17, s0
+ 804              	.LVL64:
+ 160:Core/Src/drive.c ****     Motor_Right((int8_t)(rt + 0.5f));
+ 805              		.loc 1 160 5 is_stmt 1 view .LVU209
+ 160:Core/Src/drive.c ****     Motor_Right((int8_t)(rt + 0.5f));
+ 806              		.loc 1 160 28 is_stmt 0 view .LVU210
+ 807 00de F6EE009A 		vmov.f32	s19, #5.0e-1
+ 808 00e2 39EE299A 		vadd.f32	s18, s18, s19
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 23
+
+
+ 809              	.LVL65:
+ 160:Core/Src/drive.c ****     Motor_Right((int8_t)(rt + 0.5f));
+ 810              		.loc 1 160 16 view .LVU211
+ 811 00e6 FDEEC97A 		vcvt.s32.f32	s15, s18
+ 812 00ea CDED007A 		vstr.32	s15, [sp]	@ int
+ 160:Core/Src/drive.c ****     Motor_Right((int8_t)(rt + 0.5f));
+ 813              		.loc 1 160 5 view .LVU212
+ 814 00ee 9DF90000 		ldrsb	r0, [sp]
+ 815 00f2 FFF7FEFF 		bl	Motor_Left
+ 816              	.LVL66:
+ 161:Core/Src/drive.c **** 
+ 817              		.loc 1 161 5 is_stmt 1 view .LVU213
+ 161:Core/Src/drive.c **** 
+ 818              		.loc 1 161 29 is_stmt 0 view .LVU214
+ 819 00f6 78EEA98A 		vadd.f32	s17, s17, s19
+ 820              	.LVL67:
+ 161:Core/Src/drive.c **** 
+ 821              		.loc 1 161 17 view .LVU215
+ 822 00fa FDEEE87A 		vcvt.s32.f32	s15, s17
+ 823 00fe CDED017A 		vstr.32	s15, [sp, #4]	@ int
+ 161:Core/Src/drive.c **** 
+ 824              		.loc 1 161 5 view .LVU216
+ 825 0102 9DF90400 		ldrsb	r0, [sp, #4]
+ 826 0106 FFF7FEFF 		bl	Motor_Right
+ 827              	.LVL68:
+ 163:Core/Src/drive.c ****     dbg_steer_mode = SM_BOTH;
+ 828              		.loc 1 163 5 is_stmt 1 view .LVU217
+ 163:Core/Src/drive.c ****     dbg_steer_mode = SM_BOTH;
+ 829              		.loc 1 163 20 is_stmt 0 view .LVU218
+ 830 010a 2E4B     		ldr	r3, .L65+40
+ 831 010c 83ED008A 		vstr.32	s16, [r3]
+ 164:Core/Src/drive.c ****     dbg_duty_l     = (int16_t)(lt + 0.5f);
+ 832              		.loc 1 164 5 is_stmt 1 view .LVU219
+ 164:Core/Src/drive.c ****     dbg_duty_l     = (int16_t)(lt + 0.5f);
+ 833              		.loc 1 164 20 is_stmt 0 view .LVU220
+ 834 0110 2D4B     		ldr	r3, .L65+44
+ 835 0112 0022     		movs	r2, #0
+ 836 0114 1A70     		strb	r2, [r3]
+ 165:Core/Src/drive.c ****     dbg_duty_r     = (int16_t)(rt + 0.5f);
+ 837              		.loc 1 165 5 is_stmt 1 view .LVU221
+ 165:Core/Src/drive.c ****     dbg_duty_r     = (int16_t)(rt + 0.5f);
+ 838              		.loc 1 165 22 is_stmt 0 view .LVU222
+ 839 0116 BDF90030 		ldrsh	r3, [sp]
+ 165:Core/Src/drive.c ****     dbg_duty_r     = (int16_t)(rt + 0.5f);
+ 840              		.loc 1 165 20 view .LVU223
+ 841 011a 2C4A     		ldr	r2, .L65+48
+ 842 011c 1380     		strh	r3, [r2]	@ movhi
+ 166:Core/Src/drive.c **** }
+ 843              		.loc 1 166 5 is_stmt 1 view .LVU224
+ 166:Core/Src/drive.c **** }
+ 844              		.loc 1 166 22 is_stmt 0 view .LVU225
+ 845 011e BDF90430 		ldrsh	r3, [sp, #4]
+ 166:Core/Src/drive.c **** }
+ 846              		.loc 1 166 20 view .LVU226
+ 847 0122 2B4A     		ldr	r2, .L65+52
+ 848 0124 1380     		strh	r3, [r2]	@ movhi
+ 167:Core/Src/drive.c **** 
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 24
+
+
+ 849              		.loc 1 167 1 view .LVU227
+ 850 0126 02B0     		add	sp, sp, #8
+ 851              	.LCFI9:
+ 852              		.cfi_remember_state
+ 853              		.cfi_def_cfa_offset 40
+ 854              		@ sp needed
+ 855 0128 BDEC068B 		vldm	sp!, {d8-d10}
+ 856              	.LCFI10:
+ 857              		.cfi_restore 84
+ 858              		.cfi_restore 85
+ 859              		.cfi_restore 82
+ 860              		.cfi_restore 83
+ 861              		.cfi_restore 80
+ 862              		.cfi_restore 81
+ 863              		.cfi_def_cfa_offset 16
+ 864              	.LVL69:
+ 167:Core/Src/drive.c **** 
+ 865              		.loc 1 167 1 view .LVU228
+ 866 012c 70BD     		pop	{r4, r5, r6, pc}
+ 867              	.LVL70:
+ 868              	.L63:
+ 869              	.LCFI11:
+ 870              		.cfi_restore_state
+ 871              	.LBB4:
+ 135:Core/Src/drive.c **** 
+ 872              		.loc 1 135 9 is_stmt 1 view .LVU229
+ 137:Core/Src/drive.c ****         {
+ 873              		.loc 1 137 9 view .LVU230
+ 137:Core/Src/drive.c ****         {
+ 874              		.loc 1 137 21 is_stmt 0 view .LVU231
+ 875 012e 224B     		ldr	r3, .L65+28
+ 876 0130 1B68     		ldr	r3, [r3]
+ 137:Core/Src/drive.c ****         {
+ 877              		.loc 1 137 12 view .LVU232
+ 878 0132 93B1     		cbz	r3, .L60
+ 137:Core/Src/drive.c ****         {
+ 879              		.loc 1 137 32 discriminator 1 view .LVU233
+ 880 0134 2A69     		ldr	r2, [r5, #16]
+ 137:Core/Src/drive.c ****         {
+ 881              		.loc 1 137 27 discriminator 1 view .LVU234
+ 882 0136 9342     		cmp	r3, r2
+ 883 0138 2DD2     		bcs	.L61
+ 139:Core/Src/drive.c ****             dt = clampf(dt, 0.005f, 0.100f);
+ 884              		.loc 1 139 13 is_stmt 1 view .LVU235
+ 139:Core/Src/drive.c ****             dt = clampf(dt, 0.005f, 0.100f);
+ 885              		.loc 1 139 34 is_stmt 0 view .LVU236
+ 886 013a D21A     		subs	r2, r2, r3
+ 139:Core/Src/drive.c ****             dt = clampf(dt, 0.005f, 0.100f);
+ 887              		.loc 1 139 18 view .LVU237
+ 888 013c 07EE902A 		vmov	s15, r2	@ int
+ 889 0140 F8EE677A 		vcvt.f32.u32	s15, s15
+ 890              	.LVL71:
+ 140:Core/Src/drive.c ****         }
+ 891              		.loc 1 140 13 is_stmt 1 view .LVU238
+ 140:Core/Src/drive.c ****         }
+ 892              		.loc 1 140 18 is_stmt 0 view .LVU239
+ 893 0144 9FED231A 		vldr.32	s2, .L65+56
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 25
+
+
+ 894 0148 DFED230A 		vldr.32	s1, .L65+60
+ 895 014c 9FED230A 		vldr.32	s0, .L65+64
+ 896              	.LVL72:
+ 140:Core/Src/drive.c ****         }
+ 897              		.loc 1 140 18 view .LVU240
+ 898 0150 87EE800A 		vdiv.f32	s0, s15, s0
+ 899              	.LVL73:
+ 140:Core/Src/drive.c ****         }
+ 900              		.loc 1 140 18 view .LVU241
+ 901 0154 FFF7FEFF 		bl	clampf
+ 902              	.LVL74:
+ 140:Core/Src/drive.c ****         }
+ 903              		.loc 1 140 18 view .LVU242
+ 904 0158 01E0     		b	.L59
+ 905              	.LVL75:
+ 906              	.L60:
+ 135:Core/Src/drive.c **** 
+ 907              		.loc 1 135 15 view .LVU243
+ 908 015a 9FED210A 		vldr.32	s0, .L65+68
+ 909              	.LVL76:
+ 910              	.L59:
+ 143:Core/Src/drive.c **** 
+ 911              		.loc 1 143 9 is_stmt 1 view .LVU244
+ 143:Core/Src/drive.c **** 
+ 912              		.loc 1 143 32 is_stmt 0 view .LVU245
+ 913 015e 154C     		ldr	r4, .L65+24
+ 914 0160 94ED007A 		vldr.32	s14, [r4]
+ 915 0164 38EEC77A 		vsub.f32	s14, s17, s14
+ 143:Core/Src/drive.c **** 
+ 916              		.loc 1 143 15 view .LVU246
+ 917 0168 C7EE007A 		vdiv.f32	s15, s14, s0
+ 918              	.LVL77:
+ 145:Core/Src/drive.c ****         steer = clampf(steer, -CENTER_STEER_MAX_PCT, CENTER_STEER_MAX_PCT);
+ 919              		.loc 1 145 9 is_stmt 1 view .LVU247
+ 145:Core/Src/drive.c ****         steer = clampf(steer, -CENTER_STEER_MAX_PCT, CENTER_STEER_MAX_PCT);
+ 920              		.loc 1 145 28 is_stmt 0 view .LVU248
+ 921 016c 9FED1D0A 		vldr.32	s0, .L65+72
+ 922              	.LVL78:
+ 145:Core/Src/drive.c ****         steer = clampf(steer, -CENTER_STEER_MAX_PCT, CENTER_STEER_MAX_PCT);
+ 923              		.loc 1 145 28 view .LVU249
+ 924 0170 28EE800A 		vmul.f32	s0, s17, s0
+ 145:Core/Src/drive.c ****         steer = clampf(steer, -CENTER_STEER_MAX_PCT, CENTER_STEER_MAX_PCT);
+ 925              		.loc 1 145 50 view .LVU250
+ 926 0174 9FED1C7A 		vldr.32	s14, .L65+76
+ 927 0178 67EE877A 		vmul.f32	s15, s15, s14
+ 928              	.LVL79:
+ 146:Core/Src/drive.c ****         prev_error = error;
+ 929              		.loc 1 146 9 is_stmt 1 view .LVU251
+ 146:Core/Src/drive.c ****         prev_error = error;
+ 930              		.loc 1 146 17 is_stmt 0 view .LVU252
+ 931 017c B2EE041A 		vmov.f32	s2, #1.0e+1
+ 932 0180 FAEE040A 		vmov.f32	s1, #-1.0e+1
+ 933 0184 30EE270A 		vadd.f32	s0, s0, s15
+ 934              	.LVL80:
+ 146:Core/Src/drive.c ****         prev_error = error;
+ 935              		.loc 1 146 17 view .LVU253
+ 936 0188 FFF7FEFF 		bl	clampf
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 26
+
+
+ 937              	.LVL81:
+ 146:Core/Src/drive.c ****         prev_error = error;
+ 938              		.loc 1 146 17 view .LVU254
+ 939 018c B0EE408A 		vmov.f32	s16, s0
+ 940              	.LVL82:
+ 147:Core/Src/drive.c ****     }
+ 941              		.loc 1 147 9 is_stmt 1 view .LVU255
+ 147:Core/Src/drive.c ****     }
+ 942              		.loc 1 147 20 is_stmt 0 view .LVU256
+ 943 0190 C4ED008A 		vstr.32	s17, [r4]
+ 944 0194 74E7     		b	.L58
+ 945              	.LVL83:
+ 946              	.L61:
+ 135:Core/Src/drive.c **** 
+ 947              		.loc 1 135 15 view .LVU257
+ 948 0196 9FED120A 		vldr.32	s0, .L65+68
+ 949              	.LVL84:
+ 135:Core/Src/drive.c **** 
+ 950              		.loc 1 135 15 view .LVU258
+ 951 019a E0E7     		b	.L59
+ 952              	.L66:
+ 953              		.align	2
+ 954              	.L65:
+ 955 019c 00000000 		.word	idx.5
+ 956 01a0 00000000 		.word	l_buf.4
+ 957 01a4 00000000 		.word	r_buf.3
+ 958 01a8 CDCCCCCC 		.word	-858993459
+ 959 01ac 00000000 		.word	count.2
+ 960 01b0 00000000 		.word	0
+ 961 01b4 00000000 		.word	prev_error.1
+ 962 01b8 00000000 		.word	prev_ms.0
+ 963 01bc 00000042 		.word	1107296256
+ 964 01c0 0000C842 		.word	1120403456
+ 965 01c4 00000000 		.word	dbg_steer
+ 966 01c8 00000000 		.word	dbg_steer_mode
+ 967 01cc 00000000 		.word	dbg_duty_l
+ 968 01d0 00000000 		.word	dbg_duty_r
+ 969 01d4 CDCCCC3D 		.word	1036831949
+ 970 01d8 0AD7A33B 		.word	1000593162
+ 971 01dc 00007A44 		.word	1148846080
+ 972 01e0 0AD7A33C 		.word	1017370378
+ 973 01e4 CDCC4C3F 		.word	1061997773
+ 974 01e8 295C0F3D 		.word	1024416809
+ 975              	.LBE4:
+ 976              		.cfi_endproc
+ 977              	.LFE138:
+ 979              		.section	.text.cruise_run,"ax",%progbits
+ 980              		.align	1
+ 981              		.syntax unified
+ 982              		.thumb
+ 983              		.thumb_func
+ 985              	cruise_run:
+ 986              	.LVL85:
+ 987              	.LFB146:
+ 236:Core/Src/drive.c ****     /* fail-safe: 정면 연속 무에코 → HOLD. CRUISE에서만 — SPIN/REVERSE는 전방 노�
+ 988              		.loc 1 236 1 is_stmt 1 view -0
+ 989              		.cfi_startproc
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 27
+
+
+ 990              		@ args = 0, pretend = 0, frame = 0
+ 991              		@ frame_needed = 0, uses_anonymous_args = 0
+ 236:Core/Src/drive.c ****     /* fail-safe: 정면 연속 무에코 → HOLD. CRUISE에서만 — SPIN/REVERSE는 전방 노�
+ 992              		.loc 1 236 1 is_stmt 0 view .LVU260
+ 993 0000 08B5     		push	{r3, lr}
+ 994              	.LCFI12:
+ 995              		.cfi_def_cfa_offset 8
+ 996              		.cfi_offset 3, -8
+ 997              		.cfi_offset 14, -4
+ 238:Core/Src/drive.c **** 
+ 998              		.loc 1 238 5 is_stmt 1 view .LVU261
+ 238:Core/Src/drive.c **** 
+ 999              		.loc 1 238 11 is_stmt 0 view .LVU262
+ 1000 0002 C379     		ldrb	r3, [r0, #7]	@ zero_extendqisi2
+ 238:Core/Src/drive.c **** 
+ 1001              		.loc 1 238 8 view .LVU263
+ 1002 0004 042B     		cmp	r3, #4
+ 1003 0006 0CD8     		bhi	.L73
+ 241:Core/Src/drive.c **** 
+ 1004              		.loc 1 241 5 is_stmt 1 view .LVU264
+ 241:Core/Src/drive.c **** 
+ 1005              		.loc 1 241 11 is_stmt 0 view .LVU265
+ 1006 0008 0388     		ldrh	r3, [r0]
+ 241:Core/Src/drive.c **** 
+ 1007              		.loc 1 241 8 view .LVU266
+ 1008 000a 132B     		cmp	r3, #19
+ 1009 000c 0CD9     		bls	.L74
+ 1010              	.LBB5:
+ 245:Core/Src/drive.c ****         if (smin < SIDE_AVOID_CM) { side_avoid_enter(in); return; }
+ 1011              		.loc 1 245 9 is_stmt 1 view .LVU267
+ 245:Core/Src/drive.c ****         if (smin < SIDE_AVOID_CM) { side_avoid_enter(in); return; }
+ 1012              		.loc 1 245 36 is_stmt 0 view .LVU268
+ 1013 000e 8388     		ldrh	r3, [r0, #4]
+ 245:Core/Src/drive.c ****         if (smin < SIDE_AVOID_CM) { side_avoid_enter(in); return; }
+ 1014              		.loc 1 245 28 view .LVU269
+ 1015 0010 4288     		ldrh	r2, [r0, #2]
+ 245:Core/Src/drive.c ****         if (smin < SIDE_AVOID_CM) { side_avoid_enter(in); return; }
+ 1016              		.loc 1 245 18 view .LVU270
+ 1017 0012 9342     		cmp	r3, r2
+ 1018 0014 28BF     		it	cs
+ 1019 0016 1346     		movcs	r3, r2
+ 1020              	.LVL86:
+ 246:Core/Src/drive.c ****     }
+ 1021              		.loc 1 246 9 is_stmt 1 view .LVU271
+ 246:Core/Src/drive.c ****     }
+ 1022              		.loc 1 246 12 is_stmt 0 view .LVU272
+ 1023 0018 042B     		cmp	r3, #4
+ 1024 001a 08D9     		bls	.L75
+ 1025              	.LBE5:
+ 248:Core/Src/drive.c ****     return;
+ 1026              		.loc 1 248 5 is_stmt 1 view .LVU273
+ 1027 001c FFF7FEFF 		bl	Drive_CenteringPD_Run
+ 1028              	.LVL87:
+ 249:Core/Src/drive.c **** }
+ 1029              		.loc 1 249 5 view .LVU274
+ 1030              	.L67:
+ 250:Core/Src/drive.c **** 
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 28
+
+
+ 1031              		.loc 1 250 1 is_stmt 0 view .LVU275
+ 1032 0020 08BD     		pop	{r3, pc}
+ 1033              	.LVL88:
+ 1034              	.L73:
+ 238:Core/Src/drive.c **** 
+ 1035              		.loc 1 238 47 is_stmt 1 discriminator 1 view .LVU276
+ 1036 0022 FFF7FEFF 		bl	hold_enter
+ 1037              	.LVL89:
+ 238:Core/Src/drive.c **** 
+ 1038              		.loc 1 238 63 discriminator 1 view .LVU277
+ 238:Core/Src/drive.c **** 
+ 1039              		.loc 1 238 63 is_stmt 0 view .LVU278
+ 1040 0026 FBE7     		b	.L67
+ 1041              	.LVL90:
+ 1042              	.L74:
+ 241:Core/Src/drive.c **** 
+ 1043              		.loc 1 241 34 is_stmt 1 discriminator 1 view .LVU279
+ 1044 0028 FFF7FEFF 		bl	brake_enter
+ 1045              	.LVL91:
+ 241:Core/Src/drive.c **** 
+ 1046              		.loc 1 241 51 discriminator 1 view .LVU280
+ 241:Core/Src/drive.c **** 
+ 1047              		.loc 1 241 51 is_stmt 0 view .LVU281
+ 1048 002c F8E7     		b	.L67
+ 1049              	.LVL92:
+ 1050              	.L75:
+ 1051              	.LBB6:
+ 246:Core/Src/drive.c ****     }
+ 1052              		.loc 1 246 37 is_stmt 1 discriminator 1 view .LVU282
+ 1053 002e FFF7FEFF 		bl	side_avoid_enter
+ 1054              	.LVL93:
+ 246:Core/Src/drive.c ****     }
+ 1055              		.loc 1 246 59 discriminator 1 view .LVU283
+ 246:Core/Src/drive.c ****     }
+ 1056              		.loc 1 246 59 is_stmt 0 view .LVU284
+ 1057 0032 F5E7     		b	.L67
+ 1058              	.LBE6:
+ 1059              		.cfi_endproc
+ 1060              	.LFE146:
+ 1062              		.section	.text.reverse_enter,"ax",%progbits
+ 1063              		.align	1
+ 1064              		.syntax unified
+ 1065              		.thumb
+ 1066              		.thumb_func
+ 1068              	reverse_enter:
+ 1069              	.LVL94:
+ 1070              	.LFB143:
+ 211:Core/Src/drive.c ****     Car_Backward(DRIVE_SPEED);
+ 1071              		.loc 1 211 1 is_stmt 1 view -0
+ 1072              		.cfi_startproc
+ 1073              		@ args = 0, pretend = 0, frame = 0
+ 1074              		@ frame_needed = 0, uses_anonymous_args = 0
+ 211:Core/Src/drive.c ****     Car_Backward(DRIVE_SPEED);
+ 1075              		.loc 1 211 1 is_stmt 0 view .LVU286
+ 1076 0000 10B5     		push	{r4, lr}
+ 1077              	.LCFI13:
+ 1078              		.cfi_def_cfa_offset 8
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 29
+
+
+ 1079              		.cfi_offset 4, -8
+ 1080              		.cfi_offset 14, -4
+ 1081 0002 0446     		mov	r4, r0
+ 212:Core/Src/drive.c ****     if (rev_cnt < 255) rev_cnt++;
+ 1082              		.loc 1 212 5 is_stmt 1 view .LVU287
+ 1083 0004 2020     		movs	r0, #32
+ 1084              	.LVL95:
+ 212:Core/Src/drive.c ****     if (rev_cnt < 255) rev_cnt++;
+ 1085              		.loc 1 212 5 is_stmt 0 view .LVU288
+ 1086 0006 FFF7FEFF 		bl	Car_Backward
+ 1087              	.LVL96:
+ 213:Core/Src/drive.c ****     enter(DS_REVERSE, in->now);
+ 1088              		.loc 1 213 5 is_stmt 1 view .LVU289
+ 213:Core/Src/drive.c ****     enter(DS_REVERSE, in->now);
+ 1089              		.loc 1 213 17 is_stmt 0 view .LVU290
+ 1090 000a 064B     		ldr	r3, .L79
+ 1091 000c 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 213:Core/Src/drive.c ****     enter(DS_REVERSE, in->now);
+ 1092              		.loc 1 213 8 view .LVU291
+ 1093 000e FF2B     		cmp	r3, #255
+ 1094 0010 02D0     		beq	.L77
+ 213:Core/Src/drive.c ****     enter(DS_REVERSE, in->now);
+ 1095              		.loc 1 213 24 is_stmt 1 discriminator 1 view .LVU292
+ 213:Core/Src/drive.c ****     enter(DS_REVERSE, in->now);
+ 1096              		.loc 1 213 31 is_stmt 0 discriminator 1 view .LVU293
+ 1097 0012 0133     		adds	r3, r3, #1
+ 1098 0014 034A     		ldr	r2, .L79
+ 1099 0016 1370     		strb	r3, [r2]
+ 1100              	.L77:
+ 214:Core/Src/drive.c **** }
+ 1101              		.loc 1 214 5 is_stmt 1 view .LVU294
+ 1102 0018 2169     		ldr	r1, [r4, #16]
+ 1103 001a 0320     		movs	r0, #3
+ 1104 001c FFF7FEFF 		bl	enter
+ 1105              	.LVL97:
+ 215:Core/Src/drive.c **** 
+ 1106              		.loc 1 215 1 is_stmt 0 view .LVU295
+ 1107 0020 10BD     		pop	{r4, pc}
+ 1108              	.LVL98:
+ 1109              	.L80:
+ 215:Core/Src/drive.c **** 
+ 1110              		.loc 1 215 1 view .LVU296
+ 1111 0022 00BF     		.align	2
+ 1112              	.L79:
+ 1113 0024 00000000 		.word	rev_cnt
+ 1114              		.cfi_endproc
+ 1115              	.LFE143:
+ 1117              		.section	.text.brake_run,"ax",%progbits
+ 1118              		.align	1
+ 1119              		.syntax unified
+ 1120              		.thumb
+ 1121              		.thumb_func
+ 1123              	brake_run:
+ 1124              	.LVL99:
+ 1125              	.LFB147:
+ 254:Core/Src/drive.c ****     if ((in->now - t_state) < (uint32_t)BRAKE_MS) return;   /* 제동 유지 중 */
+ 1126              		.loc 1 254 1 is_stmt 1 view -0
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 30
+
+
+ 1127              		.cfi_startproc
+ 1128              		@ args = 0, pretend = 0, frame = 0
+ 1129              		@ frame_needed = 0, uses_anonymous_args = 0
+ 255:Core/Src/drive.c **** 
+ 1130              		.loc 1 255 5 view .LVU298
+ 255:Core/Src/drive.c **** 
+ 1131              		.loc 1 255 12 is_stmt 0 view .LVU299
+ 1132 0000 0369     		ldr	r3, [r0, #16]
+ 255:Core/Src/drive.c **** 
+ 1133              		.loc 1 255 18 view .LVU300
+ 1134 0002 124A     		ldr	r2, .L90
+ 1135 0004 1268     		ldr	r2, [r2]
+ 1136 0006 9B1A     		subs	r3, r3, r2
+ 255:Core/Src/drive.c **** 
+ 1137              		.loc 1 255 8 view .LVU301
+ 1138 0008 772B     		cmp	r3, #119
+ 1139 000a 00D8     		bhi	.L88
+ 1140 000c 7047     		bx	lr
+ 1141              	.L88:
+ 254:Core/Src/drive.c ****     if ((in->now - t_state) < (uint32_t)BRAKE_MS) return;   /* 제동 유지 중 */
+ 1142              		.loc 1 254 1 view .LVU302
+ 1143 000e 10B5     		push	{r4, lr}
+ 1144              	.LCFI14:
+ 1145              		.cfi_def_cfa_offset 8
+ 1146              		.cfi_offset 4, -8
+ 1147              		.cfi_offset 14, -4
+ 1148 0010 0446     		mov	r4, r0
+ 257:Core/Src/drive.c **** 
+ 1149              		.loc 1 257 5 is_stmt 1 view .LVU303
+ 1150 0012 FFF7FEFF 		bl	Car_Stop
+ 1151              	.LVL100:
+ 259:Core/Src/drive.c ****                         in->l < SIDE_BLOCK_CM   &&
+ 1152              		.loc 1 259 5 view .LVU304
+ 259:Core/Src/drive.c ****                         in->l < SIDE_BLOCK_CM   &&
+ 1153              		.loc 1 259 27 is_stmt 0 view .LVU305
+ 1154 0016 2388     		ldrh	r3, [r4]
+ 260:Core/Src/drive.c ****                         in->r < SIDE_BLOCK_CM);
+ 1155              		.loc 1 260 49 view .LVU306
+ 1156 0018 0B2B     		cmp	r3, #11
+ 1157 001a 09D8     		bhi	.L83
+ 260:Core/Src/drive.c ****                         in->r < SIDE_BLOCK_CM);
+ 1158              		.loc 1 260 27 discriminator 1 view .LVU307
+ 1159 001c 6388     		ldrh	r3, [r4, #2]
+ 259:Core/Src/drive.c ****                         in->l < SIDE_BLOCK_CM   &&
+ 1160              		.loc 1 259 49 view .LVU308
+ 1161 001e 052B     		cmp	r3, #5
+ 1162 0020 06D8     		bhi	.L83
+ 261:Core/Src/drive.c ****     if (dead_end && rev_cnt < REV_MAX_CHUNKS)
+ 1163              		.loc 1 261 27 view .LVU309
+ 1164 0022 A388     		ldrh	r3, [r4, #4]
+ 260:Core/Src/drive.c ****                         in->r < SIDE_BLOCK_CM);
+ 1165              		.loc 1 260 49 discriminator 4 view .LVU310
+ 1166 0024 052B     		cmp	r3, #5
+ 1167 0026 03D8     		bhi	.L83
+ 1168              	.LVL101:
+ 262:Core/Src/drive.c ****         reverse_enter(in);
+ 1169              		.loc 1 262 5 is_stmt 1 view .LVU311
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 31
+
+
+ 262:Core/Src/drive.c ****         reverse_enter(in);
+ 1170              		.loc 1 262 29 is_stmt 0 discriminator 1 view .LVU312
+ 1171 0028 094B     		ldr	r3, .L90+4
+ 1172 002a 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 262:Core/Src/drive.c ****         reverse_enter(in);
+ 1173              		.loc 1 262 18 discriminator 1 view .LVU313
+ 1174 002c 022B     		cmp	r3, #2
+ 1175 002e 08D9     		bls	.L89
+ 1176              	.LVL102:
+ 1177              	.L83:
+ 265:Core/Src/drive.c **** }
+ 1178              		.loc 1 265 9 is_stmt 1 view .LVU314
+ 1179 0030 074B     		ldr	r3, .L90+4
+ 1180 0032 1978     		ldrb	r1, [r3]	@ zero_extendqisi2
+ 1181 0034 0039     		subs	r1, r1, #0
+ 1182 0036 18BF     		it	ne
+ 1183 0038 0121     		movne	r1, #1
+ 1184 003a 2046     		mov	r0, r4
+ 1185 003c FFF7FEFF 		bl	spin_enter
+ 1186              	.LVL103:
+ 1187              	.L81:
+ 266:Core/Src/drive.c **** 
+ 1188              		.loc 1 266 1 is_stmt 0 view .LVU315
+ 1189 0040 10BD     		pop	{r4, pc}
+ 1190              	.LVL104:
+ 1191              	.L89:
+ 263:Core/Src/drive.c ****     else
+ 1192              		.loc 1 263 9 is_stmt 1 view .LVU316
+ 1193 0042 2046     		mov	r0, r4
+ 1194 0044 FFF7FEFF 		bl	reverse_enter
+ 1195              	.LVL105:
+ 1196 0048 FAE7     		b	.L81
+ 1197              	.L91:
+ 1198 004a 00BF     		.align	2
+ 1199              	.L90:
+ 1200 004c 00000000 		.word	t_state
+ 1201 0050 00000000 		.word	rev_cnt
+ 1202              		.cfi_endproc
+ 1203              	.LFE147:
+ 1205              		.section	.text.reverse_run,"ax",%progbits
+ 1206              		.align	1
+ 1207              		.syntax unified
+ 1208              		.thumb
+ 1209              		.thumb_func
+ 1211              	reverse_run:
+ 1212              	.LVL106:
+ 1213              	.LFB149:
+ 344:Core/Src/drive.c ****     if ((in->now - t_state) >= (uint32_t)BACK_CHUNK_MS)
+ 1214              		.loc 1 344 1 view -0
+ 1215              		.cfi_startproc
+ 1216              		@ args = 0, pretend = 0, frame = 0
+ 1217              		@ frame_needed = 0, uses_anonymous_args = 0
+ 344:Core/Src/drive.c ****     if ((in->now - t_state) >= (uint32_t)BACK_CHUNK_MS)
+ 1218              		.loc 1 344 1 is_stmt 0 view .LVU318
+ 1219 0000 08B5     		push	{r3, lr}
+ 1220              	.LCFI15:
+ 1221              		.cfi_def_cfa_offset 8
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 32
+
+
+ 1222              		.cfi_offset 3, -8
+ 1223              		.cfi_offset 14, -4
+ 345:Core/Src/drive.c ****     {
+ 1224              		.loc 1 345 5 is_stmt 1 view .LVU319
+ 345:Core/Src/drive.c ****     {
+ 1225              		.loc 1 345 12 is_stmt 0 view .LVU320
+ 1226 0002 0369     		ldr	r3, [r0, #16]
+ 345:Core/Src/drive.c ****     {
+ 1227              		.loc 1 345 18 view .LVU321
+ 1228 0004 054A     		ldr	r2, .L97
+ 1229 0006 1268     		ldr	r2, [r2]
+ 1230 0008 9B1A     		subs	r3, r3, r2
+ 345:Core/Src/drive.c ****     {
+ 1231              		.loc 1 345 8 view .LVU322
+ 1232 000a 772B     		cmp	r3, #119
+ 1233 000c 03D8     		bhi	.L96
+ 350:Core/Src/drive.c **** }
+ 1234              		.loc 1 350 5 is_stmt 1 view .LVU323
+ 1235 000e 2020     		movs	r0, #32
+ 1236              	.LVL107:
+ 350:Core/Src/drive.c **** }
+ 1237              		.loc 1 350 5 is_stmt 0 view .LVU324
+ 1238 0010 FFF7FEFF 		bl	Car_Backward
+ 1239              	.LVL108:
+ 1240              	.L92:
+ 351:Core/Src/drive.c **** 
+ 1241              		.loc 1 351 1 view .LVU325
+ 1242 0014 08BD     		pop	{r3, pc}
+ 1243              	.LVL109:
+ 1244              	.L96:
+ 347:Core/Src/drive.c ****         return;
+ 1245              		.loc 1 347 9 is_stmt 1 view .LVU326
+ 1246 0016 FFF7FEFF 		bl	brake_enter
+ 1247              	.LVL110:
+ 348:Core/Src/drive.c ****     }
+ 1248              		.loc 1 348 9 view .LVU327
+ 1249 001a FBE7     		b	.L92
+ 1250              	.L98:
+ 1251              		.align	2
+ 1252              	.L97:
+ 1253 001c 00000000 		.word	t_state
+ 1254              		.cfi_endproc
+ 1255              	.LFE149:
+ 1257              		.section	.text.spin_run,"ax",%progbits
+ 1258              		.align	1
+ 1259              		.syntax unified
+ 1260              		.thumb
+ 1261              		.thumb_func
+ 1263              	spin_run:
+ 1264              	.LVL111:
+ 1265              	.LFB148:
+ 270:Core/Src/drive.c ****     /* 막다른 곳 → 후진 (chunk 예산 내에서만) */
+ 1266              		.loc 1 270 1 view -0
+ 1267              		.cfi_startproc
+ 1268              		@ args = 0, pretend = 0, frame = 0
+ 1269              		@ frame_needed = 0, uses_anonymous_args = 0
+ 270:Core/Src/drive.c ****     /* 막다른 곳 → 후진 (chunk 예산 내에서만) */
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 33
+
+
+ 1270              		.loc 1 270 1 is_stmt 0 view .LVU329
+ 1271 0000 70B5     		push	{r4, r5, r6, lr}
+ 1272              	.LCFI16:
+ 1273              		.cfi_def_cfa_offset 16
+ 1274              		.cfi_offset 4, -16
+ 1275              		.cfi_offset 5, -12
+ 1276              		.cfi_offset 6, -8
+ 1277              		.cfi_offset 14, -4
+ 1278 0002 2DED028B 		vpush.64	{d8}
+ 1279              	.LCFI17:
+ 1280              		.cfi_def_cfa_offset 24
+ 1281              		.cfi_offset 80, -24
+ 1282              		.cfi_offset 81, -20
+ 1283 0006 0446     		mov	r4, r0
+ 272:Core/Src/drive.c ****         && rev_cnt < REV_MAX_CHUNKS)
+ 1284              		.loc 1 272 5 is_stmt 1 view .LVU330
+ 272:Core/Src/drive.c ****         && rev_cnt < REV_MAX_CHUNKS)
+ 1285              		.loc 1 272 11 is_stmt 0 view .LVU331
+ 1286 0008 0388     		ldrh	r3, [r0]
+ 272:Core/Src/drive.c ****         && rev_cnt < REV_MAX_CHUNKS)
+ 1287              		.loc 1 272 8 view .LVU332
+ 1288 000a 0B2B     		cmp	r3, #11
+ 1289 000c 09D8     		bhi	.L100
+ 272:Core/Src/drive.c ****         && rev_cnt < REV_MAX_CHUNKS)
+ 1290              		.loc 1 272 38 discriminator 1 view .LVU333
+ 1291 000e 4388     		ldrh	r3, [r0, #2]
+ 272:Core/Src/drive.c ****         && rev_cnt < REV_MAX_CHUNKS)
+ 1292              		.loc 1 272 33 discriminator 1 view .LVU334
+ 1293 0010 052B     		cmp	r3, #5
+ 1294 0012 06D8     		bhi	.L100
+ 272:Core/Src/drive.c ****         && rev_cnt < REV_MAX_CHUNKS)
+ 1295              		.loc 1 272 63 discriminator 2 view .LVU335
+ 1296 0014 8388     		ldrh	r3, [r0, #4]
+ 272:Core/Src/drive.c ****         && rev_cnt < REV_MAX_CHUNKS)
+ 1297              		.loc 1 272 58 discriminator 2 view .LVU336
+ 1298 0016 052B     		cmp	r3, #5
+ 1299 0018 03D8     		bhi	.L100
+ 273:Core/Src/drive.c ****     {
+ 1300              		.loc 1 273 20 view .LVU337
+ 1301 001a 5C4B     		ldr	r3, .L124
+ 1302 001c 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 273:Core/Src/drive.c ****     {
+ 1303              		.loc 1 273 9 view .LVU338
+ 1304 001e 022B     		cmp	r3, #2
+ 1305 0020 63D9     		bls	.L120
+ 1306              	.L100:
+ 279:Core/Src/drive.c ****     {
+ 1307              		.loc 1 279 5 is_stmt 1 view .LVU339
+ 279:Core/Src/drive.c ****     {
+ 1308              		.loc 1 279 11 is_stmt 0 view .LVU340
+ 1309 0022 257B     		ldrb	r5, [r4, #12]	@ zero_extendqisi2
+ 279:Core/Src/drive.c ****     {
+ 1310              		.loc 1 279 8 view .LVU341
+ 1311 0024 002D     		cmp	r5, #0
+ 1312 0026 63D1     		bne	.L121
+ 1313              	.LVL112:
+ 1314              	.L102:
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 34
+
+
+ 298:Core/Src/drive.c ****     {
+ 1315              		.loc 1 298 5 is_stmt 1 view .LVU342
+ 298:Core/Src/drive.c ****     {
+ 1316              		.loc 1 298 12 is_stmt 0 view .LVU343
+ 1317 0028 2269     		ldr	r2, [r4, #16]
+ 298:Core/Src/drive.c ****     {
+ 1318              		.loc 1 298 18 view .LVU344
+ 1319 002a 594B     		ldr	r3, .L124+4
+ 1320 002c 1B68     		ldr	r3, [r3]
+ 1321 002e D31A     		subs	r3, r2, r3
+ 298:Core/Src/drive.c ****     {
+ 1322              		.loc 1 298 8 view .LVU345
+ 1323 0030 40F6C411 		movw	r1, #2500
+ 1324 0034 8B42     		cmp	r3, r1
+ 1325 0036 0ED9     		bls	.L105
+ 300:Core/Src/drive.c ****         turn_dir ^= 1;
+ 1326              		.loc 1 300 9 is_stmt 1 view .LVU346
+ 300:Core/Src/drive.c ****         turn_dir ^= 1;
+ 1327              		.loc 1 300 21 is_stmt 0 view .LVU347
+ 1328 0038 544B     		ldr	r3, .L124
+ 1329 003a 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 300:Core/Src/drive.c ****         turn_dir ^= 1;
+ 1330              		.loc 1 300 12 view .LVU348
+ 1331 003c 022B     		cmp	r3, #2
+ 1332 003e 40F28880 		bls	.L122
+ 301:Core/Src/drive.c ****         t_state = in->now;
+ 1333              		.loc 1 301 9 is_stmt 1 view .LVU349
+ 301:Core/Src/drive.c ****         t_state = in->now;
+ 1334              		.loc 1 301 18 is_stmt 0 view .LVU350
+ 1335 0042 5449     		ldr	r1, .L124+8
+ 1336 0044 0B78     		ldrb	r3, [r1]	@ zero_extendqisi2
+ 1337 0046 83F00103 		eor	r3, r3, #1
+ 1338 004a 0B70     		strb	r3, [r1]
+ 302:Core/Src/drive.c ****         h_entry = in->heading;
+ 1339              		.loc 1 302 9 is_stmt 1 view .LVU351
+ 302:Core/Src/drive.c ****         h_entry = in->heading;
+ 1340              		.loc 1 302 17 is_stmt 0 view .LVU352
+ 1341 004c 504B     		ldr	r3, .L124+4
+ 1342 004e 1A60     		str	r2, [r3]
+ 303:Core/Src/drive.c ****     }
+ 1343              		.loc 1 303 9 is_stmt 1 view .LVU353
+ 303:Core/Src/drive.c ****     }
+ 1344              		.loc 1 303 21 is_stmt 0 view .LVU354
+ 1345 0050 A168     		ldr	r1, [r4, #8]	@ float
+ 303:Core/Src/drive.c ****     }
+ 1346              		.loc 1 303 17 view .LVU355
+ 1347 0052 514B     		ldr	r3, .L124+12
+ 1348 0054 1960     		str	r1, [r3]	@ float
+ 1349              	.L105:
+ 307:Core/Src/drive.c ****     {
+ 1350              		.loc 1 307 5 is_stmt 1 view .LVU356
+ 307:Core/Src/drive.c ****     {
+ 1351              		.loc 1 307 18 is_stmt 0 view .LVU357
+ 1352 0056 4E4B     		ldr	r3, .L124+4
+ 1353 0058 1B68     		ldr	r3, [r3]
+ 1354 005a D31A     		subs	r3, r2, r3
+ 307:Core/Src/drive.c ****     {
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 35
+
+
+ 1355              		.loc 1 307 8 view .LVU358
+ 1356 005c 952B     		cmp	r3, #149
+ 1357 005e 1CD9     		bls	.L107
+ 307:Core/Src/drive.c ****     {
+ 1358              		.loc 1 307 69 discriminator 1 view .LVU359
+ 1359 0060 4E4B     		ldr	r3, .L124+16
+ 1360 0062 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 307:Core/Src/drive.c ****     {
+ 1361              		.loc 1 307 57 discriminator 1 view .LVU360
+ 1362 0064 CBB9     		cbnz	r3, .L107
+ 1363              	.LBB7:
+ 309:Core/Src/drive.c ****         uint16_t other   = (turn_dir == 0) ? in->r : in->l;
+ 1364              		.loc 1 309 9 is_stmt 1 view .LVU361
+ 309:Core/Src/drive.c ****         uint16_t other   = (turn_dir == 0) ? in->r : in->l;
+ 1365              		.loc 1 309 38 is_stmt 0 view .LVU362
+ 1366 0066 4B49     		ldr	r1, .L124+8
+ 1367 0068 0878     		ldrb	r0, [r1]	@ zero_extendqisi2
+ 309:Core/Src/drive.c ****         uint16_t other   = (turn_dir == 0) ? in->r : in->l;
+ 1368              		.loc 1 309 18 view .LVU363
+ 1369 006a 0028     		cmp	r0, #0
+ 1370 006c 75D1     		bne	.L108
+ 309:Core/Src/drive.c ****         uint16_t other   = (turn_dir == 0) ? in->r : in->l;
+ 1371              		.loc 1 309 18 discriminator 1 view .LVU364
+ 1372 006e 6188     		ldrh	r1, [r4, #2]
+ 1373              	.L109:
+ 1374              	.LVL113:
+ 310:Core/Src/drive.c ****         if (latched < SIDE_BLOCK_CM && other > (uint16_t)(latched + SIDE_HYST))
+ 1375              		.loc 1 310 9 is_stmt 1 view .LVU365
+ 310:Core/Src/drive.c ****         if (latched < SIDE_BLOCK_CM && other > (uint16_t)(latched + SIDE_HYST))
+ 1376              		.loc 1 310 18 is_stmt 0 view .LVU366
+ 1377 0070 0028     		cmp	r0, #0
+ 1378 0072 74D1     		bne	.L110
+ 310:Core/Src/drive.c ****         if (latched < SIDE_BLOCK_CM && other > (uint16_t)(latched + SIDE_HYST))
+ 1379              		.loc 1 310 18 discriminator 1 view .LVU367
+ 1380 0074 A688     		ldrh	r6, [r4, #4]
+ 1381              	.L111:
+ 1382              	.LVL114:
+ 311:Core/Src/drive.c ****         {
+ 1383              		.loc 1 311 9 is_stmt 1 view .LVU368
+ 311:Core/Src/drive.c ****         {
+ 1384              		.loc 1 311 12 is_stmt 0 view .LVU369
+ 1385 0076 0529     		cmp	r1, #5
+ 1386 0078 0FD8     		bhi	.L107
+ 311:Core/Src/drive.c ****         {
+ 1387              		.loc 1 311 48 discriminator 1 view .LVU370
+ 1388 007a 0531     		adds	r1, r1, #5
+ 1389              	.LVL115:
+ 311:Core/Src/drive.c ****         {
+ 1390              		.loc 1 311 48 discriminator 1 view .LVU371
+ 1391 007c 89B2     		uxth	r1, r1
+ 311:Core/Src/drive.c ****         {
+ 1392              		.loc 1 311 37 discriminator 1 view .LVU372
+ 1393 007e B142     		cmp	r1, r6
+ 1394 0080 0BD2     		bcs	.L107
+ 313:Core/Src/drive.c ****             swap_cnt++;
+ 1395              		.loc 1 313 13 is_stmt 1 view .LVU373
+ 313:Core/Src/drive.c ****             swap_cnt++;
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 36
+
+
+ 1396              		.loc 1 313 22 is_stmt 0 view .LVU374
+ 1397 0082 80F00100 		eor	r0, r0, #1
+ 1398 0086 4349     		ldr	r1, .L124+8
+ 1399 0088 0870     		strb	r0, [r1]
+ 314:Core/Src/drive.c ****             t_state = in->now;
+ 1400              		.loc 1 314 13 is_stmt 1 view .LVU375
+ 314:Core/Src/drive.c ****             t_state = in->now;
+ 1401              		.loc 1 314 21 is_stmt 0 view .LVU376
+ 1402 008a 0133     		adds	r3, r3, #1
+ 1403 008c 4349     		ldr	r1, .L124+16
+ 1404 008e 0B70     		strb	r3, [r1]
+ 315:Core/Src/drive.c ****             h_entry = in->heading;
+ 1405              		.loc 1 315 13 is_stmt 1 view .LVU377
+ 315:Core/Src/drive.c ****             h_entry = in->heading;
+ 1406              		.loc 1 315 21 is_stmt 0 view .LVU378
+ 1407 0090 3F4B     		ldr	r3, .L124+4
+ 1408 0092 1A60     		str	r2, [r3]
+ 316:Core/Src/drive.c ****         }
+ 1409              		.loc 1 316 13 is_stmt 1 view .LVU379
+ 316:Core/Src/drive.c ****         }
+ 1410              		.loc 1 316 25 is_stmt 0 view .LVU380
+ 1411 0094 A268     		ldr	r2, [r4, #8]	@ float
+ 316:Core/Src/drive.c ****         }
+ 1412              		.loc 1 316 21 view .LVU381
+ 1413 0096 404B     		ldr	r3, .L124+12
+ 1414 0098 1A60     		str	r2, [r3]	@ float
+ 1415              	.LVL116:
+ 1416              	.L107:
+ 316:Core/Src/drive.c ****         }
+ 1417              		.loc 1 316 21 view .LVU382
+ 1418              	.LBE7:
+ 322:Core/Src/drive.c ****     {
+ 1419              		.loc 1 322 5 is_stmt 1 view .LVU383
+ 322:Core/Src/drive.c ****     {
+ 1420              		.loc 1 322 11 is_stmt 0 view .LVU384
+ 1421 009a 2388     		ldrh	r3, [r4]
+ 322:Core/Src/drive.c ****     {
+ 1422              		.loc 1 322 8 view .LVU385
+ 1423 009c 252B     		cmp	r3, #37
+ 1424 009e 60D9     		bls	.L112
+ 322:Core/Src/drive.c ****     {
+ 1425              		.loc 1 322 38 discriminator 1 view .LVU386
+ 1426 00a0 A279     		ldrb	r2, [r4, #6]	@ zero_extendqisi2
+ 322:Core/Src/drive.c ****     {
+ 1427              		.loc 1 322 33 discriminator 1 view .LVU387
+ 1428 00a2 002A     		cmp	r2, #0
+ 1429 00a4 5DD0     		beq	.L112
+ 324:Core/Src/drive.c ****         if (clear_cnt >= CLEAR_CONFIRM &&
+ 1430              		.loc 1 324 9 is_stmt 1 view .LVU388
+ 324:Core/Src/drive.c ****         if (clear_cnt >= CLEAR_CONFIRM &&
+ 1431              		.loc 1 324 23 is_stmt 0 view .LVU389
+ 1432 00a6 3E4B     		ldr	r3, .L124+20
+ 1433 00a8 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 324:Core/Src/drive.c ****         if (clear_cnt >= CLEAR_CONFIRM &&
+ 1434              		.loc 1 324 12 view .LVU390
+ 1435 00aa FF2B     		cmp	r3, #255
+ 1436 00ac 02D0     		beq	.L113
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 37
+
+
+ 324:Core/Src/drive.c ****         if (clear_cnt >= CLEAR_CONFIRM &&
+ 1437              		.loc 1 324 30 is_stmt 1 discriminator 1 view .LVU391
+ 324:Core/Src/drive.c ****         if (clear_cnt >= CLEAR_CONFIRM &&
+ 1438              		.loc 1 324 39 is_stmt 0 discriminator 1 view .LVU392
+ 1439 00ae 0133     		adds	r3, r3, #1
+ 1440 00b0 3B4A     		ldr	r2, .L124+20
+ 1441 00b2 1370     		strb	r3, [r2]
+ 1442              	.L113:
+ 325:Core/Src/drive.c ****             (!in->imu_live || fabsf(wrap180(in->heading - h_entry)) >= TURN_MIN_DEG))
+ 1443              		.loc 1 325 9 is_stmt 1 view .LVU393
+ 325:Core/Src/drive.c ****             (!in->imu_live || fabsf(wrap180(in->heading - h_entry)) >= TURN_MIN_DEG))
+ 1444              		.loc 1 325 23 is_stmt 0 view .LVU394
+ 1445 00b4 3A4B     		ldr	r3, .L124+20
+ 1446 00b6 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 325:Core/Src/drive.c ****             (!in->imu_live || fabsf(wrap180(in->heading - h_entry)) >= TURN_MIN_DEG))
+ 1447              		.loc 1 325 12 view .LVU395
+ 1448 00b8 022B     		cmp	r3, #2
+ 1449 00ba 57D9     		bls	.L114
+ 325:Core/Src/drive.c ****             (!in->imu_live || fabsf(wrap180(in->heading - h_entry)) >= TURN_MIN_DEG))
+ 1450              		.loc 1 325 40 discriminator 1 view .LVU396
+ 1451 00bc 8DB1     		cbz	r5, .L115
+ 326:Core/Src/drive.c ****         {
+ 1452              		.loc 1 326 47 view .LVU397
+ 1453 00be 94ED020A 		vldr.32	s0, [r4, #8]
+ 326:Core/Src/drive.c ****         {
+ 1454              		.loc 1 326 37 view .LVU398
+ 1455 00c2 354B     		ldr	r3, .L124+12
+ 1456 00c4 D3ED007A 		vldr.32	s15, [r3]
+ 1457 00c8 30EE670A 		vsub.f32	s0, s0, s15
+ 1458 00cc FFF7FEFF 		bl	wrap180
+ 1459              	.LVL117:
+ 326:Core/Src/drive.c ****         {
+ 1460              		.loc 1 326 31 discriminator 1 view .LVU399
+ 1461 00d0 B0EEC00A 		vabs.f32	s0, s0
+ 326:Core/Src/drive.c ****         {
+ 1462              		.loc 1 326 28 discriminator 1 view .LVU400
+ 1463 00d4 F3EE097A 		vmov.f32	s15, #2.5e+1
+ 1464 00d8 B4EEE70A 		vcmpe.f32	s0, s15
+ 1465 00dc F1EE10FA 		vmrs	APSR_nzcv, FPSCR
+ 1466 00e0 44DB     		blt	.L114
+ 1467              	.L115:
+ 328:Core/Src/drive.c ****             return;
+ 1468              		.loc 1 328 13 is_stmt 1 view .LVU401
+ 1469 00e2 2046     		mov	r0, r4
+ 1470 00e4 FFF7FEFF 		bl	cruise_enter
+ 1471              	.LVL118:
+ 329:Core/Src/drive.c ****         }
+ 1472              		.loc 1 329 13 view .LVU402
+ 1473 00e8 47E0     		b	.L99
+ 1474              	.LVL119:
+ 1475              	.L120:
+ 275:Core/Src/drive.c ****         return;
+ 1476              		.loc 1 275 9 view .LVU403
+ 1477 00ea FFF7FEFF 		bl	reverse_enter
+ 1478              	.LVL120:
+ 276:Core/Src/drive.c ****     }
+ 1479              		.loc 1 276 9 view .LVU404
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 38
+
+
+ 1480 00ee 44E0     		b	.L99
+ 1481              	.LVL121:
+ 1482              	.L121:
+ 281:Core/Src/drive.c **** 
+ 1483              		.loc 1 281 9 view .LVU405
+ 281:Core/Src/drive.c **** 
+ 1484              		.loc 1 281 34 is_stmt 0 view .LVU406
+ 1485 00f0 94ED028A 		vldr.32	s16, [r4, #8]
+ 281:Core/Src/drive.c **** 
+ 1486              		.loc 1 281 24 view .LVU407
+ 1487 00f4 284B     		ldr	r3, .L124+12
+ 1488 00f6 93ED000A 		vldr.32	s0, [r3]
+ 1489 00fa 38EE400A 		vsub.f32	s0, s16, s0
+ 1490 00fe FFF7FEFF 		bl	wrap180
+ 1491              	.LVL122:
+ 281:Core/Src/drive.c **** 
+ 1492              		.loc 1 281 22 discriminator 1 view .LVU408
+ 1493 0102 284B     		ldr	r3, .L124+24
+ 1494 0104 83ED000A 		vstr.32	s0, [r3]
+ 284:Core/Src/drive.c ****         {
+ 1495              		.loc 1 284 9 is_stmt 1 view .LVU409
+ 284:Core/Src/drive.c ****         {
+ 1496              		.loc 1 284 16 is_stmt 0 view .LVU410
+ 1497 0108 2669     		ldr	r6, [r4, #16]
+ 284:Core/Src/drive.c ****         {
+ 1498              		.loc 1 284 22 view .LVU411
+ 1499 010a 274B     		ldr	r3, .L124+28
+ 1500 010c 1B68     		ldr	r3, [r3]
+ 1501 010e F31A     		subs	r3, r6, r3
+ 284:Core/Src/drive.c ****         {
+ 1502              		.loc 1 284 12 view .LVU412
+ 1503 0110 B3F5C87F 		cmp	r3, #400
+ 1504 0114 88D3     		bcc	.L102
+ 286:Core/Src/drive.c ****                 && rev_cnt < REV_MAX_CHUNKS)
+ 1505              		.loc 1 286 13 is_stmt 1 view .LVU413
+ 286:Core/Src/drive.c ****                 && rev_cnt < REV_MAX_CHUNKS)
+ 1506              		.loc 1 286 23 is_stmt 0 view .LVU414
+ 1507 0116 254B     		ldr	r3, .L124+32
+ 1508 0118 93ED000A 		vldr.32	s0, [r3]
+ 1509 011c 38EE400A 		vsub.f32	s0, s16, s0
+ 1510 0120 FFF7FEFF 		bl	wrap180
+ 1511              	.LVL123:
+ 286:Core/Src/drive.c ****                 && rev_cnt < REV_MAX_CHUNKS)
+ 1512              		.loc 1 286 17 discriminator 1 view .LVU415
+ 1513 0124 B0EEC00A 		vabs.f32	s0, s0
+ 286:Core/Src/drive.c ****                 && rev_cnt < REV_MAX_CHUNKS)
+ 1514              		.loc 1 286 16 discriminator 1 view .LVU416
+ 1515 0128 F2EE007A 		vmov.f32	s15, #8.0e+0
+ 1516 012c B4EEE70A 		vcmpe.f32	s0, s15
+ 1517 0130 F1EE10FA 		vmrs	APSR_nzcv, FPSCR
+ 1518 0134 03D5     		bpl	.L103
+ 287:Core/Src/drive.c ****             {
+ 1519              		.loc 1 287 28 view .LVU417
+ 1520 0136 154B     		ldr	r3, .L124
+ 1521 0138 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 287:Core/Src/drive.c ****             {
+ 1522              		.loc 1 287 17 view .LVU418
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 39
+
+
+ 1523 013a 022B     		cmp	r3, #2
+ 1524 013c 05D9     		bls	.L123
+ 1525              	.L103:
+ 292:Core/Src/drive.c ****             t_stuck = in->now;
+ 1526              		.loc 1 292 13 is_stmt 1 view .LVU419
+ 292:Core/Src/drive.c ****             t_stuck = in->now;
+ 1527              		.loc 1 292 21 is_stmt 0 view .LVU420
+ 1528 013e 1B4B     		ldr	r3, .L124+32
+ 1529 0140 83ED008A 		vstr.32	s16, [r3]
+ 293:Core/Src/drive.c ****         }
+ 1530              		.loc 1 293 13 is_stmt 1 view .LVU421
+ 293:Core/Src/drive.c ****         }
+ 1531              		.loc 1 293 21 is_stmt 0 view .LVU422
+ 1532 0144 184B     		ldr	r3, .L124+28
+ 1533 0146 1E60     		str	r6, [r3]
+ 1534 0148 6EE7     		b	.L102
+ 1535              	.L123:
+ 289:Core/Src/drive.c ****                 return;
+ 1536              		.loc 1 289 17 is_stmt 1 view .LVU423
+ 1537 014a 2046     		mov	r0, r4
+ 1538 014c FFF7FEFF 		bl	reverse_enter
+ 1539              	.LVL124:
+ 290:Core/Src/drive.c ****             }
+ 1540              		.loc 1 290 17 view .LVU424
+ 1541 0150 13E0     		b	.L99
+ 1542              	.L122:
+ 300:Core/Src/drive.c ****         turn_dir ^= 1;
+ 1543              		.loc 1 300 41 discriminator 1 view .LVU425
+ 1544 0152 2046     		mov	r0, r4
+ 1545 0154 FFF7FEFF 		bl	reverse_enter
+ 1546              	.LVL125:
+ 300:Core/Src/drive.c ****         turn_dir ^= 1;
+ 1547              		.loc 1 300 60 discriminator 1 view .LVU426
+ 300:Core/Src/drive.c ****         turn_dir ^= 1;
+ 1548              		.loc 1 300 60 is_stmt 0 view .LVU427
+ 1549 0158 0FE0     		b	.L99
+ 1550              	.L108:
+ 1551              	.LBB8:
+ 309:Core/Src/drive.c ****         uint16_t other   = (turn_dir == 0) ? in->r : in->l;
+ 1552              		.loc 1 309 18 discriminator 2 view .LVU428
+ 1553 015a A188     		ldrh	r1, [r4, #4]
+ 1554 015c 88E7     		b	.L109
+ 1555              	.LVL126:
+ 1556              	.L110:
+ 310:Core/Src/drive.c ****         if (latched < SIDE_BLOCK_CM && other > (uint16_t)(latched + SIDE_HYST))
+ 1557              		.loc 1 310 18 discriminator 2 view .LVU429
+ 1558 015e 6688     		ldrh	r6, [r4, #2]
+ 1559 0160 89E7     		b	.L111
+ 1560              	.LVL127:
+ 1561              	.L112:
+ 310:Core/Src/drive.c ****         if (latched < SIDE_BLOCK_CM && other > (uint16_t)(latched + SIDE_HYST))
+ 1562              		.loc 1 310 18 discriminator 2 view .LVU430
+ 1563              	.LBE8:
+ 332:Core/Src/drive.c ****     {
+ 1564              		.loc 1 332 10 is_stmt 1 view .LVU431
+ 332:Core/Src/drive.c ****     {
+ 1565              		.loc 1 332 13 is_stmt 0 view .LVU432
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 40
+
+
+ 1566 0162 252B     		cmp	r3, #37
+ 1567 0164 02D8     		bhi	.L114
+ 334:Core/Src/drive.c ****     }
+ 1568              		.loc 1 334 9 is_stmt 1 view .LVU433
+ 334:Core/Src/drive.c ****     }
+ 1569              		.loc 1 334 19 is_stmt 0 view .LVU434
+ 1570 0166 0E4B     		ldr	r3, .L124+20
+ 1571 0168 0022     		movs	r2, #0
+ 1572 016a 1A70     		strb	r2, [r3]
+ 1573              	.L114:
+ 338:Core/Src/drive.c ****     else               Car_PivotRight(TURN_SPEED, TURN_INNER);
+ 1574              		.loc 1 338 5 is_stmt 1 view .LVU435
+ 338:Core/Src/drive.c ****     else               Car_PivotRight(TURN_SPEED, TURN_INNER);
+ 1575              		.loc 1 338 18 is_stmt 0 view .LVU436
+ 1576 016c 094B     		ldr	r3, .L124+8
+ 1577 016e 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 338:Core/Src/drive.c ****     else               Car_PivotRight(TURN_SPEED, TURN_INNER);
+ 1578              		.loc 1 338 8 view .LVU437
+ 1579 0170 33B9     		cbnz	r3, .L117
+ 338:Core/Src/drive.c ****     else               Car_PivotRight(TURN_SPEED, TURN_INNER);
+ 1580              		.loc 1 338 24 is_stmt 1 discriminator 1 view .LVU438
+ 1581 0172 1E21     		movs	r1, #30
+ 1582 0174 2820     		movs	r0, #40
+ 1583 0176 FFF7FEFF 		bl	Car_PivotLeft
+ 1584              	.LVL128:
+ 1585              	.L99:
+ 340:Core/Src/drive.c **** 
+ 1586              		.loc 1 340 1 is_stmt 0 view .LVU439
+ 1587 017a BDEC028B 		vldm	sp!, {d8}
+ 1588              	.LCFI18:
+ 1589              		.cfi_remember_state
+ 1590              		.cfi_restore 80
+ 1591              		.cfi_restore 81
+ 1592              		.cfi_def_cfa_offset 16
+ 1593 017e 70BD     		pop	{r4, r5, r6, pc}
+ 1594              	.LVL129:
+ 1595              	.L117:
+ 1596              	.LCFI19:
+ 1597              		.cfi_restore_state
+ 339:Core/Src/drive.c **** }
+ 1598              		.loc 1 339 24 is_stmt 1 view .LVU440
+ 1599 0180 1E21     		movs	r1, #30
+ 1600 0182 2820     		movs	r0, #40
+ 1601 0184 FFF7FEFF 		bl	Car_PivotRight
+ 1602              	.LVL130:
+ 1603 0188 F7E7     		b	.L99
+ 1604              	.L125:
+ 1605 018a 00BF     		.align	2
+ 1606              	.L124:
+ 1607 018c 00000000 		.word	rev_cnt
+ 1608 0190 00000000 		.word	t_state
+ 1609 0194 00000000 		.word	turn_dir
+ 1610 0198 00000000 		.word	h_entry
+ 1611 019c 00000000 		.word	swap_cnt
+ 1612 01a0 00000000 		.word	clear_cnt
+ 1613 01a4 00000000 		.word	dbg_spin_deg
+ 1614 01a8 00000000 		.word	t_stuck
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 41
+
+
+ 1615 01ac 00000000 		.word	h_stuck
+ 1616              		.cfi_endproc
+ 1617              	.LFE148:
+ 1619              		.section	.text.side_avoid_run,"ax",%progbits
+ 1620              		.align	1
+ 1621              		.syntax unified
+ 1622              		.thumb
+ 1623              		.thumb_func
+ 1625              	side_avoid_run:
+ 1626              	.LVL131:
+ 1627              	.LFB151:
+ 369:Core/Src/drive.c **** 
+ 370:Core/Src/drive.c **** /* SIDE_AVOID: 측벽 박기직전 비상 회피. 박힌 쪽 반대로 제자리 피벗하며 측�
+ 371:Core/Src/drive.c **** static void side_avoid_run(const DriveInputs *in)
+ 372:Core/Src/drive.c **** {
+ 1628              		.loc 1 372 1 view -0
+ 1629              		.cfi_startproc
+ 1630              		@ args = 0, pretend = 0, frame = 0
+ 1631              		@ frame_needed = 0, uses_anonymous_args = 0
+ 1632              		.loc 1 372 1 is_stmt 0 view .LVU442
+ 1633 0000 08B5     		push	{r3, lr}
+ 1634              	.LCFI20:
+ 1635              		.cfi_def_cfa_offset 8
+ 1636              		.cfi_offset 3, -8
+ 1637              		.cfi_offset 14, -4
+ 373:Core/Src/drive.c ****     /* 정면 위급 우선 — 측면 피하다 정면 박는 것 방지 */
+ 374:Core/Src/drive.c ****     if (in->f < FRONT_STOP_CM) { brake_enter(in); return; }
+ 1638              		.loc 1 374 5 is_stmt 1 view .LVU443
+ 1639              		.loc 1 374 11 is_stmt 0 view .LVU444
+ 1640 0002 0388     		ldrh	r3, [r0]
+ 1641              		.loc 1 374 8 view .LVU445
+ 1642 0004 132B     		cmp	r3, #19
+ 1643 0006 1CD9     		bls	.L133
+ 375:Core/Src/drive.c **** 
+ 376:Core/Src/drive.c ****     /* 측면 트임(히스테리시스) → CRUISE 복귀. cruise_enter가 h_ref 갱신 = 새 진�
+ 377:Core/Src/drive.c ****     uint16_t smin = (in->l < in->r) ? in->l : in->r;
+ 1644              		.loc 1 377 5 is_stmt 1 view .LVU446
+ 1645              		.loc 1 377 32 is_stmt 0 view .LVU447
+ 1646 0008 8388     		ldrh	r3, [r0, #4]
+ 1647              		.loc 1 377 24 view .LVU448
+ 1648 000a 4288     		ldrh	r2, [r0, #2]
+ 1649              		.loc 1 377 14 view .LVU449
+ 1650 000c 9342     		cmp	r3, r2
+ 1651 000e 28BF     		it	cs
+ 1652 0010 1346     		movcs	r3, r2
+ 1653              	.LVL132:
+ 378:Core/Src/drive.c ****     if (smin >= SIDE_AVOID_CLEAR_CM) { cruise_enter(in); return; }
+ 1654              		.loc 1 378 5 is_stmt 1 view .LVU450
+ 1655              		.loc 1 378 8 is_stmt 0 view .LVU451
+ 1656 0012 072B     		cmp	r3, #7
+ 1657 0014 18D8     		bhi	.L134
+ 379:Core/Src/drive.c **** 
+ 380:Core/Src/drive.c ****     /* 한 방향으로 못 빠지면 방향 flip 후 재시도 (양쪽 좁은 끼임 백스톱) */
+ 381:Core/Src/drive.c ****     if ((in->now - t_state) > (uint32_t)SIDE_AVOID_MAX_MS)
+ 1658              		.loc 1 381 5 is_stmt 1 view .LVU452
+ 1659              		.loc 1 381 12 is_stmt 0 view .LVU453
+ 1660 0016 0269     		ldr	r2, [r0, #16]
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 42
+
+
+ 1661              		.loc 1 381 18 view .LVU454
+ 1662 0018 0F4B     		ldr	r3, .L135
+ 1663              	.LVL133:
+ 1664              		.loc 1 381 18 view .LVU455
+ 1665 001a 1B68     		ldr	r3, [r3]
+ 1666 001c D31A     		subs	r3, r2, r3
+ 1667              		.loc 1 381 8 view .LVU456
+ 1668 001e B3F5167F 		cmp	r3, #600
+ 1669 0022 06D9     		bls	.L130
+ 382:Core/Src/drive.c ****     {
+ 383:Core/Src/drive.c ****         turn_dir ^= 1;
+ 1670              		.loc 1 383 9 is_stmt 1 view .LVU457
+ 1671              		.loc 1 383 18 is_stmt 0 view .LVU458
+ 1672 0024 0D49     		ldr	r1, .L135+4
+ 1673 0026 0B78     		ldrb	r3, [r1]	@ zero_extendqisi2
+ 1674 0028 83F00103 		eor	r3, r3, #1
+ 1675 002c 0B70     		strb	r3, [r1]
+ 384:Core/Src/drive.c ****         t_state = in->now;
+ 1676              		.loc 1 384 9 is_stmt 1 view .LVU459
+ 1677              		.loc 1 384 17 is_stmt 0 view .LVU460
+ 1678 002e 0A4B     		ldr	r3, .L135
+ 1679 0030 1A60     		str	r2, [r3]
+ 1680              	.L130:
+ 385:Core/Src/drive.c ****     }
+ 386:Core/Src/drive.c **** 
+ 387:Core/Src/drive.c ****     /* 박힌 쪽 반대로 제자리 피벗 (전진 0 — '멈추고 방향 잡기') */
+ 388:Core/Src/drive.c ****     if (turn_dir == 0) Car_PivotLeft(TURN_SPEED, TURN_INNER);
+ 1681              		.loc 1 388 5 is_stmt 1 view .LVU461
+ 1682              		.loc 1 388 18 is_stmt 0 view .LVU462
+ 1683 0032 0A4B     		ldr	r3, .L135+4
+ 1684 0034 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 1685              		.loc 1 388 8 view .LVU463
+ 1686 0036 53B9     		cbnz	r3, .L131
+ 1687              		.loc 1 388 24 is_stmt 1 discriminator 1 view .LVU464
+ 1688 0038 1E21     		movs	r1, #30
+ 1689 003a 2820     		movs	r0, #40
+ 1690              	.LVL134:
+ 1691              		.loc 1 388 24 is_stmt 0 discriminator 1 view .LVU465
+ 1692 003c FFF7FEFF 		bl	Car_PivotLeft
+ 1693              	.LVL135:
+ 1694              	.L126:
+ 389:Core/Src/drive.c ****     else               Car_PivotRight(TURN_SPEED, TURN_INNER);
+ 390:Core/Src/drive.c **** }
+ 1695              		.loc 1 390 1 view .LVU466
+ 1696 0040 08BD     		pop	{r3, pc}
+ 1697              	.LVL136:
+ 1698              	.L133:
+ 374:Core/Src/drive.c **** 
+ 1699              		.loc 1 374 34 is_stmt 1 discriminator 1 view .LVU467
+ 1700 0042 FFF7FEFF 		bl	brake_enter
+ 1701              	.LVL137:
+ 374:Core/Src/drive.c **** 
+ 1702              		.loc 1 374 51 discriminator 1 view .LVU468
+ 374:Core/Src/drive.c **** 
+ 1703              		.loc 1 374 51 is_stmt 0 view .LVU469
+ 1704 0046 FBE7     		b	.L126
+ 1705              	.LVL138:
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 43
+
+
+ 1706              	.L134:
+ 378:Core/Src/drive.c **** 
+ 1707              		.loc 1 378 40 is_stmt 1 discriminator 1 view .LVU470
+ 1708 0048 FFF7FEFF 		bl	cruise_enter
+ 1709              	.LVL139:
+ 378:Core/Src/drive.c **** 
+ 1710              		.loc 1 378 58 discriminator 1 view .LVU471
+ 378:Core/Src/drive.c **** 
+ 1711              		.loc 1 378 58 is_stmt 0 view .LVU472
+ 1712 004c F8E7     		b	.L126
+ 1713              	.LVL140:
+ 1714              	.L131:
+ 389:Core/Src/drive.c ****     else               Car_PivotRight(TURN_SPEED, TURN_INNER);
+ 1715              		.loc 1 389 24 is_stmt 1 view .LVU473
+ 1716 004e 1E21     		movs	r1, #30
+ 1717 0050 2820     		movs	r0, #40
+ 1718              	.LVL141:
+ 389:Core/Src/drive.c ****     else               Car_PivotRight(TURN_SPEED, TURN_INNER);
+ 1719              		.loc 1 389 24 is_stmt 0 view .LVU474
+ 1720 0052 FFF7FEFF 		bl	Car_PivotRight
+ 1721              	.LVL142:
+ 389:Core/Src/drive.c ****     else               Car_PivotRight(TURN_SPEED, TURN_INNER);
+ 1722              		.loc 1 389 24 view .LVU475
+ 1723 0056 F3E7     		b	.L126
+ 1724              	.L136:
+ 1725              		.align	2
+ 1726              	.L135:
+ 1727 0058 00000000 		.word	t_state
+ 1728 005c 00000000 		.word	turn_dir
+ 1729              		.cfi_endproc
+ 1730              	.LFE151:
+ 1732              		.section	.text.Drive_Init,"ax",%progbits
+ 1733              		.align	1
+ 1734              		.global	Drive_Init
+ 1735              		.syntax unified
+ 1736              		.thumb
+ 1737              		.thumb_func
+ 1739              	Drive_Init:
+ 1740              	.LFB152:
+ 391:Core/Src/drive.c **** 
+ 392:Core/Src/drive.c **** /* ---- 공개 API ---- */
+ 393:Core/Src/drive.c **** 
+ 394:Core/Src/drive.c **** void Drive_Init(void)
+ 395:Core/Src/drive.c **** {
+ 1741              		.loc 1 395 1 is_stmt 1 view -0
+ 1742              		.cfi_startproc
+ 1743              		@ args = 0, pretend = 0, frame = 0
+ 1744              		@ frame_needed = 0, uses_anonymous_args = 0
+ 1745              		@ link register save eliminated.
+ 396:Core/Src/drive.c ****     st         = DS_CRUISE;
+ 1746              		.loc 1 396 5 view .LVU477
+ 1747              		.loc 1 396 16 is_stmt 0 view .LVU478
+ 1748 0000 0023     		movs	r3, #0
+ 1749 0002 094A     		ldr	r2, .L138
+ 1750 0004 1370     		strb	r3, [r2]
+ 397:Core/Src/drive.c ****     t_state    = 0;
+ 1751              		.loc 1 397 5 is_stmt 1 view .LVU479
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 44
+
+
+ 1752              		.loc 1 397 16 is_stmt 0 view .LVU480
+ 1753 0006 094A     		ldr	r2, .L138+4
+ 1754 0008 1360     		str	r3, [r2]
+ 398:Core/Src/drive.c ****     turn_dir   = 0;
+ 1755              		.loc 1 398 5 is_stmt 1 view .LVU481
+ 1756              		.loc 1 398 16 is_stmt 0 view .LVU482
+ 1757 000a 094A     		ldr	r2, .L138+8
+ 1758 000c 1370     		strb	r3, [r2]
+ 399:Core/Src/drive.c ****     swap_cnt   = 0;
+ 1759              		.loc 1 399 5 is_stmt 1 view .LVU483
+ 1760              		.loc 1 399 16 is_stmt 0 view .LVU484
+ 1761 000e 094A     		ldr	r2, .L138+12
+ 1762 0010 1370     		strb	r3, [r2]
+ 400:Core/Src/drive.c ****     rev_cnt    = 0;
+ 1763              		.loc 1 400 5 is_stmt 1 view .LVU485
+ 1764              		.loc 1 400 16 is_stmt 0 view .LVU486
+ 1765 0012 094A     		ldr	r2, .L138+16
+ 1766 0014 1370     		strb	r3, [r2]
+ 401:Core/Src/drive.c ****     clear_cnt  = 0;
+ 1767              		.loc 1 401 5 is_stmt 1 view .LVU487
+ 1768              		.loc 1 401 16 is_stmt 0 view .LVU488
+ 1769 0016 094A     		ldr	r2, .L138+20
+ 1770 0018 1370     		strb	r3, [r2]
+ 402:Core/Src/drive.c ****     steer_u    = 0.0f;
+ 1771              		.loc 1 402 5 is_stmt 1 view .LVU489
+ 1772              		.loc 1 402 16 is_stmt 0 view .LVU490
+ 1773 001a 094B     		ldr	r3, .L138+24
+ 1774 001c 0022     		movs	r2, #0
+ 1775 001e 1A60     		str	r2, [r3]	@ float
+ 403:Core/Src/drive.c ****     steer_mode = SM_INIT;
+ 1776              		.loc 1 403 5 is_stmt 1 view .LVU491
+ 1777              		.loc 1 403 16 is_stmt 0 view .LVU492
+ 1778 0020 084B     		ldr	r3, .L138+28
+ 1779 0022 FF22     		movs	r2, #255
+ 1780 0024 1A70     		strb	r2, [r3]
+ 404:Core/Src/drive.c **** }
+ 1781              		.loc 1 404 1 view .LVU493
+ 1782 0026 7047     		bx	lr
+ 1783              	.L139:
+ 1784              		.align	2
+ 1785              	.L138:
+ 1786 0028 00000000 		.word	st
+ 1787 002c 00000000 		.word	t_state
+ 1788 0030 00000000 		.word	turn_dir
+ 1789 0034 00000000 		.word	swap_cnt
+ 1790 0038 00000000 		.word	rev_cnt
+ 1791 003c 00000000 		.word	clear_cnt
+ 1792 0040 00000000 		.word	steer_u
+ 1793 0044 00000000 		.word	steer_mode
+ 1794              		.cfi_endproc
+ 1795              	.LFE152:
+ 1797              		.section	.text.Drive_Update,"ax",%progbits
+ 1798              		.align	1
+ 1799              		.global	Drive_Update
+ 1800              		.syntax unified
+ 1801              		.thumb
+ 1802              		.thumb_func
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 45
+
+
+ 1804              	Drive_Update:
+ 1805              	.LVL143:
+ 1806              	.LFB153:
+ 405:Core/Src/drive.c **** 
+ 406:Core/Src/drive.c **** void Drive_Update(const DriveInputs *in)
+ 407:Core/Src/drive.c **** {
+ 1807              		.loc 1 407 1 is_stmt 1 view -0
+ 1808              		.cfi_startproc
+ 1809              		@ args = 0, pretend = 0, frame = 0
+ 1810              		@ frame_needed = 0, uses_anonymous_args = 0
+ 1811              		.loc 1 407 1 is_stmt 0 view .LVU495
+ 1812 0000 08B5     		push	{r3, lr}
+ 1813              	.LCFI21:
+ 1814              		.cfi_def_cfa_offset 8
+ 1815              		.cfi_offset 3, -8
+ 1816              		.cfi_offset 14, -4
+ 408:Core/Src/drive.c ****     switch (st)
+ 1817              		.loc 1 408 5 is_stmt 1 view .LVU496
+ 1818 0002 174B     		ldr	r3, .L151
+ 1819 0004 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 1820 0006 052B     		cmp	r3, #5
+ 1821 0008 23D8     		bhi	.L141
+ 1822 000a DFE803F0 		tbb	[pc, r3]
+ 1823              	.L143:
+ 1824 000e 03       		.byte	(.L148-.L143)/2
+ 1825 000f 13       		.byte	(.L147-.L143)/2
+ 1826 0010 16       		.byte	(.L146-.L143)/2
+ 1827 0011 19       		.byte	(.L145-.L143)/2
+ 1828 0012 1C       		.byte	(.L144-.L143)/2
+ 1829 0013 1F       		.byte	(.L142-.L143)/2
+ 1830              		.p2align 1
+ 1831              	.L148:
+ 409:Core/Src/drive.c ****     {
+ 410:Core/Src/drive.c ****     case DS_CRUISE:  cruise_run(in);  break;
+ 1832              		.loc 1 410 22 view .LVU497
+ 1833 0014 FFF7FEFF 		bl	cruise_run
+ 1834              	.LVL144:
+ 1835              		.loc 1 410 39 discriminator 1 view .LVU498
+ 1836              	.L149:
+ 411:Core/Src/drive.c ****     case DS_BRAKE:   brake_run(in);   break;
+ 412:Core/Src/drive.c ****     case DS_SPIN:    spin_run(in);    break;
+ 413:Core/Src/drive.c ****     case DS_REVERSE: reverse_run(in); break;
+ 414:Core/Src/drive.c ****     case DS_HOLD:    hold_run(in);    break;
+ 415:Core/Src/drive.c ****     case DS_SIDE_AVOID: side_avoid_run(in); break;
+ 416:Core/Src/drive.c ****     default:         Car_Stop(); st = DS_CRUISE; break;
+ 417:Core/Src/drive.c ****     }
+ 418:Core/Src/drive.c ****     dbg_state    = (uint8_t)st;
+ 1837              		.loc 1 418 5 view .LVU499
+ 1838              		.loc 1 418 18 is_stmt 0 view .LVU500
+ 1839 0018 114B     		ldr	r3, .L151
+ 1840 001a 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 1841 001c DBB2     		uxtb	r3, r3
+ 1842 001e 114A     		ldr	r2, .L151+4
+ 1843 0020 1370     		strb	r3, [r2]
+ 419:Core/Src/drive.c ****     dbg_turn_dir = turn_dir;
+ 1844              		.loc 1 419 5 is_stmt 1 view .LVU501
+ 1845              		.loc 1 419 18 is_stmt 0 view .LVU502
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 46
+
+
+ 1846 0022 114B     		ldr	r3, .L151+8
+ 1847 0024 1A78     		ldrb	r2, [r3]	@ zero_extendqisi2
+ 1848 0026 114B     		ldr	r3, .L151+12
+ 1849 0028 1A70     		strb	r2, [r3]
+ 420:Core/Src/drive.c ****     dbg_rev_cnt  = rev_cnt;
+ 1850              		.loc 1 420 5 is_stmt 1 view .LVU503
+ 1851              		.loc 1 420 18 is_stmt 0 view .LVU504
+ 1852 002a 114B     		ldr	r3, .L151+16
+ 1853 002c 1A78     		ldrb	r2, [r3]	@ zero_extendqisi2
+ 1854 002e 114B     		ldr	r3, .L151+20
+ 1855 0030 1A70     		strb	r2, [r3]
+ 421:Core/Src/drive.c **** }
+ 1856              		.loc 1 421 1 view .LVU505
+ 1857 0032 08BD     		pop	{r3, pc}
+ 1858              	.LVL145:
+ 1859              	.L147:
+ 411:Core/Src/drive.c ****     case DS_SPIN:    spin_run(in);    break;
+ 1860              		.loc 1 411 22 is_stmt 1 view .LVU506
+ 1861 0034 FFF7FEFF 		bl	brake_run
+ 1862              	.LVL146:
+ 411:Core/Src/drive.c ****     case DS_SPIN:    spin_run(in);    break;
+ 1863              		.loc 1 411 39 discriminator 1 view .LVU507
+ 411:Core/Src/drive.c ****     case DS_SPIN:    spin_run(in);    break;
+ 1864              		.loc 1 411 39 is_stmt 0 view .LVU508
+ 1865 0038 EEE7     		b	.L149
+ 1866              	.LVL147:
+ 1867              	.L146:
+ 412:Core/Src/drive.c ****     case DS_REVERSE: reverse_run(in); break;
+ 1868              		.loc 1 412 22 is_stmt 1 view .LVU509
+ 1869 003a FFF7FEFF 		bl	spin_run
+ 1870              	.LVL148:
+ 412:Core/Src/drive.c ****     case DS_REVERSE: reverse_run(in); break;
+ 1871              		.loc 1 412 39 discriminator 1 view .LVU510
+ 412:Core/Src/drive.c ****     case DS_REVERSE: reverse_run(in); break;
+ 1872              		.loc 1 412 39 is_stmt 0 view .LVU511
+ 1873 003e EBE7     		b	.L149
+ 1874              	.LVL149:
+ 1875              	.L145:
+ 413:Core/Src/drive.c ****     case DS_HOLD:    hold_run(in);    break;
+ 1876              		.loc 1 413 22 is_stmt 1 view .LVU512
+ 1877 0040 FFF7FEFF 		bl	reverse_run
+ 1878              	.LVL150:
+ 413:Core/Src/drive.c ****     case DS_HOLD:    hold_run(in);    break;
+ 1879              		.loc 1 413 39 discriminator 1 view .LVU513
+ 413:Core/Src/drive.c ****     case DS_HOLD:    hold_run(in);    break;
+ 1880              		.loc 1 413 39 is_stmt 0 view .LVU514
+ 1881 0044 E8E7     		b	.L149
+ 1882              	.LVL151:
+ 1883              	.L144:
+ 414:Core/Src/drive.c ****     case DS_SIDE_AVOID: side_avoid_run(in); break;
+ 1884              		.loc 1 414 22 is_stmt 1 view .LVU515
+ 1885 0046 FFF7FEFF 		bl	hold_run
+ 1886              	.LVL152:
+ 414:Core/Src/drive.c ****     case DS_SIDE_AVOID: side_avoid_run(in); break;
+ 1887              		.loc 1 414 39 discriminator 1 view .LVU516
+ 414:Core/Src/drive.c ****     case DS_SIDE_AVOID: side_avoid_run(in); break;
+ 1888              		.loc 1 414 39 is_stmt 0 view .LVU517
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 47
+
+
+ 1889 004a E5E7     		b	.L149
+ 1890              	.LVL153:
+ 1891              	.L142:
+ 415:Core/Src/drive.c ****     default:         Car_Stop(); st = DS_CRUISE; break;
+ 1892              		.loc 1 415 25 is_stmt 1 view .LVU518
+ 1893 004c FFF7FEFF 		bl	side_avoid_run
+ 1894              	.LVL154:
+ 415:Core/Src/drive.c ****     default:         Car_Stop(); st = DS_CRUISE; break;
+ 1895              		.loc 1 415 45 discriminator 1 view .LVU519
+ 415:Core/Src/drive.c ****     default:         Car_Stop(); st = DS_CRUISE; break;
+ 1896              		.loc 1 415 45 is_stmt 0 view .LVU520
+ 1897 0050 E2E7     		b	.L149
+ 1898              	.LVL155:
+ 1899              	.L141:
+ 416:Core/Src/drive.c ****     }
+ 1900              		.loc 1 416 22 is_stmt 1 view .LVU521
+ 1901 0052 FFF7FEFF 		bl	Car_Stop
+ 1902              	.LVL156:
+ 416:Core/Src/drive.c ****     }
+ 1903              		.loc 1 416 34 discriminator 1 view .LVU522
+ 416:Core/Src/drive.c ****     }
+ 1904              		.loc 1 416 37 is_stmt 0 discriminator 1 view .LVU523
+ 1905 0056 024B     		ldr	r3, .L151
+ 1906 0058 0022     		movs	r2, #0
+ 1907 005a 1A70     		strb	r2, [r3]
+ 416:Core/Src/drive.c ****     }
+ 1908              		.loc 1 416 50 is_stmt 1 discriminator 1 view .LVU524
+ 416:Core/Src/drive.c ****     }
+ 1909              		.loc 1 416 50 is_stmt 0 view .LVU525
+ 1910 005c DCE7     		b	.L149
+ 1911              	.L152:
+ 1912 005e 00BF     		.align	2
+ 1913              	.L151:
+ 1914 0060 00000000 		.word	st
+ 1915 0064 00000000 		.word	dbg_state
+ 1916 0068 00000000 		.word	turn_dir
+ 1917 006c 00000000 		.word	dbg_turn_dir
+ 1918 0070 00000000 		.word	rev_cnt
+ 1919 0074 00000000 		.word	dbg_rev_cnt
+ 1920              		.cfi_endproc
+ 1921              	.LFE153:
+ 1923              		.section	.text.Drive_GetState,"ax",%progbits
+ 1924              		.align	1
+ 1925              		.global	Drive_GetState
+ 1926              		.syntax unified
+ 1927              		.thumb
+ 1928              		.thumb_func
+ 1930              	Drive_GetState:
+ 1931              	.LFB154:
+ 422:Core/Src/drive.c **** 
+ 423:Core/Src/drive.c **** DriveState Drive_GetState(void)
+ 424:Core/Src/drive.c **** {
+ 1932              		.loc 1 424 1 is_stmt 1 view -0
+ 1933              		.cfi_startproc
+ 1934              		@ args = 0, pretend = 0, frame = 0
+ 1935              		@ frame_needed = 0, uses_anonymous_args = 0
+ 1936              		@ link register save eliminated.
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 48
+
+
+ 425:Core/Src/drive.c ****     return st;
+ 1937              		.loc 1 425 5 view .LVU527
+ 1938              		.loc 1 425 12 is_stmt 0 view .LVU528
+ 1939 0000 014B     		ldr	r3, .L154
+ 1940 0002 1878     		ldrb	r0, [r3]	@ zero_extendqisi2
+ 426:Core/Src/drive.c **** }
+ 1941              		.loc 1 426 1 view .LVU529
+ 1942 0004 7047     		bx	lr
+ 1943              	.L155:
+ 1944 0006 00BF     		.align	2
+ 1945              	.L154:
+ 1946 0008 00000000 		.word	st
+ 1947              		.cfi_endproc
+ 1948              	.LFE154:
+ 1950              		.section	.bss.prev_ms.0,"aw",%nobits
+ 1951              		.align	2
+ 1954              	prev_ms.0:
+ 1955 0000 00000000 		.space	4
+ 1956              		.section	.bss.prev_error.1,"aw",%nobits
+ 1957              		.align	2
+ 1960              	prev_error.1:
+ 1961 0000 00000000 		.space	4
+ 1962              		.section	.bss.count.2,"aw",%nobits
+ 1965              	count.2:
+ 1966 0000 00       		.space	1
+ 1967              		.section	.bss.r_buf.3,"aw",%nobits
+ 1968              		.align	2
+ 1971              	r_buf.3:
+ 1972 0000 00000000 		.space	10
+ 1972      00000000 
+ 1972      0000
+ 1973              		.section	.bss.l_buf.4,"aw",%nobits
+ 1974              		.align	2
+ 1977              	l_buf.4:
+ 1978 0000 00000000 		.space	10
+ 1978      00000000 
+ 1978      0000
+ 1979              		.section	.bss.idx.5,"aw",%nobits
+ 1982              	idx.5:
+ 1983 0000 00       		.space	1
+ 1984              		.section	.bss.t_prev,"aw",%nobits
+ 1985              		.align	2
+ 1988              	t_prev:
+ 1989 0000 00000000 		.space	4
+ 1990              		.section	.bss.h_prev,"aw",%nobits
+ 1991              		.align	2
+ 1994              	h_prev:
+ 1995 0000 00000000 		.space	4
+ 1996              		.section	.bss.steer_mode,"aw",%nobits
+ 1999              	steer_mode:
+ 2000 0000 00       		.space	1
+ 2001              		.section	.bss.steer_u,"aw",%nobits
+ 2002              		.align	2
+ 2005              	steer_u:
+ 2006 0000 00000000 		.space	4
+ 2007              		.section	.bss.t_stuck,"aw",%nobits
+ 2008              		.align	2
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 49
+
+
+ 2011              	t_stuck:
+ 2012 0000 00000000 		.space	4
+ 2013              		.section	.bss.h_stuck,"aw",%nobits
+ 2014              		.align	2
+ 2017              	h_stuck:
+ 2018 0000 00000000 		.space	4
+ 2019              		.section	.bss.h_ref,"aw",%nobits
+ 2020              		.align	2
+ 2023              	h_ref:
+ 2024 0000 00000000 		.space	4
+ 2025              		.section	.bss.h_entry,"aw",%nobits
+ 2026              		.align	2
+ 2029              	h_entry:
+ 2030 0000 00000000 		.space	4
+ 2031              		.section	.bss.clear_cnt,"aw",%nobits
+ 2034              	clear_cnt:
+ 2035 0000 00       		.space	1
+ 2036              		.section	.bss.rev_cnt,"aw",%nobits
+ 2039              	rev_cnt:
+ 2040 0000 00       		.space	1
+ 2041              		.section	.bss.swap_cnt,"aw",%nobits
+ 2044              	swap_cnt:
+ 2045 0000 00       		.space	1
+ 2046              		.section	.bss.turn_dir,"aw",%nobits
+ 2049              	turn_dir:
+ 2050 0000 00       		.space	1
+ 2051              		.section	.bss.t_state,"aw",%nobits
+ 2052              		.align	2
+ 2055              	t_state:
+ 2056 0000 00000000 		.space	4
+ 2057              		.section	.bss.st,"aw",%nobits
+ 2060              	st:
+ 2061 0000 00       		.space	1
+ 2062              		.global	dbg_rev_cnt
+ 2063              		.section	.bss.dbg_rev_cnt,"aw",%nobits
+ 2066              	dbg_rev_cnt:
+ 2067 0000 00       		.space	1
+ 2068              		.global	dbg_turn_dir
+ 2069              		.section	.bss.dbg_turn_dir,"aw",%nobits
+ 2072              	dbg_turn_dir:
+ 2073 0000 00       		.space	1
+ 2074              		.global	dbg_spin_deg
+ 2075              		.section	.bss.dbg_spin_deg,"aw",%nobits
+ 2076              		.align	2
+ 2079              	dbg_spin_deg:
+ 2080 0000 00000000 		.space	4
+ 2081              		.global	dbg_yaw_rate
+ 2082              		.section	.bss.dbg_yaw_rate,"aw",%nobits
+ 2083              		.align	2
+ 2086              	dbg_yaw_rate:
+ 2087 0000 00000000 		.space	4
+ 2088              		.global	dbg_hdg_err
+ 2089              		.section	.bss.dbg_hdg_err,"aw",%nobits
+ 2090              		.align	2
+ 2093              	dbg_hdg_err:
+ 2094 0000 00000000 		.space	4
+ 2095              		.global	dbg_duty_r
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 50
+
+
+ 2096              		.section	.bss.dbg_duty_r,"aw",%nobits
+ 2097              		.align	1
+ 2100              	dbg_duty_r:
+ 2101 0000 0000     		.space	2
+ 2102              		.global	dbg_duty_l
+ 2103              		.section	.bss.dbg_duty_l,"aw",%nobits
+ 2104              		.align	1
+ 2107              	dbg_duty_l:
+ 2108 0000 0000     		.space	2
+ 2109              		.global	dbg_steer
+ 2110              		.section	.bss.dbg_steer,"aw",%nobits
+ 2111              		.align	2
+ 2114              	dbg_steer:
+ 2115 0000 00000000 		.space	4
+ 2116              		.global	dbg_steer_mode
+ 2117              		.section	.bss.dbg_steer_mode,"aw",%nobits
+ 2120              	dbg_steer_mode:
+ 2121 0000 00       		.space	1
+ 2122              		.global	dbg_state
+ 2123              		.section	.bss.dbg_state,"aw",%nobits
+ 2126              	dbg_state:
+ 2127 0000 00       		.space	1
+ 2128              		.text
+ 2129              	.Letext0:
+ 2130              		.file 2 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
+ 2131              		.file 3 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
+ 2132              		.file 4 "Core/Inc/drive.h"
+ 2133              		.file 5 "Core/Inc/motor.h"
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 51
+
+
+DEFINED SYMBOLS
+                            *ABS*:00000000 drive.c
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:21     .text.wrap180:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:26     .text.wrap180:00000000 wrap180
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:68     .text.wrap180:00000034 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:75     .text.clampf:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:80     .text.clampf:00000000 clampf
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:116    .text.center_sanitize_cm:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:121    .text.center_sanitize_cm:00000000 center_sanitize_cm
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:154    .text.center_avg_u16:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:159    .text.center_avg_u16:00000000 center_avg_u16
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:212    .text.enter:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:217    .text.enter:00000000 enter
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:238    .text.enter:0000000c $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2060   .bss.st:00000000 st
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2055   .bss.t_state:00000000 t_state
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:244    .text.cruise_enter:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:249    .text.cruise_enter:00000000 cruise_enter
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:306    .text.cruise_enter:0000002c $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2023   .bss.h_ref:00000000 h_ref
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2005   .bss.steer_u:00000000 steer_u
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1999   .bss.steer_mode:00000000 steer_mode
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2039   .bss.rev_cnt:00000000 rev_cnt
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1994   .bss.h_prev:00000000 h_prev
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1988   .bss.t_prev:00000000 t_prev
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:316    .text.spin_enter:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:321    .text.spin_enter:00000000 spin_enter
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:413    .text.spin_enter:00000054 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2049   .bss.turn_dir:00000000 turn_dir
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2044   .bss.swap_cnt:00000000 swap_cnt
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2034   .bss.clear_cnt:00000000 clear_cnt
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2029   .bss.h_entry:00000000 h_entry
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2017   .bss.h_stuck:00000000 h_stuck
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2011   .bss.t_stuck:00000000 t_stuck
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:423    .text.side_avoid_enter:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:428    .text.side_avoid_enter:00000000 side_avoid_enter
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:479    .text.side_avoid_enter:00000028 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:484    .text.hold_enter:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:489    .text.hold_enter:00000000 hold_enter
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:518    .text.brake_enter:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:523    .text.brake_enter:00000000 brake_enter
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:553    .text.hold_run:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:558    .text.hold_run:00000000 hold_run
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:624    .text.hold_run:00000038 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:629    .text.Drive_CenteringPD_Run:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:634    .text.Drive_CenteringPD_Run:00000000 Drive_CenteringPD_Run
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:955    .text.Drive_CenteringPD_Run:0000019c $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1982   .bss.idx.5:00000000 idx.5
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1977   .bss.l_buf.4:00000000 l_buf.4
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1971   .bss.r_buf.3:00000000 r_buf.3
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1965   .bss.count.2:00000000 count.2
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1960   .bss.prev_error.1:00000000 prev_error.1
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1954   .bss.prev_ms.0:00000000 prev_ms.0
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2114   .bss.dbg_steer:00000000 dbg_steer
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2120   .bss.dbg_steer_mode:00000000 dbg_steer_mode
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2107   .bss.dbg_duty_l:00000000 dbg_duty_l
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2100   .bss.dbg_duty_r:00000000 dbg_duty_r
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 52
+
+
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:980    .text.cruise_run:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:985    .text.cruise_run:00000000 cruise_run
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1063   .text.reverse_enter:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1068   .text.reverse_enter:00000000 reverse_enter
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1113   .text.reverse_enter:00000024 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1118   .text.brake_run:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1123   .text.brake_run:00000000 brake_run
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1200   .text.brake_run:0000004c $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1206   .text.reverse_run:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1211   .text.reverse_run:00000000 reverse_run
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1253   .text.reverse_run:0000001c $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1258   .text.spin_run:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1263   .text.spin_run:00000000 spin_run
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1607   .text.spin_run:0000018c $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2079   .bss.dbg_spin_deg:00000000 dbg_spin_deg
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1620   .text.side_avoid_run:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1625   .text.side_avoid_run:00000000 side_avoid_run
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1727   .text.side_avoid_run:00000058 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1733   .text.Drive_Init:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1739   .text.Drive_Init:00000000 Drive_Init
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1786   .text.Drive_Init:00000028 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1798   .text.Drive_Update:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1804   .text.Drive_Update:00000000 Drive_Update
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1824   .text.Drive_Update:0000000e $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1830   .text.Drive_Update:00000014 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1914   .text.Drive_Update:00000060 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2126   .bss.dbg_state:00000000 dbg_state
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2072   .bss.dbg_turn_dir:00000000 dbg_turn_dir
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2066   .bss.dbg_rev_cnt:00000000 dbg_rev_cnt
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1924   .text.Drive_GetState:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1930   .text.Drive_GetState:00000000 Drive_GetState
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1946   .text.Drive_GetState:00000008 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1951   .bss.prev_ms.0:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1957   .bss.prev_error.1:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1966   .bss.count.2:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1968   .bss.r_buf.3:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1974   .bss.l_buf.4:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1983   .bss.idx.5:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1985   .bss.t_prev:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:1991   .bss.h_prev:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2000   .bss.steer_mode:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2002   .bss.steer_u:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2008   .bss.t_stuck:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2014   .bss.h_stuck:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2020   .bss.h_ref:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2026   .bss.h_entry:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2035   .bss.clear_cnt:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2040   .bss.rev_cnt:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2045   .bss.swap_cnt:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2050   .bss.turn_dir:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2052   .bss.t_state:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2061   .bss.st:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2067   .bss.dbg_rev_cnt:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2073   .bss.dbg_turn_dir:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2076   .bss.dbg_spin_deg:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2086   .bss.dbg_yaw_rate:00000000 dbg_yaw_rate
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2083   .bss.dbg_yaw_rate:00000000 $d
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 53
+
+
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2093   .bss.dbg_hdg_err:00000000 dbg_hdg_err
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2090   .bss.dbg_hdg_err:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2097   .bss.dbg_duty_r:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2104   .bss.dbg_duty_l:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2111   .bss.dbg_steer:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2121   .bss.dbg_steer_mode:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccncQDtw.s:2127   .bss.dbg_state:00000000 $d
+                           .group:00000000 wm4.0.3e3bd4fae48ed4285b9fe9ad79008a8e
+                           .group:00000000 wm4._newlib_version.h.4.0eb654b64686e2bd29646258853f6c22
+                           .group:00000000 wm4.features.h.33.d554620bb17bd3b714c3fb5c268772bc
+                           .group:00000000 wm4._default_types.h.15.247e5cd201eca3442cbf5404108c4935
+                           .group:00000000 wm4._intsup.h.10.48bafbb683905c4daa4565a85aeeb264
+                           .group:00000000 wm4._stdint.h.10.c24fa3af3bc1706662bb5593a907e841
+                           .group:00000000 wm4.stdint.h.23.d53047a68f4a85177f80b422d52785ed
+                           .group:00000000 wm4.drive.h.24.2fac3cd038820ef4cc8a4581279f6aa6
+                           .group:00000000 wm4.stm32f4xx_hal_conf.h.25.0cc516ee5f8f6ec9d32a682fcd0191b7
+                           .group:00000000 wm4.stm32f4xx.h.38.63e3ea23bd63a94457417730025259b6
+                           .group:00000000 wm4.stm32f411xe.h.34.f2908321cbbda12187706c23063bbc28
+                           .group:00000000 wm4.cmsis_version.h.32.0ac195c83bb4537824e6ad1c47474b79
+                           .group:00000000 wm4.core_cm4.h.66.e4ff136c4a17abc46741866f64f8e729
+                           .group:00000000 wm4.cmsis_gcc.h.26.498d0ad17a45fc9ef20fdc01caf02259
+                           .group:00000000 wm4.core_cm4.h.174.62be9b4588d49bed18171771001331df
+                           .group:00000000 wm4.mpu_armv7.h.32.83326921a797fa9d6f70449916b4b839
+                           .group:00000000 wm4.stm32f411xe.h.636.37cf950cfbbaac9e193dbe2b79c3e749
+                           .group:00000000 wm4.stm32f4xx.h.195.a4b8bf80f37cc96981498656ffe5f588
+                           .group:00000000 wm4.stm32_hal_legacy.h.22.8b7d303dc46a0b7ac6d3edf19ce2608d
+                           .group:00000000 wm4.stddef.h.39.811583f327f35b0df7808fda70b062a0
+                           .group:00000000 wm4.stm32f4xx_hal_def.h.58.3cb484e92e5ccf2e55312a4714e27917
+                           .group:00000000 wm4.stm32f4xx_hal_rcc_ex.h.20.6bc7ed2ae7969e22afc815a811faa8ee
+                           .group:00000000 wm4.stm32f4xx_hal_rcc.h.106.0887cf5d985ae88e345b0aed0ceb4729
+                           .group:00000000 wm4.stm32f4xx_hal_gpio.h.21.22da6a14b6049d6ac156577be74df1d7
+                           .group:00000000 wm4.stm32f4xx_hal_gpio_ex.h.21.985b1076fbcb2c3eb806d02fd771d120
+                           .group:00000000 wm4.stm32f4xx_hal_gpio.h.254.d7e07832f748fe8bcb575db0b8373592
+                           .group:00000000 wm4.stm32f4xx_hal_exti.h.21.2ccac119fb1c64adeb682c3dcad90241
+                           .group:00000000 wm4.stm32f4xx_hal_dma.h.21.8e4b1421c914345c23be719e5e528779
+                           .group:00000000 wm4.stm32f4xx_hal_dma.h.720.ac2d7eef74792e4026acc4d2923c5da4
+                           .group:00000000 wm4.stm32f4xx_hal_cortex.h.20.03673e4f79386680bf73ba399c19306b
+                           .group:00000000 wm4.stm32f4xx_hal_flash.h.20.2f1e0d1b7010b3a81a7980aaf712e7e5
+                           .group:00000000 wm4.stm32f4xx_hal_flash_ex.h.20.2abe4a01ce8028804a922735defa62fd
+                           .group:00000000 wm4.stm32f4xx_hal_flash.h.361.23bc19b9eac79b0956d913651841ede8
+                           .group:00000000 wm4.stm32f4xx_hal_i2c.h.21.147e96a27b1f7b1f2f8ee22132703ee3
+                           .group:00000000 wm4.stm32f4xx_hal_i2c_ex.h.21.951ef5bfa13cf131d2015c338e82e461
+                           .group:00000000 wm4.stm32f4xx_hal_i2c.h.647.ade9c3447780b1cc0ece02f0ce83aedc
+                           .group:00000000 wm4.stm32f4xx_hal_iwdg.h.21.6227ccfbb99238d6637d6fd22341e211
+                           .group:00000000 wm4.stm32f4xx_hal_pwr.h.20.1905a0783a9c83adefd7df0c4b501e40
+                           .group:00000000 wm4.stm32f4xx_hal_pwr_ex.h.20.68994c4c23e76d9aeabea12988d5ec3f
+                           .group:00000000 wm4.stm32f4xx_hal_pwr.h.338.debc0a4a62ba54688e63ab53dd99c4ea
+                           .group:00000000 wm4.stm32f4xx_hal_tim.h.21.c31cbc03c25f07a932427770396c59d2
+                           .group:00000000 wm4.stm32f4xx_hal_tim_ex.h.21.918fa7fcd405cc3ba11632ed1d07a240
+                           .group:00000000 wm4.stm32f4xx_hal.h.71.02372bc31d47d29d3f67fbfe1429649e
+                           .group:00000000 wm4.main.h.60.a9fbcfa98a33cea9e599fe3b3b28e08c
+                           .group:00000000 wm4.newlib.h.7.decd5b9657e2c5df625d9eac6e10520c
+                           .group:00000000 wm4.ieeefp.h.77.61a77db5804869b1dadd307a77cf78c9
+                           .group:00000000 wm4.config.h.224.10ee1ad185d877c6e334e6581faab44d
+                           .group:00000000 wm4._ansi.h.31.de524f58584151836e90d8620a16f8e8
+                           .group:00000000 wm4.cdefs.h.49.56fd742369e655e7e8a7e365e706e208
+                           .group:00000000 wm4._types.h.20.dd0d04dca3800a0d2a6129b87f3adbb2
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccncQDtw.s 			page 54
+
+
+                           .group:00000000 wm4.stddef.h.173.4903093a50a8482cb062b176ea61fac3
+                           .group:00000000 wm4._types.h.127.3bdfe3ff8ea2d0985b03d9cbe93480e3
+                           .group:00000000 wm4.reent.h.18.25503cdc8b7e55dd0d6ea7b3e5af7a03
+                           .group:00000000 wm4.lock.h.2.1461d1fff82dffe8bfddc23307f6484f
+                           .group:00000000 wm4.reent.h.78.6d702f69a6d6435d2dbe915b10150b1a
+                           .group:00000000 wm4.math.h.13.47cfc34cae8a1153323939c4d32cf7c2
+
+UNDEFINED SYMBOLS
+Car_Stop
+Car_Brake
+Motor_Left
+Motor_Right
+Car_Backward
+Car_PivotLeft
+Car_PivotRight

@@ -1,0 +1,1721 @@
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 1
+
+
+   1              		.cpu cortex-m4
+   2              		.arch armv7e-m
+   3              		.fpu fpv4-sp-d16
+   4              		.eabi_attribute 27, 1
+   5              		.eabi_attribute 28, 1
+   6              		.eabi_attribute 20, 1
+   7              		.eabi_attribute 21, 1
+   8              		.eabi_attribute 23, 3
+   9              		.eabi_attribute 24, 1
+  10              		.eabi_attribute 25, 1
+  11              		.eabi_attribute 26, 1
+  12              		.eabi_attribute 30, 1
+  13              		.eabi_attribute 34, 1
+  14              		.eabi_attribute 18, 4
+  15              		.file	"freertos.c"
+  16              		.text
+  17              	.Ltext0:
+  18              		.cfi_sections	.debug_frame
+  19              		.file 1 "Core/Src/freertos.c"
+  20              		.section	.text.StartDefaultTask,"ax",%progbits
+  21              		.align	1
+  22              		.global	StartDefaultTask
+  23              		.syntax unified
+  24              		.thumb
+  25              		.thumb_func
+  27              	StartDefaultTask:
+  28              	.LFB139:
+   1:Core/Src/freertos.c **** /* USER CODE BEGIN Header */
+   2:Core/Src/freertos.c **** /**
+   3:Core/Src/freertos.c ****   ******************************************************************************
+   4:Core/Src/freertos.c ****   * File Name          : freertos.c
+   5:Core/Src/freertos.c ****   * Description        : Code for freertos applications
+   6:Core/Src/freertos.c ****   ******************************************************************************
+   7:Core/Src/freertos.c ****   * @attention
+   8:Core/Src/freertos.c ****   *
+   9:Core/Src/freertos.c ****   * Copyright (c) 2026 STMicroelectronics.
+  10:Core/Src/freertos.c ****   * All rights reserved.
+  11:Core/Src/freertos.c ****   *
+  12:Core/Src/freertos.c ****   * This software is licensed under terms that can be found in the LICENSE file
+  13:Core/Src/freertos.c ****   * in the root directory of this software component.
+  14:Core/Src/freertos.c ****   * If no LICENSE file comes with this software, it is provided AS-IS.
+  15:Core/Src/freertos.c ****   *
+  16:Core/Src/freertos.c ****   ******************************************************************************
+  17:Core/Src/freertos.c ****   */
+  18:Core/Src/freertos.c **** /* USER CODE END Header */
+  19:Core/Src/freertos.c **** 
+  20:Core/Src/freertos.c **** /* Includes ------------------------------------------------------------------*/
+  21:Core/Src/freertos.c **** #include "FreeRTOS.h"
+  22:Core/Src/freertos.c **** #include "task.h"
+  23:Core/Src/freertos.c **** #include "main.h"
+  24:Core/Src/freertos.c **** #include "cmsis_os.h"
+  25:Core/Src/freertos.c **** 
+  26:Core/Src/freertos.c **** /* Private includes ----------------------------------------------------------*/
+  27:Core/Src/freertos.c **** /* USER CODE BEGIN Includes */
+  28:Core/Src/freertos.c **** #include "iwdg.h"    /* hiwdg — MotorTask가 큐 수신 성공 시에만 refresh */
+  29:Core/Src/freertos.c **** #include "motor.h"
+  30:Core/Src/freertos.c **** #include "drive.h"   /* DriveInputs(큐 메시지 그대로 사용) + 튜닝 노브 */
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 2
+
+
+  31:Core/Src/freertos.c **** #include "bno055.h"
+  32:Core/Src/freertos.c **** #include "ultra.h"
+  33:Core/Src/freertos.c **** /* USER CODE END Includes */
+  34:Core/Src/freertos.c **** 
+  35:Core/Src/freertos.c **** /* Private typedef -----------------------------------------------------------*/
+  36:Core/Src/freertos.c **** /* USER CODE BEGIN PTD */
+  37:Core/Src/freertos.c **** 
+  38:Core/Src/freertos.c **** /* USER CODE END PTD */
+  39:Core/Src/freertos.c **** 
+  40:Core/Src/freertos.c **** /* Private define ------------------------------------------------------------*/
+  41:Core/Src/freertos.c **** /* USER CODE BEGIN PD */
+  42:Core/Src/freertos.c **** 
+  43:Core/Src/freertos.c **** /* MotorTask 큐 수신 timeout [ms]: 정상 최악 센서 사이클(front 25 + side 6+6 + IMU time
+  44:Core/Src/freertos.c ****  * + 복구 ~1ms ≈ 60-70ms)의 약 2배. 초과 = 센서 파이프라인 침묵 → Car_Stop + IW
+  45:Core/Src/freertos.c ****  * → 2.048s 지속 시 워치독 리셋 (구 슈퍼루프의 '루프 멈춤=리셋' 의미 보존
+  46:Core/Src/freertos.c **** #define DRIVE_Q_TIMEOUT_MS  150U
+  47:Core/Src/freertos.c **** 
+  48:Core/Src/freertos.c **** /* USER CODE END PD */
+  49:Core/Src/freertos.c **** 
+  50:Core/Src/freertos.c **** /* Private macro -------------------------------------------------------------*/
+  51:Core/Src/freertos.c **** /* USER CODE BEGIN PM */
+  52:Core/Src/freertos.c **** 
+  53:Core/Src/freertos.c **** /* USER CODE END PM */
+  54:Core/Src/freertos.c **** 
+  55:Core/Src/freertos.c **** /* Private variables ---------------------------------------------------------*/
+  56:Core/Src/freertos.c **** /* USER CODE BEGIN Variables */
+  57:Core/Src/freertos.c **** 
+  58:Core/Src/freertos.c **** /* SensorTask → MotorTask 단방향 메일박스 (DriveInputs 값 복사 — 공유변수/뮤텍�
+  59:Core/Src/freertos.c ****  * depth 2: full 메시지 + 선제제동 early 메시지 공존용 */
+  60:Core/Src/freertos.c **** static osMessageQueueId_t driveQ = NULL;
+  61:Core/Src/freertos.c **** 
+  62:Core/Src/freertos.c **** /* ---- 디버그 미러 (SWD Live Expressions 등록 대상 — 구 main.c에서 이동, 이름 �
+  63:Core/Src/freertos.c **** volatile uint16_t dbg_front = 0, dbg_left = 0, dbg_right = 0;   /* 필터 후 거리 cm */
+  64:Core/Src/freertos.c **** volatile uint8_t  dbg_front_miss = 0;
+  65:Core/Src/freertos.c **** volatile uint32_t dbg_loop_ms = 0;     /* 센서 사이클 1회 소요(ms) — 반응지연 감시 
+  66:Core/Src/freertos.c **** 
+  67:Core/Src/freertos.c **** /* IMU(BNO055) 미러: heading/roll/pitch + 상태 */
+  68:Core/Src/freertos.c **** volatile float    dbg_heading = 0.0f, dbg_roll = 0.0f, dbg_pitch = 0.0f;
+  69:Core/Src/freertos.c **** volatile uint8_t  dbg_imu_ok = 0;      /* BNO055_Init 성공=1 (main.c USER CODE 2에서 기록) */
+  70:Core/Src/freertos.c **** volatile uint8_t  dbg_imu_live = 0;    /* 지금 IMU 읽기 신뢰 가능(생존 게이트) — 0�
+  71:Core/Src/freertos.c **** volatile uint8_t  dbg_imu_calib = 0;   /* CALIB_STAT: [7:6]sys [5:4]gyr [3:2]acc [1:0]mag(IMU모드
+  72:Core/Src/freertos.c **** volatile uint32_t dbg_imu_evt = 0;     /* INT(PA0/EXTI0) 발생 카운터 */
+  73:Core/Src/freertos.c **** 
+  74:Core/Src/freertos.c **** /* ---- RTOS 가시성 미러 (신규) ---- */
+  75:Core/Src/freertos.c **** volatile uint32_t dbg_q_drop    = 0;   /* 큐 put 실패(가득참) 누적 — 0이어야 정상 */
+  76:Core/Src/freertos.c **** volatile uint32_t dbg_q_timeout = 0;   /* MotorTask 큐 수신 timeout 누적 — 센서 파이프�
+  77:Core/Src/freertos.c **** volatile uint32_t dbg_hw_sensor = 0;   /* SensorTask 스택 high-water [words] — 64 미만이면 
+  78:Core/Src/freertos.c **** volatile uint32_t dbg_hw_motor  = 0;   /* MotorTask 스택 high-water [words] */
+  79:Core/Src/freertos.c **** 
+  80:Core/Src/freertos.c **** /* USER CODE END Variables */
+  81:Core/Src/freertos.c **** /* Definitions for MotorTask */
+  82:Core/Src/freertos.c **** osThreadId_t MotorTaskHandle;
+  83:Core/Src/freertos.c **** const osThreadAttr_t MotorTask_attributes = {
+  84:Core/Src/freertos.c ****   .name = "MotorTask",
+  85:Core/Src/freertos.c ****   .stack_size = 256 * 4,
+  86:Core/Src/freertos.c ****   .priority = (osPriority_t) osPriorityNormal,
+  87:Core/Src/freertos.c **** };
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 3
+
+
+  88:Core/Src/freertos.c **** /* Definitions for SensorTask */
+  89:Core/Src/freertos.c **** osThreadId_t SensorTaskHandle;
+  90:Core/Src/freertos.c **** const osThreadAttr_t SensorTask_attributes = {
+  91:Core/Src/freertos.c ****   .name = "SensorTask",
+  92:Core/Src/freertos.c ****   .stack_size = 256 * 4,
+  93:Core/Src/freertos.c ****   .priority = (osPriority_t) osPriorityLow,
+  94:Core/Src/freertos.c **** };
+  95:Core/Src/freertos.c **** 
+  96:Core/Src/freertos.c **** /* Private function prototypes -----------------------------------------------*/
+  97:Core/Src/freertos.c **** /* USER CODE BEGIN FunctionPrototypes */
+  98:Core/Src/freertos.c **** 
+  99:Core/Src/freertos.c **** #if MOTOR_TEST
+ 100:Core/Src/freertos.c **** /* 테스트 시퀀스 전용 대기: IWDG timeout(2.048s)보다 긴 무갱신 대기가 흐르면 
+ 101:Core/Src/freertos.c ****  * 리셋 → '전진만 반복' 폭주. 10ms 단위(osDelay)로 갱신하며 대기 (구 test_dela
+ 102:Core/Src/freertos.c **** static void test_delay(uint32_t ms)
+ 103:Core/Src/freertos.c **** {
+ 104:Core/Src/freertos.c ****     for (uint32_t t = 0; t < ms; t += 10U)
+ 105:Core/Src/freertos.c ****     {
+ 106:Core/Src/freertos.c ****         HAL_IWDG_Refresh(&hiwdg);
+ 107:Core/Src/freertos.c ****         osDelay(10);
+ 108:Core/Src/freertos.c ****     }
+ 109:Core/Src/freertos.c **** }
+ 110:Core/Src/freertos.c **** #endif
+ 111:Core/Src/freertos.c **** 
+ 112:Core/Src/freertos.c **** /* USER CODE END FunctionPrototypes */
+ 113:Core/Src/freertos.c **** 
+ 114:Core/Src/freertos.c **** void StartDefaultTask(void *argument);
+ 115:Core/Src/freertos.c **** void StartTask02(void *argument);
+ 116:Core/Src/freertos.c **** 
+ 117:Core/Src/freertos.c **** void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
+ 118:Core/Src/freertos.c **** 
+ 119:Core/Src/freertos.c **** /**
+ 120:Core/Src/freertos.c ****   * @brief  FreeRTOS initialization
+ 121:Core/Src/freertos.c ****   * @param  None
+ 122:Core/Src/freertos.c ****   * @retval None
+ 123:Core/Src/freertos.c ****   */
+ 124:Core/Src/freertos.c **** void MX_FREERTOS_Init(void) {
+ 125:Core/Src/freertos.c ****   /* USER CODE BEGIN Init */
+ 126:Core/Src/freertos.c **** 
+ 127:Core/Src/freertos.c ****   /* USER CODE END Init */
+ 128:Core/Src/freertos.c **** 
+ 129:Core/Src/freertos.c ****   /* USER CODE BEGIN RTOS_MUTEX */
+ 130:Core/Src/freertos.c ****   /* add mutexes, ... */
+ 131:Core/Src/freertos.c ****   /* USER CODE END RTOS_MUTEX */
+ 132:Core/Src/freertos.c **** 
+ 133:Core/Src/freertos.c ****   /* USER CODE BEGIN RTOS_SEMAPHORES */
+ 134:Core/Src/freertos.c ****   /* add semaphores, ... */
+ 135:Core/Src/freertos.c ****   /* USER CODE END RTOS_SEMAPHORES */
+ 136:Core/Src/freertos.c **** 
+ 137:Core/Src/freertos.c ****   /* USER CODE BEGIN RTOS_TIMERS */
+ 138:Core/Src/freertos.c ****   /* start timers, add new ones, ... */
+ 139:Core/Src/freertos.c ****   /* USER CODE END RTOS_TIMERS */
+ 140:Core/Src/freertos.c **** 
+ 141:Core/Src/freertos.c ****   /* USER CODE BEGIN RTOS_QUEUES */
+ 142:Core/Src/freertos.c ****   driveQ = osMessageQueueNew(2, sizeof(DriveInputs), NULL);
+ 143:Core/Src/freertos.c ****   /* 생성 실패(NULL) 시 put/get이 전부 에러 → MotorTask가 Car_Stop + refresh 생략 �
+ 144:Core/Src/freertos.c ****    * heap_4 15KB에 큐 ~수십B라 실패 가능성 사실상 없음 — 별도 처리 불요 */
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 4
+
+
+ 145:Core/Src/freertos.c ****   /* USER CODE END RTOS_QUEUES */
+ 146:Core/Src/freertos.c **** 
+ 147:Core/Src/freertos.c ****   /* Create the thread(s) */
+ 148:Core/Src/freertos.c ****   /* creation of MotorTask */
+ 149:Core/Src/freertos.c ****   MotorTaskHandle = osThreadNew(StartDefaultTask, NULL, &MotorTask_attributes);
+ 150:Core/Src/freertos.c **** 
+ 151:Core/Src/freertos.c ****   /* creation of SensorTask */
+ 152:Core/Src/freertos.c ****   SensorTaskHandle = osThreadNew(StartTask02, NULL, &SensorTask_attributes);
+ 153:Core/Src/freertos.c **** 
+ 154:Core/Src/freertos.c ****   /* USER CODE BEGIN RTOS_THREADS */
+ 155:Core/Src/freertos.c ****   /* add threads, ... */
+ 156:Core/Src/freertos.c ****   /* USER CODE END RTOS_THREADS */
+ 157:Core/Src/freertos.c **** 
+ 158:Core/Src/freertos.c ****   /* USER CODE BEGIN RTOS_EVENTS */
+ 159:Core/Src/freertos.c ****   /* add events, ... */
+ 160:Core/Src/freertos.c ****   /* USER CODE END RTOS_EVENTS */
+ 161:Core/Src/freertos.c **** 
+ 162:Core/Src/freertos.c **** }
+ 163:Core/Src/freertos.c **** 
+ 164:Core/Src/freertos.c **** /* USER CODE BEGIN Header_StartDefaultTask */
+ 165:Core/Src/freertos.c **** /**
+ 166:Core/Src/freertos.c ****   * @brief  Function implementing the MotorTask thread.
+ 167:Core/Src/freertos.c ****   * @param  argument: Not used
+ 168:Core/Src/freertos.c ****   * @retval None
+ 169:Core/Src/freertos.c ****   */
+ 170:Core/Src/freertos.c **** /* USER CODE END Header_StartDefaultTask */
+ 171:Core/Src/freertos.c **** void StartDefaultTask(void *argument)
+ 172:Core/Src/freertos.c **** {
+  29              		.loc 1 172 1 view -0
+  30              		.cfi_startproc
+  31              		@ Volatile: function does not return.
+  32              		@ args = 0, pretend = 0, frame = 24
+  33              		@ frame_needed = 0, uses_anonymous_args = 0
+  34              	.LVL0:
+  35              		.loc 1 172 1 is_stmt 0 view .LVU1
+  36 0000 00B5     		push	{lr}
+  37              	.LCFI0:
+  38              		.cfi_def_cfa_offset 4
+  39              		.cfi_offset 14, -4
+  40 0002 87B0     		sub	sp, sp, #28
+  41              	.LCFI1:
+  42              		.cfi_def_cfa_offset 32
+  43 0004 0AE0     		b	.L4
+  44              	.LVL1:
+  45              	.L6:
+ 173:Core/Src/freertos.c ****   /* USER CODE BEGIN StartDefaultTask */
+ 174:Core/Src/freertos.c ****   (void)argument;
+ 175:Core/Src/freertos.c **** 
+ 176:Core/Src/freertos.c **** #if MOTOR_TEST
+ 177:Core/Src/freertos.c ****   /* 바퀴 방향/속도/제동 눈 확인 + 수치 튜닝용. 센서 로직 건너뜀(SensorTask�
+ 178:Core/Src/freertos.c ****    * test_delay 사용 필수: 무갱신 대기는 IWDG 리셋 → 시퀀스 중간 폭주 */
+ 179:Core/Src/freertos.c ****   for(;;)
+ 180:Core/Src/freertos.c ****   {
+ 181:Core/Src/freertos.c ****     Car_Forward(DRIVE_SPEED);   test_delay(1500);   /* 양쪽 다 전진하는지 확인 */
+ 182:Core/Src/freertos.c ****     Car_Brake();                test_delay(400);    /* 능동 제동: 코스트 대비 정지거리
+ 183:Core/Src/freertos.c ****     Car_Stop();                 test_delay(800);
+ 184:Core/Src/freertos.c ****     Car_PivotLeft(TURN_SPEED, TURN_INNER);   test_delay(1500);   /* IN1 전진 + IN3 후진소량 �
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 5
+
+
+ 185:Core/Src/freertos.c ****     Car_Stop();                              test_delay(800);
+ 186:Core/Src/freertos.c ****     Car_PivotRight(TURN_SPEED, TURN_INNER);  test_delay(1500);   /* IN4 전진 + IN2 후진소량 �
+ 187:Core/Src/freertos.c ****     Car_Stop();                              test_delay(800);
+ 188:Core/Src/freertos.c ****     Car_Backward(DRIVE_SPEED);  test_delay(1500);
+ 189:Core/Src/freertos.c ****     Car_Stop();                 test_delay(800);
+ 190:Core/Src/freertos.c ****   }
+ 191:Core/Src/freertos.c **** #else
+ 192:Core/Src/freertos.c ****   /* 제어 소비자 = 모터 명령 유일 발행자 (폴트 핸들러의 Car_Stop 제외).
+ 193:Core/Src/freertos.c ****    * IWDG는 '신선한 센서 데이터가 흐를 때만' refresh — SensorTask 행/사망, 큐 �
+ 194:Core/Src/freertos.c ****    * 본 태스크 행 어느 쪽이든 2.048s 내 워치독 리셋 (구 슈퍼루프 fail-safe 의
+ 195:Core/Src/freertos.c ****   DriveInputs din;
+ 196:Core/Src/freertos.c ****   for(;;)
+ 197:Core/Src/freertos.c ****   {
+ 198:Core/Src/freertos.c ****     if (osMessageQueueGet(driveQ, &din, NULL, DRIVE_Q_TIMEOUT_MS) == osOK)
+ 199:Core/Src/freertos.c ****     {
+ 200:Core/Src/freertos.c ****       HAL_IWDG_Refresh(&hiwdg);
+  46              		.loc 1 200 7 is_stmt 1 view .LVU2
+  47 0006 0D48     		ldr	r0, .L7
+  48 0008 FFF7FEFF 		bl	HAL_IWDG_Refresh
+  49              	.LVL2:
+ 201:Core/Src/freertos.c ****       Drive_Update(&din);   /* 호출당 정확히 1회 모터 명령 (상태머신은 din.now 기�
+  50              		.loc 1 201 7 view .LVU3
+  51 000c 01A8     		add	r0, sp, #4
+  52 000e FFF7FEFF 		bl	Drive_Update
+  53              	.LVL3:
+  54              	.L3:
+ 202:Core/Src/freertos.c ****     }
+ 203:Core/Src/freertos.c ****     else
+ 204:Core/Src/freertos.c ****     {
+ 205:Core/Src/freertos.c ****       dbg_q_timeout++;
+ 206:Core/Src/freertos.c ****       Car_Stop();           /* 센서 침묵 동안 안전 정지. refresh 생략 → 지속 시 IW
+ 207:Core/Src/freertos.c ****     }
+ 208:Core/Src/freertos.c ****     dbg_hw_motor = (uint32_t)uxTaskGetStackHighWaterMark(NULL);
+  55              		.loc 1 208 5 view .LVU4
+  56              		.loc 1 208 30 is_stmt 0 view .LVU5
+  57 0012 0020     		movs	r0, #0
+  58 0014 FFF7FEFF 		bl	uxTaskGetStackHighWaterMark
+  59              	.LVL4:
+  60              		.loc 1 208 18 discriminator 1 view .LVU6
+  61 0018 094B     		ldr	r3, .L7+4
+  62 001a 1860     		str	r0, [r3]
+ 196:Core/Src/freertos.c ****   {
+  63              		.loc 1 196 3 is_stmt 1 view .LVU7
+  64              	.L4:
+ 174:Core/Src/freertos.c **** 
+  65              		.loc 1 174 3 view .LVU8
+ 195:Core/Src/freertos.c ****   for(;;)
+  66              		.loc 1 195 3 view .LVU9
+ 196:Core/Src/freertos.c ****   {
+  67              		.loc 1 196 3 view .LVU10
+ 198:Core/Src/freertos.c ****     {
+  68              		.loc 1 198 5 view .LVU11
+ 198:Core/Src/freertos.c ****     {
+  69              		.loc 1 198 9 is_stmt 0 view .LVU12
+  70 001c 9623     		movs	r3, #150
+  71 001e 0022     		movs	r2, #0
+  72 0020 01A9     		add	r1, sp, #4
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 6
+
+
+  73 0022 0848     		ldr	r0, .L7+8
+  74 0024 0068     		ldr	r0, [r0]
+  75 0026 FFF7FEFF 		bl	osMessageQueueGet
+  76              	.LVL5:
+ 198:Core/Src/freertos.c ****     {
+  77              		.loc 1 198 8 discriminator 1 view .LVU13
+  78 002a 0028     		cmp	r0, #0
+  79 002c EBD0     		beq	.L6
+ 205:Core/Src/freertos.c ****       Car_Stop();           /* 센서 침묵 동안 안전 정지. refresh 생략 → 지속 시 IW
+  80              		.loc 1 205 7 is_stmt 1 view .LVU14
+ 205:Core/Src/freertos.c ****       Car_Stop();           /* 센서 침묵 동안 안전 정지. refresh 생략 → 지속 시 IW
+  81              		.loc 1 205 20 is_stmt 0 view .LVU15
+  82 002e 064A     		ldr	r2, .L7+12
+  83 0030 1368     		ldr	r3, [r2]
+  84 0032 0133     		adds	r3, r3, #1
+  85 0034 1360     		str	r3, [r2]
+ 206:Core/Src/freertos.c ****     }
+  86              		.loc 1 206 7 is_stmt 1 view .LVU16
+  87 0036 FFF7FEFF 		bl	Car_Stop
+  88              	.LVL6:
+  89 003a EAE7     		b	.L3
+  90              	.L8:
+  91              		.align	2
+  92              	.L7:
+  93 003c 00000000 		.word	hiwdg
+  94 0040 00000000 		.word	dbg_hw_motor
+  95 0044 00000000 		.word	driveQ
+  96 0048 00000000 		.word	dbg_q_timeout
+  97              		.cfi_endproc
+  98              	.LFE139:
+ 100              		.section	.text.StartTask02,"ax",%progbits
+ 101              		.align	1
+ 102              		.global	StartTask02
+ 103              		.syntax unified
+ 104              		.thumb
+ 105              		.thumb_func
+ 107              	StartTask02:
+ 108              	.LVL7:
+ 109              	.LFB140:
+ 209:Core/Src/freertos.c ****   }
+ 210:Core/Src/freertos.c **** #endif
+ 211:Core/Src/freertos.c ****   /* USER CODE END StartDefaultTask */
+ 212:Core/Src/freertos.c **** }
+ 213:Core/Src/freertos.c **** 
+ 214:Core/Src/freertos.c **** /* USER CODE BEGIN Header_StartTask02 */
+ 215:Core/Src/freertos.c **** /**
+ 216:Core/Src/freertos.c **** * @brief Function implementing the SensorTask thread.
+ 217:Core/Src/freertos.c **** * @param argument: Not used
+ 218:Core/Src/freertos.c **** * @retval None
+ 219:Core/Src/freertos.c **** */
+ 220:Core/Src/freertos.c **** /* USER CODE END Header_StartTask02 */
+ 221:Core/Src/freertos.c **** void StartTask02(void *argument)
+ 222:Core/Src/freertos.c **** {
+ 110              		.loc 1 222 1 view -0
+ 111              		.cfi_startproc
+ 112              		@ args = 0, pretend = 0, frame = 32
+ 113              		@ frame_needed = 0, uses_anonymous_args = 0
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 7
+
+
+ 114              		.loc 1 222 1 is_stmt 0 view .LVU18
+ 115 0000 2DE9F041 		push	{r4, r5, r6, r7, r8, lr}
+ 116              	.LCFI2:
+ 117              		.cfi_def_cfa_offset 24
+ 118              		.cfi_offset 4, -24
+ 119              		.cfi_offset 5, -20
+ 120              		.cfi_offset 6, -16
+ 121              		.cfi_offset 7, -12
+ 122              		.cfi_offset 8, -8
+ 123              		.cfi_offset 14, -4
+ 124 0004 88B0     		sub	sp, sp, #32
+ 125              	.LCFI3:
+ 126              		.cfi_def_cfa_offset 56
+ 223:Core/Src/freertos.c ****   /* USER CODE BEGIN StartTask02 */
+ 224:Core/Src/freertos.c ****   (void)argument;
+ 127              		.loc 1 224 3 is_stmt 1 view .LVU19
+ 225:Core/Src/freertos.c **** 
+ 226:Core/Src/freertos.c **** #if MOTOR_TEST
+ 227:Core/Src/freertos.c ****   /* 모터 점검 모드: 측정/큐 불요 — MotorTask가 시퀀스 전담, 여기는 휴면 */
+ 228:Core/Src/freertos.c ****   for(;;) osDelay(1000);
+ 229:Core/Src/freertos.c **** #else
+ 230:Core/Src/freertos.c ****   /* 측정/필터 상태 (구 main.c 슈퍼루프에서 이동) — 제어 상태머신은 drive.c
+ 231:Core/Src/freertos.c ****    * hist 윈도 = SIDE_MED_WIN(drive.h): 측면 median 샘플수 = '한번씩 튀는 값' 제거 �
+ 232:Core/Src/freertos.c ****   static uint16_t hist[3][SIDE_MED_WIN];
+ 128              		.loc 1 232 3 view .LVU20
+ 233:Core/Src/freertos.c ****   for (int ch = 0; ch < 3; ch++)
+ 129              		.loc 1 233 3 view .LVU21
+ 130              	.LBB2:
+ 131              		.loc 1 233 8 view .LVU22
+ 132              	.LVL8:
+ 133              		.loc 1 233 12 is_stmt 0 view .LVU23
+ 134 0006 0021     		movs	r1, #0
+ 135              		.loc 1 233 3 view .LVU24
+ 136 0008 0AE0     		b	.L10
+ 137              	.LVL9:
+ 138              	.L11:
+ 139              	.LBB3:
+ 234:Core/Src/freertos.c ****       for (int i = 0; i < SIDE_MED_WIN; i++) hist[ch][i] = ULTRA_MAX_CM;
+ 140              		.loc 1 234 46 is_stmt 1 discriminator 3 view .LVU25
+ 141              		.loc 1 234 58 is_stmt 0 discriminator 3 view .LVU26
+ 142 000a 01EB8102 		add	r2, r1, r1, lsl #2
+ 143 000e 1A44     		add	r2, r2, r3
+ 144 0010 9B48     		ldr	r0, .L41
+ 145 0012 C824     		movs	r4, #200
+ 146 0014 20F81240 		strh	r4, [r0, r2, lsl #1]	@ movhi
+ 147              		.loc 1 234 42 is_stmt 1 discriminator 3 view .LVU27
+ 148 0018 0133     		adds	r3, r3, #1
+ 149              	.LVL10:
+ 150              	.L12:
+ 151              		.loc 1 234 25 discriminator 1 view .LVU28
+ 152 001a 042B     		cmp	r3, #4
+ 153 001c F5DD     		ble	.L11
+ 154              	.LBE3:
+ 233:Core/Src/freertos.c ****   for (int ch = 0; ch < 3; ch++)
+ 155              		.loc 1 233 30 discriminator 2 view .LVU29
+ 156 001e 0131     		adds	r1, r1, #1
+ 157              	.LVL11:
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 8
+
+
+ 158              	.L10:
+ 233:Core/Src/freertos.c ****   for (int ch = 0; ch < 3; ch++)
+ 159              		.loc 1 233 23 discriminator 1 view .LVU30
+ 160 0020 0229     		cmp	r1, #2
+ 161 0022 01DC     		bgt	.L35
+ 162              	.LBB4:
+ 163              		.loc 1 234 16 is_stmt 0 view .LVU31
+ 164 0024 0023     		movs	r3, #0
+ 165 0026 F8E7     		b	.L12
+ 166              	.L35:
+ 167              	.LBE4:
+ 168              	.LBE2:
+ 235:Core/Src/freertos.c ****   static uint8_t  front_miss = 0;   /* 정면 에코 연속 미회신 (drive.c HOLD 판정 입력) 
+ 169              		.loc 1 235 3 is_stmt 1 view .LVU32
+ 236:Core/Src/freertos.c ****   static uint8_t  imu_live = 0;     /* IMU 생존 게이트 */
+ 170              		.loc 1 236 3 view .LVU33
+ 237:Core/Src/freertos.c ****   static uint8_t  imu_fail = 0;     /* 읽기 연속 실패 카운트 */
+ 171              		.loc 1 237 3 view .LVU34
+ 238:Core/Src/freertos.c ****   static uint32_t t_imu_retry = 0;  /* 사망 후 재시도 타이머 */
+ 172              		.loc 1 238 3 view .LVU35
+ 239:Core/Src/freertos.c ****   static uint32_t t_calib = 0;      /* CALIB_STAT 디버그 읽기 스로틀 */
+ 173              		.loc 1 239 3 view .LVU36
+ 240:Core/Src/freertos.c ****   static uint32_t t_loop = 0;       /* 사이클 주기 측정 */
+ 174              		.loc 1 240 3 view .LVU37
+ 241:Core/Src/freertos.c ****   static BNO055_Euler imu;          /* 최근 융합값 (read 실패 시 직전값 유지) */
+ 175              		.loc 1 241 3 view .LVU38
+ 242:Core/Src/freertos.c **** 
+ 243:Core/Src/freertos.c ****   uint16_t f = ULTRA_MAX_CM, l = ULTRA_MAX_CM, r = ULTRA_MAX_CM;  /* 필터 출력 (l/r은 early �
+ 176              		.loc 1 243 3 view .LVU39
+ 177              	.LVL12:
+ 244:Core/Src/freertos.c ****   uint16_t d_snap[3];
+ 178              		.loc 1 244 3 view .LVU40
+ 245:Core/Src/freertos.c ****   uint8_t  v_snap[3];
+ 179              		.loc 1 245 3 view .LVU41
+ 246:Core/Src/freertos.c **** 
+ 247:Core/Src/freertos.c ****   Ultra_Init(osThreadGetId());      /* TIM3 IC start + 측정 완료 flag 수신자 등록 */
+ 180              		.loc 1 247 3 view .LVU42
+ 181 0028 FFF7FEFF 		bl	osThreadGetId
+ 182              	.LVL13:
+ 183              		.loc 1 247 3 is_stmt 0 discriminator 1 view .LVU43
+ 184 002c FFF7FEFF 		bl	Ultra_Init
+ 185              	.LVL14:
+ 248:Core/Src/freertos.c ****   imu_live = dbg_imu_ok;            /* Init 성공했을 때만 생존 시작 (실패 시 거리-on
+ 186              		.loc 1 248 3 is_stmt 1 view .LVU44
+ 187              		.loc 1 248 12 is_stmt 0 view .LVU45
+ 188 0030 944B     		ldr	r3, .L41+4
+ 189 0032 1A78     		ldrb	r2, [r3]	@ zero_extendqisi2
+ 190 0034 944B     		ldr	r3, .L41+8
+ 191 0036 1A70     		strb	r2, [r3]
+ 243:Core/Src/freertos.c ****   uint16_t d_snap[3];
+ 192              		.loc 1 243 48 view .LVU46
+ 193 0038 C827     		movs	r7, #200
+ 243:Core/Src/freertos.c ****   uint16_t d_snap[3];
+ 194              		.loc 1 243 30 view .LVU47
+ 195 003a B846     		mov	r8, r7
+ 196 003c ACE0     		b	.L30
+ 197              	.LVL15:
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 9
+
+
+ 198              	.L13:
+ 199              	.LBB5:
+ 249:Core/Src/freertos.c **** 
+ 250:Core/Src/freertos.c ****   for(;;)
+ 251:Core/Src/freertos.c ****   {
+ 252:Core/Src/freertos.c ****       uint32_t now = HAL_GetTick();
+ 253:Core/Src/freertos.c ****       dbg_loop_ms = now - t_loop;   /* 사이클 주기 미러 (반응지연 감시: 통상 6~9ms) 
+ 254:Core/Src/freertos.c ****       t_loop = now;
+ 255:Core/Src/freertos.c **** 
+ 256:Core/Src/freertos.c ****       /* 1) 정면 측정 → 필터 → 필요 시 'early' 메시지로 선제 제동.
+ 257:Core/Src/freertos.c ****        *    구 main.c의 직접 Car_Brake 힌트 대체: MotorTask가 높은 prio라 put 즉시 �
+ 258:Core/Src/freertos.c ****        *    brake_enter — 사이드 측정(~12-30ms) 동안 제동이 걸려있는 원래 의도 
+ 259:Core/Src/freertos.c ****        *    모터 명령 발행자는 MotorTask 하나로 유지 */
+ 260:Core/Src/freertos.c ****       v_snap[0] = Ultra_Measure(0, MEAS_WAIT_MS, &d_snap[0]);    /* front (TRIG PA5, ECHO CH1) */
+ 261:Core/Src/freertos.c **** 
+ 262:Core/Src/freertos.c ****       if (v_snap[0])             { front_miss = 0; }   /* 정지 결정은 drive.c HOLD가 담당 *
+ 263:Core/Src/freertos.c ****       else if (front_miss < 255) { front_miss++; }
+ 200              		.loc 1 263 12 is_stmt 1 view .LVU48
+ 201              		.loc 1 263 27 is_stmt 0 view .LVU49
+ 202 003e 934B     		ldr	r3, .L41+12
+ 203 0040 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 204              		.loc 1 263 15 view .LVU50
+ 205 0042 FF2B     		cmp	r3, #255
+ 206 0044 00F0BF80 		beq	.L14
+ 207              		.loc 1 263 36 is_stmt 1 discriminator 1 view .LVU51
+ 208              		.loc 1 263 46 is_stmt 0 discriminator 1 view .LVU52
+ 209 0048 0133     		adds	r3, r3, #1
+ 210 004a 904A     		ldr	r2, .L41+12
+ 211 004c 1370     		strb	r3, [r2]
+ 212 004e BAE0     		b	.L14
+ 213              	.LVL16:
+ 214              	.L17:
+ 215              	.LBB6:
+ 264:Core/Src/freertos.c ****       dbg_front_miss = front_miss;
+ 265:Core/Src/freertos.c **** 
+ 266:Core/Src/freertos.c ****       if (v_snap[0])   /* 유효 측정만 hist 푸시 → 무회신을 200(멀다)으로 덮는 fa
+ 267:Core/Src/freertos.c ****       {
+ 268:Core/Src/freertos.c ****           for (int i = SIDE_MED_WIN - 1; i > 0; i--) hist[0][i] = hist[0][i - 1];
+ 216              		.loc 1 268 54 is_stmt 1 discriminator 3 view .LVU53
+ 217              		.loc 1 268 77 is_stmt 0 discriminator 3 view .LVU54
+ 218 0050 5A1E     		subs	r2, r3, #1
+ 219              		.loc 1 268 74 discriminator 3 view .LVU55
+ 220 0052 8B49     		ldr	r1, .L41
+ 221 0054 31F81200 		ldrh	r0, [r1, r2, lsl #1]
+ 222              		.loc 1 268 65 discriminator 3 view .LVU56
+ 223 0058 21F81300 		strh	r0, [r1, r3, lsl #1]	@ movhi
+ 224              		.loc 1 268 50 is_stmt 1 discriminator 3 view .LVU57
+ 225              	.LVL17:
+ 226              		.loc 1 268 50 is_stmt 0 discriminator 3 view .LVU58
+ 227 005c 1346     		mov	r3, r2
+ 228              	.LVL18:
+ 229              	.L15:
+ 230              		.loc 1 268 44 is_stmt 1 discriminator 1 view .LVU59
+ 231 005e 002B     		cmp	r3, #0
+ 232 0060 F6DC     		bgt	.L17
+ 233              	.LBE6:
+ 269:Core/Src/freertos.c ****           hist[0][0] = d_snap[0];
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 10
+
+
+ 234              		.loc 1 269 11 view .LVU60
+ 235              		.loc 1 269 30 is_stmt 0 view .LVU61
+ 236 0062 BDF81820 		ldrh	r2, [sp, #24]
+ 237              		.loc 1 269 22 view .LVU62
+ 238 0066 864B     		ldr	r3, .L41
+ 239              	.LVL19:
+ 240              		.loc 1 269 22 view .LVU63
+ 241 0068 1A80     		strh	r2, [r3]	@ movhi
+ 242 006a B3E0     		b	.L16
+ 243              	.LVL20:
+ 244              	.L39:
+ 245              	.LBB7:
+ 268:Core/Src/freertos.c ****           hist[0][0] = d_snap[0];
+ 246              		.loc 1 268 20 view .LVU64
+ 247 006c 0423     		movs	r3, #4
+ 248 006e F6E7     		b	.L15
+ 249              	.LVL21:
+ 250              	.L40:
+ 268:Core/Src/freertos.c ****           hist[0][0] = d_snap[0];
+ 251              		.loc 1 268 20 view .LVU65
+ 252              	.LBE7:
+ 253              	.LBB8:
+ 270:Core/Src/freertos.c ****       }
+ 271:Core/Src/freertos.c ****       f = min_n(hist[0], FRONT_MIN_WIN);   /* 정면은 최근 FRONT_MIN_WIN개 min (최근접, 지
+ 272:Core/Src/freertos.c **** 
+ 273:Core/Src/freertos.c ****       if (Drive_GetState() == DS_CRUISE && f < FRONT_STOP_CM)
+ 274:Core/Src/freertos.c ****       {
+ 275:Core/Src/freertos.c ****           DriveInputs early;
+ 254              		.loc 1 275 11 is_stmt 1 view .LVU66
+ 276:Core/Src/freertos.c ****           early.f          = f;
+ 255              		.loc 1 276 11 view .LVU67
+ 256              		.loc 1 276 28 is_stmt 0 view .LVU68
+ 257 0070 ADF80060 		strh	r6, [sp]	@ movhi
+ 277:Core/Src/freertos.c ****           early.l          = l;            /* 직전 사이클 필터값 — 제동 판정엔 f만 
+ 258              		.loc 1 277 11 is_stmt 1 view .LVU69
+ 259              		.loc 1 277 28 is_stmt 0 view .LVU70
+ 260 0074 ADF80280 		strh	r8, [sp, #2]	@ movhi
+ 278:Core/Src/freertos.c ****           early.r          = r;
+ 261              		.loc 1 278 11 is_stmt 1 view .LVU71
+ 262              		.loc 1 278 28 is_stmt 0 view .LVU72
+ 263 0078 ADF80470 		strh	r7, [sp, #4]	@ movhi
+ 279:Core/Src/freertos.c ****           early.f_valid    = v_snap[0];
+ 264              		.loc 1 279 11 is_stmt 1 view .LVU73
+ 265              		.loc 1 279 28 is_stmt 0 view .LVU74
+ 266 007c 8DF80640 		strb	r4, [sp, #6]
+ 280:Core/Src/freertos.c ****           early.front_miss = front_miss;
+ 267              		.loc 1 280 11 is_stmt 1 view .LVU75
+ 268              		.loc 1 280 28 is_stmt 0 view .LVU76
+ 269 0080 824B     		ldr	r3, .L41+12
+ 270 0082 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 271 0084 8DF80730 		strb	r3, [sp, #7]
+ 281:Core/Src/freertos.c ****           early.heading    = imu.heading;
+ 272              		.loc 1 281 11 is_stmt 1 view .LVU77
+ 273              		.loc 1 281 33 is_stmt 0 view .LVU78
+ 274 0088 814B     		ldr	r3, .L41+16
+ 275 008a 1B68     		ldr	r3, [r3]	@ float
+ 276              		.loc 1 281 28 view .LVU79
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 11
+
+
+ 277 008c 0293     		str	r3, [sp, #8]	@ float
+ 282:Core/Src/freertos.c ****           early.imu_live   = imu_live;
+ 278              		.loc 1 282 11 is_stmt 1 view .LVU80
+ 279              		.loc 1 282 28 is_stmt 0 view .LVU81
+ 280 008e 7E4B     		ldr	r3, .L41+8
+ 281 0090 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 282 0092 8DF80C30 		strb	r3, [sp, #12]
+ 283:Core/Src/freertos.c ****           early.now        = HAL_GetTick();
+ 283              		.loc 1 283 11 is_stmt 1 view .LVU82
+ 284              		.loc 1 283 30 is_stmt 0 view .LVU83
+ 285 0096 FFF7FEFF 		bl	HAL_GetTick
+ 286              	.LVL22:
+ 287              		.loc 1 283 28 discriminator 1 view .LVU84
+ 288 009a 0490     		str	r0, [sp, #16]
+ 284:Core/Src/freertos.c ****           if (osMessageQueuePut(driveQ, &early, 0U, 0U) != osOK) { dbg_q_drop++; }
+ 289              		.loc 1 284 11 is_stmt 1 view .LVU85
+ 290              		.loc 1 284 15 is_stmt 0 view .LVU86
+ 291 009c 0023     		movs	r3, #0
+ 292 009e 1A46     		mov	r2, r3
+ 293 00a0 6946     		mov	r1, sp
+ 294 00a2 7C48     		ldr	r0, .L41+20
+ 295 00a4 0068     		ldr	r0, [r0]
+ 296 00a6 FFF7FEFF 		bl	osMessageQueuePut
+ 297              	.LVL23:
+ 298              		.loc 1 284 14 discriminator 1 view .LVU87
+ 299 00aa 0028     		cmp	r0, #0
+ 300 00ac 00F09D80 		beq	.L18
+ 301              		.loc 1 284 68 is_stmt 1 discriminator 1 view .LVU88
+ 302              		.loc 1 284 78 is_stmt 0 discriminator 1 view .LVU89
+ 303 00b0 794A     		ldr	r2, .L41+24
+ 304 00b2 1368     		ldr	r3, [r2]
+ 305 00b4 0133     		adds	r3, r3, #1
+ 306 00b6 1360     		str	r3, [r2]
+ 307 00b8 97E0     		b	.L18
+ 308              	.LVL24:
+ 309              	.L23:
+ 310              		.loc 1 284 78 discriminator 1 view .LVU90
+ 311              	.LBE8:
+ 312              	.LBB9:
+ 313              	.LBB10:
+ 285:Core/Src/freertos.c ****       }
+ 286:Core/Src/freertos.c **** 
+ 287:Core/Src/freertos.c ****       /* 2) 측면 측정 (순차 발사 — 크로스토크 제거) + 필터 */
+ 288:Core/Src/freertos.c ****       v_snap[1] = Ultra_Measure(1, SIDE_WAIT_MS, &d_snap[1]);    /* left  (TRIG PA4, ECHO CH2) */
+ 289:Core/Src/freertos.c ****       v_snap[2] = Ultra_Measure(2, SIDE_WAIT_MS, &d_snap[2]);    /* right (TRIG PA3, ECHO CH3) */
+ 290:Core/Src/freertos.c **** 
+ 291:Core/Src/freertos.c ****       for (int ch = 1; ch < 3; ch++)
+ 292:Core/Src/freertos.c ****       {
+ 293:Core/Src/freertos.c ****           if (v_snap[ch])
+ 294:Core/Src/freertos.c ****           {
+ 295:Core/Src/freertos.c ****               for (int i = SIDE_MED_WIN - 1; i > 0; i--) hist[ch][i] = hist[ch][i - 1];
+ 314              		.loc 1 295 58 is_stmt 1 discriminator 3 view .LVU91
+ 315              		.loc 1 295 83 is_stmt 0 discriminator 3 view .LVU92
+ 316 00ba 01F1FF3C 		add	ip, r1, #-1
+ 317              		.loc 1 295 80 discriminator 3 view .LVU93
+ 318 00be 7048     		ldr	r0, .L41
+ 319 00c0 03EB8302 		add	r2, r3, r3, lsl #2
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 12
+
+
+ 320 00c4 02EB0C07 		add	r7, r2, ip
+ 321 00c8 30F81770 		ldrh	r7, [r0, r7, lsl #1]
+ 322              		.loc 1 295 70 discriminator 3 view .LVU94
+ 323 00cc 0A44     		add	r2, r2, r1
+ 324 00ce 20F81270 		strh	r7, [r0, r2, lsl #1]	@ movhi
+ 325              		.loc 1 295 54 is_stmt 1 discriminator 3 view .LVU95
+ 326              	.LVL25:
+ 327              		.loc 1 295 54 is_stmt 0 discriminator 3 view .LVU96
+ 328 00d2 6146     		mov	r1, ip
+ 329              	.LVL26:
+ 330              	.L21:
+ 331              		.loc 1 295 48 is_stmt 1 discriminator 1 view .LVU97
+ 332 00d4 0029     		cmp	r1, #0
+ 333 00d6 F0DC     		bgt	.L23
+ 334              	.LBE10:
+ 296:Core/Src/freertos.c ****               hist[ch][0] = d_snap[ch];
+ 335              		.loc 1 296 15 view .LVU98
+ 336              		.loc 1 296 35 is_stmt 0 view .LVU99
+ 337 00d8 08AA     		add	r2, sp, #32
+ 338 00da 02EB4302 		add	r2, r2, r3, lsl #1
+ 339 00de 32F8080C 		ldrh	r0, [r2, #-8]
+ 340              		.loc 1 296 27 view .LVU100
+ 341 00e2 03EB8302 		add	r2, r3, r3, lsl #2
+ 342 00e6 6649     		ldr	r1, .L41
+ 343              	.LVL27:
+ 344              		.loc 1 296 27 view .LVU101
+ 345 00e8 21F81200 		strh	r0, [r1, r2, lsl #1]	@ movhi
+ 346              	.LVL28:
+ 347              	.L22:
+ 291:Core/Src/freertos.c ****       {
+ 348              		.loc 1 291 34 is_stmt 1 discriminator 2 view .LVU102
+ 349 00ec 0133     		adds	r3, r3, #1
+ 350              	.LVL29:
+ 351              	.L20:
+ 291:Core/Src/freertos.c ****       {
+ 352              		.loc 1 291 27 discriminator 1 view .LVU103
+ 353 00ee 022B     		cmp	r3, #2
+ 354 00f0 08DC     		bgt	.L36
+ 293:Core/Src/freertos.c ****           {
+ 355              		.loc 1 293 11 view .LVU104
+ 293:Core/Src/freertos.c ****           {
+ 356              		.loc 1 293 21 is_stmt 0 view .LVU105
+ 357 00f2 03F12002 		add	r2, r3, #32
+ 358 00f6 6A44     		add	r2, sp, r2
+ 359 00f8 12F80C2C 		ldrb	r2, [r2, #-12]	@ zero_extendqisi2
+ 293:Core/Src/freertos.c ****           {
+ 360              		.loc 1 293 14 view .LVU106
+ 361 00fc 002A     		cmp	r2, #0
+ 362 00fe F5D0     		beq	.L22
+ 363              	.LBB11:
+ 295:Core/Src/freertos.c ****               hist[ch][0] = d_snap[ch];
+ 364              		.loc 1 295 24 view .LVU107
+ 365 0100 0421     		movs	r1, #4
+ 366 0102 E7E7     		b	.L21
+ 367              	.L36:
+ 368              	.LBE11:
+ 369              	.LBE9:
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 13
+
+
+ 297:Core/Src/freertos.c ****           }
+ 298:Core/Src/freertos.c ****       }
+ 299:Core/Src/freertos.c ****       l = median_n(hist[1], SIDE_MED_WIN);   /* 측면은 median (스파이크 제거 — 윈도=SI
+ 370              		.loc 1 299 7 is_stmt 1 view .LVU108
+ 371              		.loc 1 299 11 is_stmt 0 view .LVU109
+ 372 0104 654F     		ldr	r7, .L41+28
+ 373 0106 0521     		movs	r1, #5
+ 374 0108 3846     		mov	r0, r7
+ 375 010a FFF7FEFF 		bl	median_n
+ 376              	.LVL30:
+ 377              		.loc 1 299 11 view .LVU110
+ 378 010e 8046     		mov	r8, r0
+ 379              	.LVL31:
+ 300:Core/Src/freertos.c ****       r = median_n(hist[2], SIDE_MED_WIN);
+ 380              		.loc 1 300 7 is_stmt 1 view .LVU111
+ 381              		.loc 1 300 11 is_stmt 0 view .LVU112
+ 382 0110 0521     		movs	r1, #5
+ 383 0112 07F10A00 		add	r0, r7, #10
+ 384 0116 FFF7FEFF 		bl	median_n
+ 385              	.LVL32:
+ 386 011a 0746     		mov	r7, r0
+ 387              	.LVL33:
+ 301:Core/Src/freertos.c ****       dbg_front = f; dbg_left = l; dbg_right = r;
+ 388              		.loc 1 301 7 is_stmt 1 view .LVU113
+ 389              		.loc 1 301 17 is_stmt 0 view .LVU114
+ 390 011c 604B     		ldr	r3, .L41+32
+ 391 011e 1E80     		strh	r6, [r3]	@ movhi
+ 392              		.loc 1 301 22 is_stmt 1 view .LVU115
+ 393              		.loc 1 301 31 is_stmt 0 view .LVU116
+ 394 0120 604B     		ldr	r3, .L41+36
+ 395 0122 A3F80080 		strh	r8, [r3]	@ movhi
+ 396              		.loc 1 301 36 is_stmt 1 view .LVU117
+ 397              		.loc 1 301 46 is_stmt 0 view .LVU118
+ 398 0126 604B     		ldr	r3, .L41+40
+ 399 0128 1880     		strh	r0, [r3]	@ movhi
+ 302:Core/Src/freertos.c **** 
+ 303:Core/Src/freertos.c ****       /* 3) IMU 샘플 (생존 게이트): 정상 시 매 사이클 heading 갱신. 연속 IMU_FAIL
+ 304:Core/Src/freertos.c ****        *    사망 선언 후 IMU_RETRY_MS 주기로만 재시도 — 죽은 IMU가 사이클마다
+ 305:Core/Src/freertos.c ****        *    태워 반응지연 키우는 것 차단. CalibStatus는 디버그 전용이라 CALIB_P
+ 306:Core/Src/freertos.c ****       if (imu_live)
+ 400              		.loc 1 306 7 is_stmt 1 view .LVU119
+ 401              		.loc 1 306 11 is_stmt 0 view .LVU120
+ 402 012a 574B     		ldr	r3, .L41+8
+ 403 012c 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 404              		.loc 1 306 10 view .LVU121
+ 405 012e 002B     		cmp	r3, #0
+ 406 0130 6CD1     		bne	.L37
+ 307:Core/Src/freertos.c ****       {
+ 308:Core/Src/freertos.c ****           if (BNO055_ReadEuler(&imu))
+ 309:Core/Src/freertos.c ****           {
+ 310:Core/Src/freertos.c ****               imu_fail = 0;
+ 311:Core/Src/freertos.c ****               dbg_heading = imu.heading;
+ 312:Core/Src/freertos.c ****               dbg_roll    = imu.roll;
+ 313:Core/Src/freertos.c ****               dbg_pitch   = imu.pitch;
+ 314:Core/Src/freertos.c ****           }
+ 315:Core/Src/freertos.c ****           else if (++imu_fail >= IMU_FAIL_LIMIT)
+ 316:Core/Src/freertos.c ****           {
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 14
+
+
+ 317:Core/Src/freertos.c ****               imu_live = 0;
+ 318:Core/Src/freertos.c ****               t_imu_retry = now;
+ 319:Core/Src/freertos.c ****           }
+ 320:Core/Src/freertos.c ****           if ((now - t_calib) >= CALIB_POLL_MS)
+ 321:Core/Src/freertos.c ****           {
+ 322:Core/Src/freertos.c ****               t_calib = now;
+ 323:Core/Src/freertos.c ****               dbg_imu_calib = BNO055_ReadCalibStatus();
+ 324:Core/Src/freertos.c ****           }
+ 325:Core/Src/freertos.c ****       }
+ 326:Core/Src/freertos.c ****       else if (dbg_imu_ok && (now - t_imu_retry) >= IMU_RETRY_MS)
+ 407              		.loc 1 326 12 is_stmt 1 view .LVU122
+ 408              		.loc 1 326 16 is_stmt 0 view .LVU123
+ 409 0132 544B     		ldr	r3, .L41+4
+ 410 0134 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 411              		.loc 1 326 15 view .LVU124
+ 412 0136 33B1     		cbz	r3, .L28
+ 413              		.loc 1 326 35 discriminator 1 view .LVU125
+ 414 0138 5C4B     		ldr	r3, .L41+44
+ 415 013a 1B68     		ldr	r3, [r3]
+ 416 013c EB1A     		subs	r3, r5, r3
+ 417              		.loc 1 326 27 discriminator 1 view .LVU126
+ 418 013e B3F5FA7F 		cmp	r3, #500
+ 419 0142 80F08E80 		bcs	.L38
+ 420              	.LVL34:
+ 421              	.L28:
+ 327:Core/Src/freertos.c ****       {
+ 328:Core/Src/freertos.c ****           /* Init 성공 이력 있을 때만 재시도 — Init 실패 상태의 garbage 읽기로
+ 329:Core/Src/freertos.c ****            * 오판하는 것 방지. 버스 wedge는 bno_rd 내부 복구(10회 실패→9클럭)�
+ 330:Core/Src/freertos.c ****           t_imu_retry = now;
+ 331:Core/Src/freertos.c ****           if (BNO055_ReadEuler(&imu)) { imu_live = 1; imu_fail = 0; }
+ 332:Core/Src/freertos.c ****       }
+ 333:Core/Src/freertos.c ****       dbg_imu_live = imu_live;
+ 422              		.loc 1 333 7 is_stmt 1 view .LVU127
+ 423              		.loc 1 333 20 is_stmt 0 view .LVU128
+ 424 0146 504B     		ldr	r3, .L41+8
+ 425 0148 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 426 014a 594A     		ldr	r2, .L41+48
+ 427 014c 1370     		strb	r3, [r2]
+ 334:Core/Src/freertos.c **** 
+ 335:Core/Src/freertos.c ****       /* 4) 제어 입력 스냅샷 → 큐 (값 복사 — MotorTask가 IWDG refresh + Drive_Updat
+ 336:Core/Src/freertos.c ****       DriveInputs din;
+ 428              		.loc 1 336 7 is_stmt 1 view .LVU129
+ 337:Core/Src/freertos.c ****       din.f          = f;
+ 429              		.loc 1 337 7 view .LVU130
+ 430              		.loc 1 337 22 is_stmt 0 view .LVU131
+ 431 014e ADF80060 		strh	r6, [sp]	@ movhi
+ 338:Core/Src/freertos.c ****       din.l          = l;
+ 432              		.loc 1 338 7 is_stmt 1 view .LVU132
+ 433              		.loc 1 338 22 is_stmt 0 view .LVU133
+ 434 0152 ADF80280 		strh	r8, [sp, #2]	@ movhi
+ 339:Core/Src/freertos.c ****       din.r          = r;
+ 435              		.loc 1 339 7 is_stmt 1 view .LVU134
+ 436              		.loc 1 339 22 is_stmt 0 view .LVU135
+ 437 0156 ADF80470 		strh	r7, [sp, #4]	@ movhi
+ 340:Core/Src/freertos.c ****       din.f_valid    = v_snap[0];
+ 438              		.loc 1 340 7 is_stmt 1 view .LVU136
+ 439              		.loc 1 340 22 is_stmt 0 view .LVU137
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 15
+
+
+ 440 015a 8DF80640 		strb	r4, [sp, #6]
+ 341:Core/Src/freertos.c ****       din.front_miss = front_miss;
+ 441              		.loc 1 341 7 is_stmt 1 view .LVU138
+ 442              		.loc 1 341 22 is_stmt 0 view .LVU139
+ 443 015e 4B4A     		ldr	r2, .L41+12
+ 444 0160 1278     		ldrb	r2, [r2]	@ zero_extendqisi2
+ 445 0162 8DF80720 		strb	r2, [sp, #7]
+ 342:Core/Src/freertos.c ****       din.heading    = imu.heading;   /* imu_live=0이면 drive.c가 무시(거리-only 강등) */
+ 446              		.loc 1 342 7 is_stmt 1 view .LVU140
+ 447              		.loc 1 342 27 is_stmt 0 view .LVU141
+ 448 0166 4A4A     		ldr	r2, .L41+16
+ 449 0168 1268     		ldr	r2, [r2]	@ float
+ 450              		.loc 1 342 22 view .LVU142
+ 451 016a 0292     		str	r2, [sp, #8]	@ float
+ 343:Core/Src/freertos.c ****       din.imu_live   = imu_live;
+ 452              		.loc 1 343 7 is_stmt 1 view .LVU143
+ 453              		.loc 1 343 22 is_stmt 0 view .LVU144
+ 454 016c 8DF80C30 		strb	r3, [sp, #12]
+ 344:Core/Src/freertos.c ****       din.now        = HAL_GetTick();
+ 455              		.loc 1 344 7 is_stmt 1 view .LVU145
+ 456              		.loc 1 344 24 is_stmt 0 view .LVU146
+ 457 0170 FFF7FEFF 		bl	HAL_GetTick
+ 458              	.LVL35:
+ 459              		.loc 1 344 22 discriminator 1 view .LVU147
+ 460 0174 0490     		str	r0, [sp, #16]
+ 345:Core/Src/freertos.c ****       if (osMessageQueuePut(driveQ, &din, 0U, 0U) != osOK) { dbg_q_drop++; }
+ 461              		.loc 1 345 7 is_stmt 1 view .LVU148
+ 462              		.loc 1 345 11 is_stmt 0 view .LVU149
+ 463 0176 0023     		movs	r3, #0
+ 464 0178 1A46     		mov	r2, r3
+ 465 017a 6946     		mov	r1, sp
+ 466 017c 4548     		ldr	r0, .L41+20
+ 467 017e 0068     		ldr	r0, [r0]
+ 468 0180 FFF7FEFF 		bl	osMessageQueuePut
+ 469              	.LVL36:
+ 470              		.loc 1 345 10 discriminator 1 view .LVU150
+ 471 0184 18B1     		cbz	r0, .L29
+ 472              		.loc 1 345 62 is_stmt 1 discriminator 1 view .LVU151
+ 473              		.loc 1 345 72 is_stmt 0 discriminator 1 view .LVU152
+ 474 0186 444A     		ldr	r2, .L41+24
+ 475 0188 1368     		ldr	r3, [r2]
+ 476 018a 0133     		adds	r3, r3, #1
+ 477 018c 1360     		str	r3, [r2]
+ 478              	.L29:
+ 346:Core/Src/freertos.c **** 
+ 347:Core/Src/freertos.c ****       dbg_hw_sensor = (uint32_t)uxTaskGetStackHighWaterMark(NULL);
+ 479              		.loc 1 347 7 is_stmt 1 view .LVU153
+ 480              		.loc 1 347 33 is_stmt 0 view .LVU154
+ 481 018e 0020     		movs	r0, #0
+ 482 0190 FFF7FEFF 		bl	uxTaskGetStackHighWaterMark
+ 483              	.LVL37:
+ 484              		.loc 1 347 21 discriminator 1 view .LVU155
+ 485 0194 474B     		ldr	r3, .L41+52
+ 486 0196 1860     		str	r0, [r3]
+ 487              	.LBE5:
+ 250:Core/Src/freertos.c ****   {
+ 488              		.loc 1 250 3 is_stmt 1 view .LVU156
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 16
+
+
+ 489              	.LVL38:
+ 490              	.L30:
+ 250:Core/Src/freertos.c ****   {
+ 491              		.loc 1 250 3 view .LVU157
+ 492              	.LBB13:
+ 252:Core/Src/freertos.c ****       dbg_loop_ms = now - t_loop;   /* 사이클 주기 미러 (반응지연 감시: 통상 6~9ms) 
+ 493              		.loc 1 252 7 view .LVU158
+ 252:Core/Src/freertos.c ****       dbg_loop_ms = now - t_loop;   /* 사이클 주기 미러 (반응지연 감시: 통상 6~9ms) 
+ 494              		.loc 1 252 22 is_stmt 0 view .LVU159
+ 495 0198 FFF7FEFF 		bl	HAL_GetTick
+ 496              	.LVL39:
+ 497 019c 0546     		mov	r5, r0
+ 498              	.LVL40:
+ 253:Core/Src/freertos.c ****       t_loop = now;
+ 499              		.loc 1 253 7 is_stmt 1 view .LVU160
+ 253:Core/Src/freertos.c ****       t_loop = now;
+ 500              		.loc 1 253 25 is_stmt 0 view .LVU161
+ 501 019e 464A     		ldr	r2, .L41+56
+ 502 01a0 1368     		ldr	r3, [r2]
+ 503 01a2 C31A     		subs	r3, r0, r3
+ 253:Core/Src/freertos.c ****       t_loop = now;
+ 504              		.loc 1 253 19 view .LVU162
+ 505 01a4 4549     		ldr	r1, .L41+60
+ 506 01a6 0B60     		str	r3, [r1]
+ 254:Core/Src/freertos.c **** 
+ 507              		.loc 1 254 7 is_stmt 1 view .LVU163
+ 254:Core/Src/freertos.c **** 
+ 508              		.loc 1 254 14 is_stmt 0 view .LVU164
+ 509 01a8 1060     		str	r0, [r2]
+ 260:Core/Src/freertos.c **** 
+ 510              		.loc 1 260 7 is_stmt 1 view .LVU165
+ 260:Core/Src/freertos.c **** 
+ 511              		.loc 1 260 19 is_stmt 0 view .LVU166
+ 512 01aa 06AA     		add	r2, sp, #24
+ 513 01ac 1921     		movs	r1, #25
+ 514 01ae 0020     		movs	r0, #0
+ 515              	.LVL41:
+ 260:Core/Src/freertos.c **** 
+ 516              		.loc 1 260 19 view .LVU167
+ 517 01b0 FFF7FEFF 		bl	Ultra_Measure
+ 518              	.LVL42:
+ 519 01b4 0446     		mov	r4, r0
+ 260:Core/Src/freertos.c **** 
+ 520              		.loc 1 260 17 discriminator 1 view .LVU168
+ 521 01b6 8DF81400 		strb	r0, [sp, #20]
+ 262:Core/Src/freertos.c ****       else if (front_miss < 255) { front_miss++; }
+ 522              		.loc 1 262 7 is_stmt 1 view .LVU169
+ 262:Core/Src/freertos.c ****       else if (front_miss < 255) { front_miss++; }
+ 523              		.loc 1 262 10 is_stmt 0 view .LVU170
+ 524 01ba 0028     		cmp	r0, #0
+ 525 01bc 3FF43FAF 		beq	.L13
+ 262:Core/Src/freertos.c ****       else if (front_miss < 255) { front_miss++; }
+ 526              		.loc 1 262 36 is_stmt 1 discriminator 1 view .LVU171
+ 262:Core/Src/freertos.c ****       else if (front_miss < 255) { front_miss++; }
+ 527              		.loc 1 262 47 is_stmt 0 discriminator 1 view .LVU172
+ 528 01c0 324B     		ldr	r3, .L41+12
+ 529 01c2 0022     		movs	r2, #0
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 17
+
+
+ 530 01c4 1A70     		strb	r2, [r3]
+ 531              	.L14:
+ 264:Core/Src/freertos.c **** 
+ 532              		.loc 1 264 7 is_stmt 1 view .LVU173
+ 264:Core/Src/freertos.c **** 
+ 533              		.loc 1 264 22 is_stmt 0 view .LVU174
+ 534 01c6 314B     		ldr	r3, .L41+12
+ 535 01c8 1A78     		ldrb	r2, [r3]	@ zero_extendqisi2
+ 536 01ca 3D4B     		ldr	r3, .L41+64
+ 537 01cc 1A70     		strb	r2, [r3]
+ 266:Core/Src/freertos.c ****       {
+ 538              		.loc 1 266 7 is_stmt 1 view .LVU175
+ 266:Core/Src/freertos.c ****       {
+ 539              		.loc 1 266 10 is_stmt 0 view .LVU176
+ 540 01ce 002C     		cmp	r4, #0
+ 541 01d0 7FF44CAF 		bne	.L39
+ 542              	.L16:
+ 271:Core/Src/freertos.c **** 
+ 543              		.loc 1 271 7 is_stmt 1 view .LVU177
+ 271:Core/Src/freertos.c **** 
+ 544              		.loc 1 271 11 is_stmt 0 view .LVU178
+ 545 01d4 0321     		movs	r1, #3
+ 546 01d6 2A48     		ldr	r0, .L41
+ 547 01d8 FFF7FEFF 		bl	min_n
+ 548              	.LVL43:
+ 549 01dc 0646     		mov	r6, r0
+ 550              	.LVL44:
+ 273:Core/Src/freertos.c ****       {
+ 551              		.loc 1 273 7 is_stmt 1 view .LVU179
+ 273:Core/Src/freertos.c ****       {
+ 552              		.loc 1 273 11 is_stmt 0 view .LVU180
+ 553 01de FFF7FEFF 		bl	Drive_GetState
+ 554              	.LVL45:
+ 273:Core/Src/freertos.c ****       {
+ 555              		.loc 1 273 10 discriminator 1 view .LVU181
+ 556 01e2 10B9     		cbnz	r0, .L18
+ 273:Core/Src/freertos.c ****       {
+ 557              		.loc 1 273 41 discriminator 1 view .LVU182
+ 558 01e4 132E     		cmp	r6, #19
+ 559 01e6 7FF643AF 		bls	.L40
+ 560              	.L18:
+ 288:Core/Src/freertos.c ****       v_snap[2] = Ultra_Measure(2, SIDE_WAIT_MS, &d_snap[2]);    /* right (TRIG PA3, ECHO CH3) */
+ 561              		.loc 1 288 7 is_stmt 1 view .LVU183
+ 288:Core/Src/freertos.c ****       v_snap[2] = Ultra_Measure(2, SIDE_WAIT_MS, &d_snap[2]);    /* right (TRIG PA3, ECHO CH3) */
+ 562              		.loc 1 288 19 is_stmt 0 view .LVU184
+ 563 01ea 0DF11A02 		add	r2, sp, #26
+ 564 01ee 0621     		movs	r1, #6
+ 565 01f0 0120     		movs	r0, #1
+ 566 01f2 FFF7FEFF 		bl	Ultra_Measure
+ 567              	.LVL46:
+ 288:Core/Src/freertos.c ****       v_snap[2] = Ultra_Measure(2, SIDE_WAIT_MS, &d_snap[2]);    /* right (TRIG PA3, ECHO CH3) */
+ 568              		.loc 1 288 17 discriminator 1 view .LVU185
+ 569 01f6 8DF81500 		strb	r0, [sp, #21]
+ 289:Core/Src/freertos.c **** 
+ 570              		.loc 1 289 7 is_stmt 1 view .LVU186
+ 289:Core/Src/freertos.c **** 
+ 571              		.loc 1 289 19 is_stmt 0 view .LVU187
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 18
+
+
+ 572 01fa 07AA     		add	r2, sp, #28
+ 573 01fc 0621     		movs	r1, #6
+ 574 01fe 0220     		movs	r0, #2
+ 575 0200 FFF7FEFF 		bl	Ultra_Measure
+ 576              	.LVL47:
+ 289:Core/Src/freertos.c **** 
+ 577              		.loc 1 289 17 discriminator 1 view .LVU188
+ 578 0204 8DF81600 		strb	r0, [sp, #22]
+ 291:Core/Src/freertos.c ****       {
+ 579              		.loc 1 291 7 is_stmt 1 view .LVU189
+ 580              	.LBB12:
+ 291:Core/Src/freertos.c ****       {
+ 581              		.loc 1 291 12 view .LVU190
+ 582              	.LVL48:
+ 291:Core/Src/freertos.c ****       {
+ 583              		.loc 1 291 16 is_stmt 0 view .LVU191
+ 584 0208 0123     		movs	r3, #1
+ 291:Core/Src/freertos.c ****       {
+ 585              		.loc 1 291 7 view .LVU192
+ 586 020a 70E7     		b	.L20
+ 587              	.LVL49:
+ 588              	.L37:
+ 291:Core/Src/freertos.c ****       {
+ 589              		.loc 1 291 7 view .LVU193
+ 590              	.LBE12:
+ 308:Core/Src/freertos.c ****           {
+ 591              		.loc 1 308 11 is_stmt 1 view .LVU194
+ 308:Core/Src/freertos.c ****           {
+ 592              		.loc 1 308 15 is_stmt 0 view .LVU195
+ 593 020c 2048     		ldr	r0, .L41+16
+ 594              	.LVL50:
+ 308:Core/Src/freertos.c ****           {
+ 595              		.loc 1 308 15 view .LVU196
+ 596 020e FFF7FEFF 		bl	BNO055_ReadEuler
+ 597              	.LVL51:
+ 308:Core/Src/freertos.c ****           {
+ 598              		.loc 1 308 14 discriminator 1 view .LVU197
+ 599 0212 C8B1     		cbz	r0, .L26
+ 310:Core/Src/freertos.c ****               dbg_heading = imu.heading;
+ 600              		.loc 1 310 15 is_stmt 1 view .LVU198
+ 310:Core/Src/freertos.c ****               dbg_heading = imu.heading;
+ 601              		.loc 1 310 24 is_stmt 0 view .LVU199
+ 602 0214 2B4B     		ldr	r3, .L41+68
+ 603 0216 0022     		movs	r2, #0
+ 604 0218 1A70     		strb	r2, [r3]
+ 311:Core/Src/freertos.c ****               dbg_roll    = imu.roll;
+ 605              		.loc 1 311 15 is_stmt 1 view .LVU200
+ 311:Core/Src/freertos.c ****               dbg_roll    = imu.roll;
+ 606              		.loc 1 311 32 is_stmt 0 view .LVU201
+ 607 021a 1D4B     		ldr	r3, .L41+16
+ 608 021c 1968     		ldr	r1, [r3]	@ float
+ 311:Core/Src/freertos.c ****               dbg_roll    = imu.roll;
+ 609              		.loc 1 311 27 view .LVU202
+ 610 021e 2A4A     		ldr	r2, .L41+72
+ 611 0220 1160     		str	r1, [r2]	@ float
+ 312:Core/Src/freertos.c ****               dbg_pitch   = imu.pitch;
+ 612              		.loc 1 312 15 is_stmt 1 view .LVU203
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 19
+
+
+ 312:Core/Src/freertos.c ****               dbg_pitch   = imu.pitch;
+ 613              		.loc 1 312 32 is_stmt 0 view .LVU204
+ 614 0222 5968     		ldr	r1, [r3, #4]	@ float
+ 312:Core/Src/freertos.c ****               dbg_pitch   = imu.pitch;
+ 615              		.loc 1 312 27 view .LVU205
+ 616 0224 294A     		ldr	r2, .L41+76
+ 617 0226 1160     		str	r1, [r2]	@ float
+ 313:Core/Src/freertos.c ****           }
+ 618              		.loc 1 313 15 is_stmt 1 view .LVU206
+ 313:Core/Src/freertos.c ****           }
+ 619              		.loc 1 313 32 is_stmt 0 view .LVU207
+ 620 0228 9A68     		ldr	r2, [r3, #8]	@ float
+ 313:Core/Src/freertos.c ****           }
+ 621              		.loc 1 313 27 view .LVU208
+ 622 022a 294B     		ldr	r3, .L41+80
+ 623 022c 1A60     		str	r2, [r3]	@ float
+ 624              	.L27:
+ 320:Core/Src/freertos.c ****           {
+ 625              		.loc 1 320 11 is_stmt 1 view .LVU209
+ 320:Core/Src/freertos.c ****           {
+ 626              		.loc 1 320 20 is_stmt 0 view .LVU210
+ 627 022e 294B     		ldr	r3, .L41+84
+ 628 0230 1B68     		ldr	r3, [r3]
+ 629 0232 EB1A     		subs	r3, r5, r3
+ 320:Core/Src/freertos.c ****           {
+ 630              		.loc 1 320 14 view .LVU211
+ 631 0234 B3F5FA7F 		cmp	r3, #500
+ 632 0238 85D3     		bcc	.L28
+ 322:Core/Src/freertos.c ****               dbg_imu_calib = BNO055_ReadCalibStatus();
+ 633              		.loc 1 322 15 is_stmt 1 view .LVU212
+ 322:Core/Src/freertos.c ****               dbg_imu_calib = BNO055_ReadCalibStatus();
+ 634              		.loc 1 322 23 is_stmt 0 view .LVU213
+ 635 023a 264B     		ldr	r3, .L41+84
+ 636 023c 1D60     		str	r5, [r3]
+ 323:Core/Src/freertos.c ****           }
+ 637              		.loc 1 323 15 is_stmt 1 view .LVU214
+ 323:Core/Src/freertos.c ****           }
+ 638              		.loc 1 323 31 is_stmt 0 view .LVU215
+ 639 023e FFF7FEFF 		bl	BNO055_ReadCalibStatus
+ 640              	.LVL52:
+ 323:Core/Src/freertos.c ****           }
+ 641              		.loc 1 323 29 discriminator 1 view .LVU216
+ 642 0242 254B     		ldr	r3, .L41+88
+ 643 0244 1870     		strb	r0, [r3]
+ 644 0246 7EE7     		b	.L28
+ 645              	.L26:
+ 315:Core/Src/freertos.c ****           {
+ 646              		.loc 1 315 16 is_stmt 1 view .LVU217
+ 315:Core/Src/freertos.c ****           {
+ 647              		.loc 1 315 20 is_stmt 0 view .LVU218
+ 648 0248 1E4A     		ldr	r2, .L41+68
+ 649 024a 1378     		ldrb	r3, [r2]	@ zero_extendqisi2
+ 650 024c 0133     		adds	r3, r3, #1
+ 651 024e DBB2     		uxtb	r3, r3
+ 315:Core/Src/freertos.c ****           {
+ 652              		.loc 1 315 19 view .LVU219
+ 653 0250 1370     		strb	r3, [r2]
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 20
+
+
+ 654 0252 042B     		cmp	r3, #4
+ 655 0254 EBD9     		bls	.L27
+ 317:Core/Src/freertos.c ****               t_imu_retry = now;
+ 656              		.loc 1 317 15 is_stmt 1 view .LVU220
+ 317:Core/Src/freertos.c ****               t_imu_retry = now;
+ 657              		.loc 1 317 24 is_stmt 0 view .LVU221
+ 658 0256 0C4B     		ldr	r3, .L41+8
+ 659 0258 0022     		movs	r2, #0
+ 660 025a 1A70     		strb	r2, [r3]
+ 318:Core/Src/freertos.c ****           }
+ 661              		.loc 1 318 15 is_stmt 1 view .LVU222
+ 318:Core/Src/freertos.c ****           }
+ 662              		.loc 1 318 27 is_stmt 0 view .LVU223
+ 663 025c 134B     		ldr	r3, .L41+44
+ 664 025e 1D60     		str	r5, [r3]
+ 665 0260 E5E7     		b	.L27
+ 666              	.LVL53:
+ 667              	.L38:
+ 330:Core/Src/freertos.c ****           if (BNO055_ReadEuler(&imu)) { imu_live = 1; imu_fail = 0; }
+ 668              		.loc 1 330 11 is_stmt 1 view .LVU224
+ 330:Core/Src/freertos.c ****           if (BNO055_ReadEuler(&imu)) { imu_live = 1; imu_fail = 0; }
+ 669              		.loc 1 330 23 is_stmt 0 view .LVU225
+ 670 0262 124B     		ldr	r3, .L41+44
+ 671 0264 1D60     		str	r5, [r3]
+ 331:Core/Src/freertos.c ****       }
+ 672              		.loc 1 331 11 is_stmt 1 view .LVU226
+ 331:Core/Src/freertos.c ****       }
+ 673              		.loc 1 331 15 is_stmt 0 view .LVU227
+ 674 0266 0A48     		ldr	r0, .L41+16
+ 675              	.LVL54:
+ 331:Core/Src/freertos.c ****       }
+ 676              		.loc 1 331 15 view .LVU228
+ 677 0268 FFF7FEFF 		bl	BNO055_ReadEuler
+ 678              	.LVL55:
+ 331:Core/Src/freertos.c ****       }
+ 679              		.loc 1 331 14 discriminator 1 view .LVU229
+ 680 026c 0028     		cmp	r0, #0
+ 681 026e 3FF46AAF 		beq	.L28
+ 331:Core/Src/freertos.c ****       }
+ 682              		.loc 1 331 41 is_stmt 1 discriminator 1 view .LVU230
+ 331:Core/Src/freertos.c ****       }
+ 683              		.loc 1 331 50 is_stmt 0 discriminator 1 view .LVU231
+ 684 0272 054B     		ldr	r3, .L41+8
+ 685 0274 0122     		movs	r2, #1
+ 686 0276 1A70     		strb	r2, [r3]
+ 331:Core/Src/freertos.c ****       }
+ 687              		.loc 1 331 55 is_stmt 1 view .LVU232
+ 331:Core/Src/freertos.c ****       }
+ 688              		.loc 1 331 64 is_stmt 0 discriminator 1 view .LVU233
+ 689 0278 124B     		ldr	r3, .L41+68
+ 690 027a 0022     		movs	r2, #0
+ 691 027c 1A70     		strb	r2, [r3]
+ 692 027e 62E7     		b	.L28
+ 693              	.L42:
+ 694              		.align	2
+ 695              	.L41:
+ 696 0280 00000000 		.word	hist.7
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 21
+
+
+ 697 0284 00000000 		.word	dbg_imu_ok
+ 698 0288 00000000 		.word	imu_live.6
+ 699 028c 00000000 		.word	front_miss.4
+ 700 0290 00000000 		.word	imu.3
+ 701 0294 00000000 		.word	driveQ
+ 702 0298 00000000 		.word	dbg_q_drop
+ 703 029c 0A000000 		.word	hist.7+10
+ 704 02a0 00000000 		.word	dbg_front
+ 705 02a4 00000000 		.word	dbg_left
+ 706 02a8 00000000 		.word	dbg_right
+ 707 02ac 00000000 		.word	t_imu_retry.1
+ 708 02b0 00000000 		.word	dbg_imu_live
+ 709 02b4 00000000 		.word	dbg_hw_sensor
+ 710 02b8 00000000 		.word	t_loop.5
+ 711 02bc 00000000 		.word	dbg_loop_ms
+ 712 02c0 00000000 		.word	dbg_front_miss
+ 713 02c4 00000000 		.word	imu_fail.2
+ 714 02c8 00000000 		.word	dbg_heading
+ 715 02cc 00000000 		.word	dbg_roll
+ 716 02d0 00000000 		.word	dbg_pitch
+ 717 02d4 00000000 		.word	t_calib.0
+ 718 02d8 00000000 		.word	dbg_imu_calib
+ 719              	.LBE13:
+ 720              		.cfi_endproc
+ 721              	.LFE140:
+ 723              		.section	.text.MX_FREERTOS_Init,"ax",%progbits
+ 724              		.align	1
+ 725              		.global	MX_FREERTOS_Init
+ 726              		.syntax unified
+ 727              		.thumb
+ 728              		.thumb_func
+ 730              	MX_FREERTOS_Init:
+ 731              	.LFB138:
+ 124:Core/Src/freertos.c ****   /* USER CODE BEGIN Init */
+ 732              		.loc 1 124 29 is_stmt 1 view -0
+ 733              		.cfi_startproc
+ 734              		@ args = 0, pretend = 0, frame = 0
+ 735              		@ frame_needed = 0, uses_anonymous_args = 0
+ 736 0000 08B5     		push	{r3, lr}
+ 737              	.LCFI4:
+ 738              		.cfi_def_cfa_offset 8
+ 739              		.cfi_offset 3, -8
+ 740              		.cfi_offset 14, -4
+ 142:Core/Src/freertos.c ****   /* 생성 실패(NULL) 시 put/get이 전부 에러 → MotorTask가 Car_Stop + refresh 생략 �
+ 741              		.loc 1 142 3 view .LVU235
+ 142:Core/Src/freertos.c ****   /* 생성 실패(NULL) 시 put/get이 전부 에러 → MotorTask가 Car_Stop + refresh 생략 �
+ 742              		.loc 1 142 12 is_stmt 0 view .LVU236
+ 743 0002 0022     		movs	r2, #0
+ 744 0004 1421     		movs	r1, #20
+ 745 0006 0220     		movs	r0, #2
+ 746 0008 FFF7FEFF 		bl	osMessageQueueNew
+ 747              	.LVL56:
+ 142:Core/Src/freertos.c ****   /* 생성 실패(NULL) 시 put/get이 전부 에러 → MotorTask가 Car_Stop + refresh 생략 �
+ 748              		.loc 1 142 10 discriminator 1 view .LVU237
+ 749 000c 084B     		ldr	r3, .L45
+ 750 000e 1860     		str	r0, [r3]
+ 149:Core/Src/freertos.c **** 
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 22
+
+
+ 751              		.loc 1 149 3 is_stmt 1 view .LVU238
+ 149:Core/Src/freertos.c **** 
+ 752              		.loc 1 149 21 is_stmt 0 view .LVU239
+ 753 0010 084A     		ldr	r2, .L45+4
+ 754 0012 0021     		movs	r1, #0
+ 755 0014 0848     		ldr	r0, .L45+8
+ 756 0016 FFF7FEFF 		bl	osThreadNew
+ 757              	.LVL57:
+ 149:Core/Src/freertos.c **** 
+ 758              		.loc 1 149 19 discriminator 1 view .LVU240
+ 759 001a 084B     		ldr	r3, .L45+12
+ 760 001c 1860     		str	r0, [r3]
+ 152:Core/Src/freertos.c **** 
+ 761              		.loc 1 152 3 is_stmt 1 view .LVU241
+ 152:Core/Src/freertos.c **** 
+ 762              		.loc 1 152 22 is_stmt 0 view .LVU242
+ 763 001e 084A     		ldr	r2, .L45+16
+ 764 0020 0021     		movs	r1, #0
+ 765 0022 0848     		ldr	r0, .L45+20
+ 766 0024 FFF7FEFF 		bl	osThreadNew
+ 767              	.LVL58:
+ 152:Core/Src/freertos.c **** 
+ 768              		.loc 1 152 20 discriminator 1 view .LVU243
+ 769 0028 074B     		ldr	r3, .L45+24
+ 770 002a 1860     		str	r0, [r3]
+ 162:Core/Src/freertos.c **** 
+ 771              		.loc 1 162 1 view .LVU244
+ 772 002c 08BD     		pop	{r3, pc}
+ 773              	.L46:
+ 774 002e 00BF     		.align	2
+ 775              	.L45:
+ 776 0030 00000000 		.word	driveQ
+ 777 0034 00000000 		.word	MotorTask_attributes
+ 778 0038 00000000 		.word	StartDefaultTask
+ 779 003c 00000000 		.word	MotorTaskHandle
+ 780 0040 00000000 		.word	SensorTask_attributes
+ 781 0044 00000000 		.word	StartTask02
+ 782 0048 00000000 		.word	SensorTaskHandle
+ 783              		.cfi_endproc
+ 784              	.LFE138:
+ 786              		.section	.text.HAL_GPIO_EXTI_Callback,"ax",%progbits
+ 787              		.align	1
+ 788              		.global	HAL_GPIO_EXTI_Callback
+ 789              		.syntax unified
+ 790              		.thumb
+ 791              		.thumb_func
+ 793              	HAL_GPIO_EXTI_Callback:
+ 794              	.LVL59:
+ 795              	.LFB141:
+ 348:Core/Src/freertos.c ****   }
+ 349:Core/Src/freertos.c **** #endif
+ 350:Core/Src/freertos.c ****   /* USER CODE END StartTask02 */
+ 351:Core/Src/freertos.c **** }
+ 352:Core/Src/freertos.c **** 
+ 353:Core/Src/freertos.c **** /* Private application code --------------------------------------------------*/
+ 354:Core/Src/freertos.c **** /* USER CODE BEGIN Application */
+ 355:Core/Src/freertos.c **** 
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 23
+
+
+ 356:Core/Src/freertos.c **** /* BNO055 INT(PA0/EXTI0) 콜백 (구 main.c에서 이동).
+ 357:Core/Src/freertos.c ****  * 주의: 융합 데이터엔 전용 DRDY INT가 없음 → heading은 SensorTask에서 polling.
+ 358:Core/Src/freertos.c ****  *       이 콜백은 INT 배선 검증/모션(any-motion 등) 트리거용 카운터. */
+ 359:Core/Src/freertos.c **** void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+ 360:Core/Src/freertos.c **** {
+ 796              		.loc 1 360 1 is_stmt 1 view -0
+ 797              		.cfi_startproc
+ 798              		@ args = 0, pretend = 0, frame = 0
+ 799              		@ frame_needed = 0, uses_anonymous_args = 0
+ 800              		@ link register save eliminated.
+ 361:Core/Src/freertos.c ****     if (GPIO_Pin == IMU_INT_Pin)
+ 801              		.loc 1 361 5 view .LVU246
+ 802              		.loc 1 361 8 is_stmt 0 view .LVU247
+ 803 0000 0128     		cmp	r0, #1
+ 804 0002 00D0     		beq	.L49
+ 805              	.L47:
+ 362:Core/Src/freertos.c ****     {
+ 363:Core/Src/freertos.c ****         dbg_imu_evt++;
+ 364:Core/Src/freertos.c ****     }
+ 365:Core/Src/freertos.c **** }
+ 806              		.loc 1 365 1 view .LVU248
+ 807 0004 7047     		bx	lr
+ 808              	.L49:
+ 363:Core/Src/freertos.c ****     }
+ 809              		.loc 1 363 9 is_stmt 1 view .LVU249
+ 363:Core/Src/freertos.c ****     }
+ 810              		.loc 1 363 20 is_stmt 0 view .LVU250
+ 811 0006 024A     		ldr	r2, .L50
+ 812 0008 1368     		ldr	r3, [r2]
+ 813 000a 0133     		adds	r3, r3, #1
+ 814 000c 1360     		str	r3, [r2]
+ 815              		.loc 1 365 1 view .LVU251
+ 816 000e F9E7     		b	.L47
+ 817              	.L51:
+ 818              		.align	2
+ 819              	.L50:
+ 820 0010 00000000 		.word	dbg_imu_evt
+ 821              		.cfi_endproc
+ 822              	.LFE141:
+ 824              		.section	.bss.t_calib.0,"aw",%nobits
+ 825              		.align	2
+ 828              	t_calib.0:
+ 829 0000 00000000 		.space	4
+ 830              		.section	.bss.t_imu_retry.1,"aw",%nobits
+ 831              		.align	2
+ 834              	t_imu_retry.1:
+ 835 0000 00000000 		.space	4
+ 836              		.section	.bss.imu_fail.2,"aw",%nobits
+ 839              	imu_fail.2:
+ 840 0000 00       		.space	1
+ 841              		.section	.bss.imu.3,"aw",%nobits
+ 842              		.align	2
+ 845              	imu.3:
+ 846 0000 00000000 		.space	12
+ 846      00000000 
+ 846      00000000 
+ 847              		.section	.bss.front_miss.4,"aw",%nobits
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 24
+
+
+ 850              	front_miss.4:
+ 851 0000 00       		.space	1
+ 852              		.section	.bss.t_loop.5,"aw",%nobits
+ 853              		.align	2
+ 856              	t_loop.5:
+ 857 0000 00000000 		.space	4
+ 858              		.section	.bss.imu_live.6,"aw",%nobits
+ 861              	imu_live.6:
+ 862 0000 00       		.space	1
+ 863              		.section	.bss.hist.7,"aw",%nobits
+ 864              		.align	2
+ 867              	hist.7:
+ 868 0000 00000000 		.space	30
+ 868      00000000 
+ 868      00000000 
+ 868      00000000 
+ 868      00000000 
+ 869              		.global	SensorTask_attributes
+ 870              		.section	.rodata.str1.4,"aMS",%progbits,1
+ 871              		.align	2
+ 872              	.LC0:
+ 873 0000 53656E73 		.ascii	"SensorTask\000"
+ 873      6F725461 
+ 873      736B00
+ 874              		.section	.rodata.SensorTask_attributes,"a"
+ 875              		.align	2
+ 878              	SensorTask_attributes:
+ 879 0000 00000000 		.word	.LC0
+ 880 0004 00000000 		.space	16
+ 880      00000000 
+ 880      00000000 
+ 880      00000000 
+ 881 0014 00040000 		.word	1024
+ 882 0018 08000000 		.word	8
+ 883 001c 00000000 		.space	8
+ 883      00000000 
+ 884              		.global	SensorTaskHandle
+ 885              		.section	.bss.SensorTaskHandle,"aw",%nobits
+ 886              		.align	2
+ 889              	SensorTaskHandle:
+ 890 0000 00000000 		.space	4
+ 891              		.global	MotorTask_attributes
+ 892              		.section	.rodata.str1.4
+ 893 000b 00       		.align	2
+ 894              	.LC1:
+ 895 000c 4D6F746F 		.ascii	"MotorTask\000"
+ 895      72546173 
+ 895      6B00
+ 896              		.section	.rodata.MotorTask_attributes,"a"
+ 897              		.align	2
+ 900              	MotorTask_attributes:
+ 901 0000 0C000000 		.word	.LC1
+ 902 0004 00000000 		.space	16
+ 902      00000000 
+ 902      00000000 
+ 902      00000000 
+ 903 0014 00040000 		.word	1024
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 25
+
+
+ 904 0018 18000000 		.word	24
+ 905 001c 00000000 		.space	8
+ 905      00000000 
+ 906              		.global	MotorTaskHandle
+ 907              		.section	.bss.MotorTaskHandle,"aw",%nobits
+ 908              		.align	2
+ 911              	MotorTaskHandle:
+ 912 0000 00000000 		.space	4
+ 913              		.global	dbg_hw_motor
+ 914              		.section	.bss.dbg_hw_motor,"aw",%nobits
+ 915              		.align	2
+ 918              	dbg_hw_motor:
+ 919 0000 00000000 		.space	4
+ 920              		.global	dbg_hw_sensor
+ 921              		.section	.bss.dbg_hw_sensor,"aw",%nobits
+ 922              		.align	2
+ 925              	dbg_hw_sensor:
+ 926 0000 00000000 		.space	4
+ 927              		.global	dbg_q_timeout
+ 928              		.section	.bss.dbg_q_timeout,"aw",%nobits
+ 929              		.align	2
+ 932              	dbg_q_timeout:
+ 933 0000 00000000 		.space	4
+ 934              		.global	dbg_q_drop
+ 935              		.section	.bss.dbg_q_drop,"aw",%nobits
+ 936              		.align	2
+ 939              	dbg_q_drop:
+ 940 0000 00000000 		.space	4
+ 941              		.global	dbg_imu_evt
+ 942              		.section	.bss.dbg_imu_evt,"aw",%nobits
+ 943              		.align	2
+ 946              	dbg_imu_evt:
+ 947 0000 00000000 		.space	4
+ 948              		.global	dbg_imu_calib
+ 949              		.section	.bss.dbg_imu_calib,"aw",%nobits
+ 952              	dbg_imu_calib:
+ 953 0000 00       		.space	1
+ 954              		.global	dbg_imu_live
+ 955              		.section	.bss.dbg_imu_live,"aw",%nobits
+ 958              	dbg_imu_live:
+ 959 0000 00       		.space	1
+ 960              		.global	dbg_imu_ok
+ 961              		.section	.bss.dbg_imu_ok,"aw",%nobits
+ 964              	dbg_imu_ok:
+ 965 0000 00       		.space	1
+ 966              		.global	dbg_pitch
+ 967              		.section	.bss.dbg_pitch,"aw",%nobits
+ 968              		.align	2
+ 971              	dbg_pitch:
+ 972 0000 00000000 		.space	4
+ 973              		.global	dbg_roll
+ 974              		.section	.bss.dbg_roll,"aw",%nobits
+ 975              		.align	2
+ 978              	dbg_roll:
+ 979 0000 00000000 		.space	4
+ 980              		.global	dbg_heading
+ 981              		.section	.bss.dbg_heading,"aw",%nobits
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 26
+
+
+ 982              		.align	2
+ 985              	dbg_heading:
+ 986 0000 00000000 		.space	4
+ 987              		.global	dbg_loop_ms
+ 988              		.section	.bss.dbg_loop_ms,"aw",%nobits
+ 989              		.align	2
+ 992              	dbg_loop_ms:
+ 993 0000 00000000 		.space	4
+ 994              		.global	dbg_front_miss
+ 995              		.section	.bss.dbg_front_miss,"aw",%nobits
+ 998              	dbg_front_miss:
+ 999 0000 00       		.space	1
+ 1000              		.global	dbg_right
+ 1001              		.section	.bss.dbg_right,"aw",%nobits
+ 1002              		.align	1
+ 1005              	dbg_right:
+ 1006 0000 0000     		.space	2
+ 1007              		.global	dbg_left
+ 1008              		.section	.bss.dbg_left,"aw",%nobits
+ 1009              		.align	1
+ 1012              	dbg_left:
+ 1013 0000 0000     		.space	2
+ 1014              		.global	dbg_front
+ 1015              		.section	.bss.dbg_front,"aw",%nobits
+ 1016              		.align	1
+ 1019              	dbg_front:
+ 1020 0000 0000     		.space	2
+ 1021              		.section	.bss.driveQ,"aw",%nobits
+ 1022              		.align	2
+ 1025              	driveQ:
+ 1026 0000 00000000 		.space	4
+ 1027              		.text
+ 1028              	.Letext0:
+ 1029              		.file 2 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
+ 1030              		.file 3 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
+ 1031              		.file 4 "Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F/portmacro.h"
+ 1032              		.file 5 "Middlewares/Third_Party/FreeRTOS/Source/include/task.h"
+ 1033              		.file 6 "Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f411xe.h"
+ 1034              		.file 7 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_def.h"
+ 1035              		.file 8 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_iwdg.h"
+ 1036              		.file 9 "Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.h"
+ 1037              		.file 10 "Core/Inc/drive.h"
+ 1038              		.file 11 "Core/Inc/bno055.h"
+ 1039              		.file 12 "Core/Inc/iwdg.h"
+ 1040              		.file 13 "Core/Inc/ultra.h"
+ 1041              		.file 14 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h"
+ 1042              		.file 15 "Core/Inc/motor.h"
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 27
+
+
+DEFINED SYMBOLS
+                            *ABS*:00000000 freertos.c
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:21     .text.StartDefaultTask:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:27     .text.StartDefaultTask:00000000 StartDefaultTask
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:93     .text.StartDefaultTask:0000003c $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:918    .bss.dbg_hw_motor:00000000 dbg_hw_motor
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:1025   .bss.driveQ:00000000 driveQ
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:932    .bss.dbg_q_timeout:00000000 dbg_q_timeout
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:101    .text.StartTask02:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:107    .text.StartTask02:00000000 StartTask02
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:696    .text.StartTask02:00000280 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:867    .bss.hist.7:00000000 hist.7
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:964    .bss.dbg_imu_ok:00000000 dbg_imu_ok
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:861    .bss.imu_live.6:00000000 imu_live.6
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:850    .bss.front_miss.4:00000000 front_miss.4
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:845    .bss.imu.3:00000000 imu.3
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:939    .bss.dbg_q_drop:00000000 dbg_q_drop
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:1019   .bss.dbg_front:00000000 dbg_front
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:1012   .bss.dbg_left:00000000 dbg_left
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:1005   .bss.dbg_right:00000000 dbg_right
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:834    .bss.t_imu_retry.1:00000000 t_imu_retry.1
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:958    .bss.dbg_imu_live:00000000 dbg_imu_live
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:925    .bss.dbg_hw_sensor:00000000 dbg_hw_sensor
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:856    .bss.t_loop.5:00000000 t_loop.5
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:992    .bss.dbg_loop_ms:00000000 dbg_loop_ms
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:998    .bss.dbg_front_miss:00000000 dbg_front_miss
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:839    .bss.imu_fail.2:00000000 imu_fail.2
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:985    .bss.dbg_heading:00000000 dbg_heading
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:978    .bss.dbg_roll:00000000 dbg_roll
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:971    .bss.dbg_pitch:00000000 dbg_pitch
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:828    .bss.t_calib.0:00000000 t_calib.0
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:952    .bss.dbg_imu_calib:00000000 dbg_imu_calib
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:724    .text.MX_FREERTOS_Init:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:730    .text.MX_FREERTOS_Init:00000000 MX_FREERTOS_Init
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:776    .text.MX_FREERTOS_Init:00000030 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:900    .rodata.MotorTask_attributes:00000000 MotorTask_attributes
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:911    .bss.MotorTaskHandle:00000000 MotorTaskHandle
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:878    .rodata.SensorTask_attributes:00000000 SensorTask_attributes
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:889    .bss.SensorTaskHandle:00000000 SensorTaskHandle
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:787    .text.HAL_GPIO_EXTI_Callback:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:793    .text.HAL_GPIO_EXTI_Callback:00000000 HAL_GPIO_EXTI_Callback
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:820    .text.HAL_GPIO_EXTI_Callback:00000010 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:946    .bss.dbg_imu_evt:00000000 dbg_imu_evt
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:825    .bss.t_calib.0:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:831    .bss.t_imu_retry.1:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:840    .bss.imu_fail.2:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:842    .bss.imu.3:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:851    .bss.front_miss.4:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:853    .bss.t_loop.5:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:862    .bss.imu_live.6:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:864    .bss.hist.7:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:871    .rodata.str1.4:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:875    .rodata.SensorTask_attributes:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:886    .bss.SensorTaskHandle:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:897    .rodata.MotorTask_attributes:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:908    .bss.MotorTaskHandle:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:915    .bss.dbg_hw_motor:00000000 $d
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 28
+
+
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:922    .bss.dbg_hw_sensor:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:929    .bss.dbg_q_timeout:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:936    .bss.dbg_q_drop:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:943    .bss.dbg_imu_evt:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:953    .bss.dbg_imu_calib:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:959    .bss.dbg_imu_live:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:965    .bss.dbg_imu_ok:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:968    .bss.dbg_pitch:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:975    .bss.dbg_roll:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:982    .bss.dbg_heading:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:989    .bss.dbg_loop_ms:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:999    .bss.dbg_front_miss:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:1002   .bss.dbg_right:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:1009   .bss.dbg_left:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:1016   .bss.dbg_front:00000000 $d
+C:\Users\user\AppData\Local\Temp\ccXBYvwD.s:1022   .bss.driveQ:00000000 $d
+                           .group:00000000 wm4.0.3e3bd4fae48ed4285b9fe9ad79008a8e
+                           .group:00000000 wm4.stddef.h.39.811583f327f35b0df7808fda70b062a0
+                           .group:00000000 wm4._newlib_version.h.4.0eb654b64686e2bd29646258853f6c22
+                           .group:00000000 wm4.features.h.33.d554620bb17bd3b714c3fb5c268772bc
+                           .group:00000000 wm4._default_types.h.15.247e5cd201eca3442cbf5404108c4935
+                           .group:00000000 wm4._intsup.h.10.48bafbb683905c4daa4565a85aeeb264
+                           .group:00000000 wm4._stdint.h.10.c24fa3af3bc1706662bb5593a907e841
+                           .group:00000000 wm4.stdint.h.23.d53047a68f4a85177f80b422d52785ed
+                           .group:00000000 wm4.FreeRTOSConfig.h.32.6bbd733e8d202634418384a7607bb54f
+                           .group:00000000 wm4.projdefs.h.29.3472c8470d131a5f474bc7437ea94609
+                           .group:00000000 wm4.portmacro.h.30.ebb5f3ce711e1dad21b3172c9bc8e19f
+                           .group:00000000 wm4.portable.h.64.742f2ce568820e866a7b541b4c77966f
+                           .group:00000000 wm4.mpu_wrappers.h.29.4f9aea82ee68d943d141825e5294de63
+                           .group:00000000 wm4.newlib.h.7.decd5b9657e2c5df625d9eac6e10520c
+                           .group:00000000 wm4.ieeefp.h.77.61a77db5804869b1dadd307a77cf78c9
+                           .group:00000000 wm4.config.h.224.10ee1ad185d877c6e334e6581faab44d
+                           .group:00000000 wm4._ansi.h.31.de524f58584151836e90d8620a16f8e8
+                           .group:00000000 wm4.cdefs.h.49.56fd742369e655e7e8a7e365e706e208
+                           .group:00000000 wm4._types.h.20.dd0d04dca3800a0d2a6129b87f3adbb2
+                           .group:00000000 wm4.stddef.h.173.4903093a50a8482cb062b176ea61fac3
+                           .group:00000000 wm4._types.h.127.3bdfe3ff8ea2d0985b03d9cbe93480e3
+                           .group:00000000 wm4.reent.h.18.25503cdc8b7e55dd0d6ea7b3e5af7a03
+                           .group:00000000 wm4.lock.h.2.1461d1fff82dffe8bfddc23307f6484f
+                           .group:00000000 wm4.reent.h.78.6d702f69a6d6435d2dbe915b10150b1a
+                           .group:00000000 wm4.reent.h.96.88022c5a22979c33a20a5d76964119ed
+                           .group:00000000 wm4.stddef.h.173.1cea4f16a943c8e875db6791959c3141
+                           .group:00000000 wm4.FreeRTOS.h.136.a17c2bf78722c1d7b86ba8d45e5b5f29
+                           .group:00000000 wm4.list.h.61.5c5a38f6bc6687eed6d893e57dabd8e6
+                           .group:00000000 wm4.task.h.46.9fb92b2c1a30a52e436f6063552b709b
+                           .group:00000000 wm4.stm32f4xx_hal_conf.h.25.0cc516ee5f8f6ec9d32a682fcd0191b7
+                           .group:00000000 wm4.stm32f4xx.h.38.63e3ea23bd63a94457417730025259b6
+                           .group:00000000 wm4.stm32f411xe.h.34.f2908321cbbda12187706c23063bbc28
+                           .group:00000000 wm4.cmsis_version.h.32.0ac195c83bb4537824e6ad1c47474b79
+                           .group:00000000 wm4.core_cm4.h.66.e4ff136c4a17abc46741866f64f8e729
+                           .group:00000000 wm4.cmsis_gcc.h.26.498d0ad17a45fc9ef20fdc01caf02259
+                           .group:00000000 wm4.core_cm4.h.174.62be9b4588d49bed18171771001331df
+                           .group:00000000 wm4.mpu_armv7.h.32.83326921a797fa9d6f70449916b4b839
+                           .group:00000000 wm4.stm32f411xe.h.636.37cf950cfbbaac9e193dbe2b79c3e749
+                           .group:00000000 wm4.stm32f4xx.h.195.a4b8bf80f37cc96981498656ffe5f588
+                           .group:00000000 wm4.stm32_hal_legacy.h.22.8b7d303dc46a0b7ac6d3edf19ce2608d
+                           .group:00000000 wm4.stm32f4xx_hal_def.h.58.54e2b30db63e8e74c562662f8beb243e
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccXBYvwD.s 			page 29
+
+
+                           .group:00000000 wm4.stm32f4xx_hal_rcc_ex.h.20.6bc7ed2ae7969e22afc815a811faa8ee
+                           .group:00000000 wm4.stm32f4xx_hal_rcc.h.106.0887cf5d985ae88e345b0aed0ceb4729
+                           .group:00000000 wm4.stm32f4xx_hal_gpio.h.21.22da6a14b6049d6ac156577be74df1d7
+                           .group:00000000 wm4.stm32f4xx_hal_gpio_ex.h.21.985b1076fbcb2c3eb806d02fd771d120
+                           .group:00000000 wm4.stm32f4xx_hal_gpio.h.254.d7e07832f748fe8bcb575db0b8373592
+                           .group:00000000 wm4.stm32f4xx_hal_exti.h.21.2ccac119fb1c64adeb682c3dcad90241
+                           .group:00000000 wm4.stm32f4xx_hal_dma.h.21.8e4b1421c914345c23be719e5e528779
+                           .group:00000000 wm4.stm32f4xx_hal_dma.h.720.ac2d7eef74792e4026acc4d2923c5da4
+                           .group:00000000 wm4.stm32f4xx_hal_cortex.h.20.03673e4f79386680bf73ba399c19306b
+                           .group:00000000 wm4.stm32f4xx_hal_flash.h.20.2f1e0d1b7010b3a81a7980aaf712e7e5
+                           .group:00000000 wm4.stm32f4xx_hal_flash_ex.h.20.2abe4a01ce8028804a922735defa62fd
+                           .group:00000000 wm4.stm32f4xx_hal_flash.h.361.23bc19b9eac79b0956d913651841ede8
+                           .group:00000000 wm4.stm32f4xx_hal_i2c.h.21.147e96a27b1f7b1f2f8ee22132703ee3
+                           .group:00000000 wm4.stm32f4xx_hal_i2c_ex.h.21.951ef5bfa13cf131d2015c338e82e461
+                           .group:00000000 wm4.stm32f4xx_hal_i2c.h.647.ade9c3447780b1cc0ece02f0ce83aedc
+                           .group:00000000 wm4.stm32f4xx_hal_iwdg.h.21.6227ccfbb99238d6637d6fd22341e211
+                           .group:00000000 wm4.stm32f4xx_hal_pwr.h.20.1905a0783a9c83adefd7df0c4b501e40
+                           .group:00000000 wm4.stm32f4xx_hal_pwr_ex.h.20.68994c4c23e76d9aeabea12988d5ec3f
+                           .group:00000000 wm4.stm32f4xx_hal_pwr.h.338.debc0a4a62ba54688e63ab53dd99c4ea
+                           .group:00000000 wm4.stm32f4xx_hal_tim.h.21.c31cbc03c25f07a932427770396c59d2
+                           .group:00000000 wm4.stm32f4xx_hal_tim_ex.h.21.918fa7fcd405cc3ba11632ed1d07a240
+                           .group:00000000 wm4.stm32f4xx_hal.h.71.02372bc31d47d29d3f67fbfe1429649e
+                           .group:00000000 wm4.main.h.60.a9fbcfa98a33cea9e599fe3b3b28e08c
+                           .group:00000000 wm4.cmsis_os.h.124.adbc2241dbc0025710aa866137b8f22e
+                           .group:00000000 wm4.cmsis_os2.h.151.57db232dfe421e4f781dd02c42ee4360
+                           .group:00000000 wm4.cmsis_os.h.179.c36f217fbf28f1f2e754518bfb5a2ae8
+                           .group:00000000 wm4.drive.h.14.863a654815bfa9f8f10047c2f9c80839
+                           .group:00000000 wm4.stdbool.h.29.c08aa3eec75cf5b9b5003883f43253f0
+
+UNDEFINED SYMBOLS
+HAL_IWDG_Refresh
+Drive_Update
+uxTaskGetStackHighWaterMark
+osMessageQueueGet
+Car_Stop
+hiwdg
+osThreadGetId
+Ultra_Init
+HAL_GetTick
+osMessageQueuePut
+median_n
+Ultra_Measure
+min_n
+Drive_GetState
+BNO055_ReadEuler
+BNO055_ReadCalibStatus
+osMessageQueueNew
+osThreadNew
