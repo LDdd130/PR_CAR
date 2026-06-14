@@ -1,7 +1,7 @@
-# Graph Report - C:\Users\user\STM\PR_CAR  (2026-06-13)
+# Graph Report - C:\Users\user\STM\PR_CAR  (2026-06-14)
 
 ## Corpus Check
-- 146 files · ~1,047,612 words
+- 146 files · ~1,048,033 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -757,11 +757,11 @@ Nodes (0):
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `main()` connect `Community 9` to `Community 0`, `Community 1`, `Community 12`, `Community 6`?**
-  _High betweenness centrality (0.074) - this node is a cross-community bridge._
+  _High betweenness centrality (0.085) - this node is a cross-community bridge._
 - **Why does `HAL_GetTick()` connect `Community 6` to `Community 9`, `Community 12`, `Community 22`?**
-  _High betweenness centrality (0.043) - this node is a cross-community bridge._
-- **Why does `__get_PRIMASK()` connect `Community 9` to `Community 5`?**
-  _High betweenness centrality (0.019) - this node is a cross-community bridge._
+  _High betweenness centrality (0.041) - this node is a cross-community bridge._
+- **Why does `osKernelStart()` connect `Community 0` to `Community 9`?**
+  _High betweenness centrality (0.026) - this node is a cross-community bridge._
 - **Are the 10 inferred relationships involving `TIM_CCxChannelCmd()` (e.g. with `HAL_TIMEx_HallSensor_Start()` and `HAL_TIMEx_HallSensor_Stop()`) actually correct?**
   _`TIM_CCxChannelCmd()` has 10 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 36 inferred relationships involving `HAL_GetTick()` (e.g. with `StartTask02()` and `HAL_DMA_Init()`) actually correct?**
