@@ -82,6 +82,10 @@ void Error_Handler(void);
 #define Input3_GPIO_Port GPIOB
 #define Input4_Pin GPIO_PIN_15
 #define Input4_GPIO_Port GPIOB
+#define Bluetooth_TX_Pin GPIO_PIN_9
+#define Bluetooth_TX_GPIO_Port GPIOA
+#define Bluetooth_RX_Pin GPIO_PIN_10
+#define Bluetooth_RX_GPIO_Port GPIOA
 #define PWM_A_Pin GPIO_PIN_6
 #define PWM_A_GPIO_Port GPIOB
 #define PWM_B_Pin GPIO_PIN_7

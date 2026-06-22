@@ -22,6 +22,7 @@
 #include "i2c.h"
 #include "iwdg.h"
 #include "tim.h"
+#include "usart.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -112,6 +113,7 @@ int main(void)
   MX_TIM4_Init();
   MX_I2C1_Init();
   MX_IWDG_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
 
   HAL_TIM_Base_Start(&htim11);   /* delay_us 타임베이스 — TIM3 IC start는 ultra.c Ultra_Init(SensorTask) */
