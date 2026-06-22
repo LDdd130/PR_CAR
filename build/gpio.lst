@@ -1,4 +1,4 @@
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccImUGw6.s 			page 1
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccJ5EYZb.s 			page 1
 
 
    1              		.cpu cortex-m4
@@ -58,7 +58,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccImUGw6.s 			page 1
   28:Core/Src/gpio.c **** /*----------------------------------------------------------------------------*/
   29:Core/Src/gpio.c **** /* Configure GPIO                                                             */
   30:Core/Src/gpio.c **** /*----------------------------------------------------------------------------*/
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccImUGw6.s 			page 2
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccJ5EYZb.s 			page 2
 
 
   31:Core/Src/gpio.c **** /* USER CODE BEGIN 1 */
@@ -118,7 +118,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccImUGw6.s 			page 1
   65 0022 02F08002 		and	r2, r2, #128
   66 0026 0092     		str	r2, [sp]
   67              		.loc 1 48 3 view .LVU7
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccImUGw6.s 			page 3
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccJ5EYZb.s 			page 3
 
 
   68 0028 009A     		ldr	r2, [sp]
@@ -178,7 +178,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccImUGw6.s 			page 1
  114 0066 3046     		mov	r0, r6
  115 0068 FFF7FEFF 		bl	HAL_GPIO_WritePin
  116              	.LVL1:
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccImUGw6.s 			page 4
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccJ5EYZb.s 			page 4
 
 
   57:Core/Src/gpio.c **** 
@@ -238,7 +238,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccImUGw6.s 			page 1
  155 009a 4046     		mov	r0, r8
  156 009c FFF7FEFF 		bl	HAL_GPIO_Init
  157              	.LVL4:
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccImUGw6.s 			page 5
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccJ5EYZb.s 			page 5
 
 
   73:Core/Src/gpio.c **** 
@@ -298,7 +298,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccImUGw6.s 			page 1
  197 00d4 00000240 		.word	1073872896
  198              		.cfi_endproc
  199              	.LFE134:
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccImUGw6.s 			page 6
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccJ5EYZb.s 			page 6
 
 
  201              		.text
@@ -308,16 +308,16 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccImUGw6.s 			page 1
  205              		.file 4 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
  206              		.file 5 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_gpio.h"
  207              		.file 6 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_cortex.h"
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccImUGw6.s 			page 7
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccJ5EYZb.s 			page 7
 
 
 DEFINED SYMBOLS
                             *ABS*:00000000 gpio.c
-C:\Users\user\AppData\Local\Temp\ccImUGw6.s:21     .text.MX_GPIO_Init:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccImUGw6.s:27     .text.MX_GPIO_Init:00000000 MX_GPIO_Init
-C:\Users\user\AppData\Local\Temp\ccImUGw6.s:195    .text.MX_GPIO_Init:000000cc $d
+C:\Users\user\AppData\Local\Temp\ccJ5EYZb.s:21     .text.MX_GPIO_Init:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccJ5EYZb.s:27     .text.MX_GPIO_Init:00000000 MX_GPIO_Init
+C:\Users\user\AppData\Local\Temp\ccJ5EYZb.s:195    .text.MX_GPIO_Init:000000cc $d
                            .group:00000000 wm4.0.3e3bd4fae48ed4285b9fe9ad79008a8e
-                           .group:00000000 wm4.stm32f4xx_hal_conf.h.25.0cc516ee5f8f6ec9d32a682fcd0191b7
+                           .group:00000000 wm4.stm32f4xx_hal_conf.h.25.0e66e2bdd1e693edb8cfdc624d1a6bd4
                            .group:00000000 wm4.stm32f4xx.h.38.63e3ea23bd63a94457417730025259b6
                            .group:00000000 wm4.stm32f411xe.h.34.f2908321cbbda12187706c23063bbc28
                            .group:00000000 wm4._newlib_version.h.4.0eb654b64686e2bd29646258853f6c22
@@ -357,8 +357,9 @@ C:\Users\user\AppData\Local\Temp\ccImUGw6.s:195    .text.MX_GPIO_Init:000000cc $
                            .group:00000000 wm4.stm32f4xx_hal_pwr.h.338.debc0a4a62ba54688e63ab53dd99c4ea
                            .group:00000000 wm4.stm32f4xx_hal_tim.h.21.c31cbc03c25f07a932427770396c59d2
                            .group:00000000 wm4.stm32f4xx_hal_tim_ex.h.21.918fa7fcd405cc3ba11632ed1d07a240
+                           .group:00000000 wm4.stm32f4xx_hal_uart.h.21.ba8e24dd05c77faac3f3d48472e636ba
                            .group:00000000 wm4.stm32f4xx_hal.h.71.02372bc31d47d29d3f67fbfe1429649e
-                           .group:00000000 wm4.main.h.60.a9fbcfa98a33cea9e599fe3b3b28e08c
+                           .group:00000000 wm4.main.h.60.43ab73d02ecae73036be54daa58e8549
 
 UNDEFINED SYMBOLS
 HAL_GPIO_WritePin

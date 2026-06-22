@@ -1,4 +1,7 @@
-Core/Src/freertos.c:171:6:StartDefaultTask	32	static
-Core/Src/freertos.c:221:6:StartTask02	56	static
-Core/Src/freertos.c:124:6:MX_FREERTOS_Init	8	static
-Core/Src/freertos.c:359:6:HAL_GPIO_EXTI_Callback	0	static
+Core/Src/freertos.c:426:6:StartTask03	16	static
+Core/Src/freertos.c:206:6:StartDefaultTask	40	static
+Core/Src/freertos.c:278:6:StartTask02	56	static
+Core/Src/freertos.c:147:6:MX_FREERTOS_Init	16	static
+Core/Src/freertos.c:484:6:HAL_GPIO_EXTI_Callback	0	static
+Core/Src/freertos.c:496:6:HAL_UART_RxCpltCallback	8	static
+Core/Src/freertos.c:511:6:HAL_UART_ErrorCallback	24	static
