@@ -1,4 +1,4 @@
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 1
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccttNF1j.s 			page 1
 
 
    1              		.cpu cortex-m4
@@ -58,7 +58,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 1
   36 0000 6428     		cmp	r0, #100
   37 0002 00D9     		bls	.L2
   21:Core/Src/motor.c ****     {
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 2
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccttNF1j.s 			page 2
 
 
   22:Core/Src/motor.c ****         pct = 100U;
@@ -118,7 +118,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 1
   79 0006 40B2     		sxtb	r0, r0
   80              		.loc 1 36 1 view .LVU15
   81 0008 7047     		bx	lr
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 3
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccttNF1j.s 			page 3
 
 
   82              		.cfi_endproc
@@ -178,7 +178,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 1
  124              	.LVL7:
   51:Core/Src/motor.c **** 
   52:Core/Src/motor.c ****     HAL_GPIO_WritePin(Input4_GPIO_Port, Input4_Pin, forward ? GPIO_PIN_SET : GPIO_PIN_RESET);
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 4
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccttNF1j.s 			page 4
 
 
  125              		.loc 1 52 5 is_stmt 1 view .LVU25
@@ -238,7 +238,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 1
  172 0058 054B     		ldr	r3, .L15+4
  173 005a 1B68     		ldr	r3, [r3]
  174 005c 0022     		movs	r2, #0
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 5
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccttNF1j.s 			page 5
 
 
  175 005e 9A63     		str	r2, [r3, #56]
@@ -298,7 +298,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 1
   64:Core/Src/motor.c ****         HAL_GPIO_WritePin(Input2_GPIO_Port, Input2_Pin, GPIO_PIN_RESET);
   65:Core/Src/motor.c ****         __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, 0);
   66:Core/Src/motor.c ****         return;
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 6
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccttNF1j.s 			page 6
 
 
   67:Core/Src/motor.c ****     }
@@ -358,7 +358,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 1
  265              		.loc 1 63 9 is_stmt 1 view .LVU53
  266 003e 0B4C     		ldr	r4, .L25
  267 0040 0022     		movs	r2, #0
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 7
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccttNF1j.s 			page 7
 
 
  268 0042 4FF48051 		mov	r1, #4096
@@ -418,7 +418,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 1
   80:Core/Src/motor.c ****     Car_Stop();
   81:Core/Src/motor.c **** }
   82:Core/Src/motor.c **** 
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 8
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccttNF1j.s 			page 8
 
 
   83:Core/Src/motor.c **** void Car_Forward(uint8_t speed)
@@ -478,7 +478,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 1
  360              		.cfi_def_cfa_offset 8
  361              		.cfi_offset 4, -8
  362              		.cfi_offset 14, -4
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 9
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccttNF1j.s 			page 9
 
 
   92:Core/Src/motor.c ****     int8_t s = clamp_speed(speed);
@@ -538,7 +538,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 1
  409              		.loc 1 101 17 view .LVU81
  410 0006 FFF7FEFF 		bl	clamp_speed
  411              	.LVL43:
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 10
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccttNF1j.s 			page 10
 
 
  412              		.loc 1 101 17 discriminator 1 view .LVU82
@@ -598,7 +598,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 1
  460              		.loc 1 109 18 is_stmt 0 view .LVU93
  461 000c 2046     		mov	r0, r4
  462 000e FFF7FEFF 		bl	clamp_speed
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 11
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccttNF1j.s 			page 11
 
 
  463              	.LVL50:
@@ -658,7 +658,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 1
  512 0014 FFF7FEFF 		bl	Motor_Right
  513              	.LVL57:
  117:Core/Src/motor.c **** }
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 12
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccttNF1j.s 			page 12
 
 
  514              		.loc 1 117 1 view .LVU105
@@ -718,7 +718,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 1
  564              		.thumb
  565              		.thumb_func
  567              	Car_Stop:
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 13
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccttNF1j.s 			page 13
 
 
  568              	.LFB145:
@@ -778,7 +778,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 1
  611 003e 10BD     		pop	{r4, pc}
  612              	.L42:
  613              		.align	2
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 14
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccttNF1j.s 			page 14
 
 
  614              	.L41:
@@ -838,7 +838,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 1
  666              		.thumb_func
  668              	Car_Brake:
  669              	.LFB146:
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 15
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccttNF1j.s 			page 15
 
 
  136:Core/Src/motor.c **** 
@@ -898,7 +898,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 1
  149:Core/Src/motor.c **** }
  711              		.loc 1 149 1 is_stmt 0 view .LVU135
  712 0040 10BD     		pop	{r4, pc}
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 16
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccttNF1j.s 			page 16
 
 
  713              	.L50:
@@ -918,42 +918,42 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 1
  728              		.file 7 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_dma.h"
  729              		.file 8 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h"
  730              		.file 9 "Core/Inc/tim.h"
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 17
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccttNF1j.s 			page 17
 
 
 DEFINED SYMBOLS
                             *ABS*:00000000 motor.c
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:21     .text.pct_to_ccr:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:26     .text.pct_to_ccr:00000000 pct_to_ccr
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:56     .text.clamp_speed:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:61     .text.clamp_speed:00000000 clamp_speed
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:86     .text.Motor_Left:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:92     .text.Motor_Left:00000000 Motor_Left
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:189    .text.Motor_Left:0000006c $d
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:195    .text.Motor_Right:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:201    .text.Motor_Right:00000000 Motor_Right
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:298    .text.Motor_Right:0000006c $d
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:304    .text.Car_Forward:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:310    .text.Car_Forward:00000000 Car_Forward
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:344    .text.Car_Backward:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:350    .text.Car_Backward:00000000 Car_Backward
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:385    .text.Car_PivotLeft:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:391    .text.Car_PivotLeft:00000000 Car_PivotLeft
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:433    .text.Car_PivotRight:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:439    .text.Car_PivotRight:00000000 Car_PivotRight
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:478    .text.Car_ArcLeft:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:484    .text.Car_ArcLeft:00000000 Car_ArcLeft
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:521    .text.Car_ArcRight:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:527    .text.Car_ArcRight:00000000 Car_ArcRight
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:561    .text.Car_Stop:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:567    .text.Car_Stop:00000000 Car_Stop
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:615    .text.Car_Stop:00000040 $d
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:621    .text.Motor_Init:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:627    .text.Motor_Init:00000000 Motor_Init
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:657    .text.Motor_Init:0000001c $d
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:662    .text.Car_Brake:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:668    .text.Car_Brake:00000000 Car_Brake
-C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:716    .text.Car_Brake:00000044 $d
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:21     .text.pct_to_ccr:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:26     .text.pct_to_ccr:00000000 pct_to_ccr
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:56     .text.clamp_speed:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:61     .text.clamp_speed:00000000 clamp_speed
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:86     .text.Motor_Left:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:92     .text.Motor_Left:00000000 Motor_Left
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:189    .text.Motor_Left:0000006c $d
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:195    .text.Motor_Right:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:201    .text.Motor_Right:00000000 Motor_Right
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:298    .text.Motor_Right:0000006c $d
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:304    .text.Car_Forward:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:310    .text.Car_Forward:00000000 Car_Forward
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:344    .text.Car_Backward:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:350    .text.Car_Backward:00000000 Car_Backward
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:385    .text.Car_PivotLeft:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:391    .text.Car_PivotLeft:00000000 Car_PivotLeft
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:433    .text.Car_PivotRight:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:439    .text.Car_PivotRight:00000000 Car_PivotRight
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:478    .text.Car_ArcLeft:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:484    .text.Car_ArcLeft:00000000 Car_ArcLeft
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:521    .text.Car_ArcRight:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:527    .text.Car_ArcRight:00000000 Car_ArcRight
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:561    .text.Car_Stop:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:567    .text.Car_Stop:00000000 Car_Stop
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:615    .text.Car_Stop:00000040 $d
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:621    .text.Motor_Init:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:627    .text.Motor_Init:00000000 Motor_Init
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:657    .text.Motor_Init:0000001c $d
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:662    .text.Car_Brake:00000000 $t
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:668    .text.Car_Brake:00000000 Car_Brake
+C:\Users\user\AppData\Local\Temp\ccttNF1j.s:716    .text.Car_Brake:00000044 $d
                            .group:00000000 wm4.0.3e3bd4fae48ed4285b9fe9ad79008a8e
                            .group:00000000 wm4.stm32f4xx_hal_conf.h.25.0e66e2bdd1e693edb8cfdc624d1a6bd4
                            .group:00000000 wm4.stm32f4xx.h.38.63e3ea23bd63a94457417730025259b6
@@ -978,7 +978,7 @@ C:\Users\user\AppData\Local\Temp\ccpS0Eor.s:716    .text.Car_Brake:00000044 $d
                            .group:00000000 wm4.stm32f4xx_hal_rcc.h.106.0887cf5d985ae88e345b0aed0ceb4729
                            .group:00000000 wm4.stm32f4xx_hal_gpio.h.21.22da6a14b6049d6ac156577be74df1d7
                            .group:00000000 wm4.stm32f4xx_hal_gpio_ex.h.21.985b1076fbcb2c3eb806d02fd771d120
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccpS0Eor.s 			page 18
+ARM GAS  C:\Users\user\AppData\Local\Temp\ccttNF1j.s 			page 18
 
 
                            .group:00000000 wm4.stm32f4xx_hal_gpio.h.254.d7e07832f748fe8bcb575db0b8373592

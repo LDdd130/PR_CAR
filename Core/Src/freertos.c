@@ -28,6 +28,7 @@
 #include "iwdg.h"    /* hiwdg — MotorTask가 큐 수신 성공 시에만 refresh */
 #include "motor.h"
 #include "drive.h"   /* DriveInputs(큐 메시지 그대로 사용) + 튜닝 노브 */
+#include "debug.h"   /* DebugMonitor_t dbg (SWD 미러 통합) */
 #include "bno055.h"
 #include "ultra.h"
 #include "usart.h"   /* huart1 — 블루투스 1바이트 IT 수신 */
@@ -60,23 +61,7 @@
  * depth 2: full 메시지 + 선제제동 early 메시지 공존용 */
 static osMessageQueueId_t driveQ = NULL;
 
-/* ---- 디버그 미러 (SWD Live Expressions 등록 대상 — 구 main.c에서 이동, 이름 불변) ---- */
-volatile uint16_t dbg_front = 0, dbg_left = 0, dbg_right = 0;   /* 필터 후 거리 cm */
-volatile uint8_t  dbg_front_miss = 0;
-volatile uint32_t dbg_loop_ms = 0;     /* 센서 사이클 1회 소요(ms) — 반응지연 감시 (통상 6~9, 최악 ~51) */
-
-/* IMU(BNO055) 미러: heading/roll/pitch + 상태 */
-volatile float    dbg_heading = 0.0f, dbg_roll = 0.0f, dbg_pitch = 0.0f;
-volatile uint8_t  dbg_imu_ok = 0;      /* BNO055_Init 성공=1 (main.c USER CODE 2에서 기록) */
-volatile uint8_t  dbg_imu_live = 0;    /* 지금 IMU 읽기 신뢰 가능(생존 게이트) — 0이면 제어는 거리-only 강등 */
-volatile uint8_t  dbg_imu_calib = 0;   /* CALIB_STAT: [7:6]sys [5:4]gyr [3:2]acc [1:0]mag(IMU모드라 항상 0) */
-volatile uint32_t dbg_imu_evt = 0;     /* INT(PA0/EXTI0) 발생 카운터 */
-
-/* ---- RTOS 가시성 미러 (신규) ---- */
-volatile uint32_t dbg_q_drop    = 0;   /* 큐 put 실패(가득참) 누적 — 0이어야 정상 */
-volatile uint32_t dbg_q_timeout = 0;   /* MotorTask 큐 수신 timeout 누적 — 센서 파이프라인 침묵 횟수 */
-volatile uint32_t dbg_hw_sensor = 0;   /* SensorTask 스택 high-water [words] — 64 미만이면 스택 증설 */
-volatile uint32_t dbg_hw_motor  = 0;   /* MotorTask 스택 high-water [words] */
+/* ---- 디버그 미러: debug.h의 DebugMonitor_t dbg로 통합 (정의는 drive.c 1곳). 접근 dbg.<member> ---- */
 
 /* ---- 블루투스 원격제어 상태 (BluetoothTask 단일 writer, MotorTask reader) ----
  * 1바이트/int8 원자 접근 → 뮤텍스 불요. volatile = 태스크간 가시성(컴파일러 캐싱 차단) */
@@ -85,7 +70,6 @@ volatile uint8_t sys_mode  = 0;     /* 0=자율주행(Drive_Update) 1=수동(man
 volatile int8_t  manual_left  = 0;  /* 수동 좌 듀티 [-100..100] (+전진 / -후진) */
 volatile int8_t  manual_right = 0;  /* 수동 우 듀티 */
 volatile uint8_t bt_rx_byte   = 0;  /* USART1 1바이트 IT 수신 버퍼 (RxCpltCallback → uartQ) */
-volatile uint32_t dbg_bt_err  = 0;  /* USART1 에러콜백(ORE/FE/NE) 발생·복구 횟수 (SWD 관찰용) */
 
 /* USER CODE END Variables */
 /* Definitions for MotorTask */
@@ -259,10 +243,10 @@ void StartDefaultTask(void *argument)
     }
     else
     {
-      dbg_q_timeout++;
+      dbg.q_timeout++;
       Car_Stop();           /* 센서 침묵 동안 안전 정지. refresh 생략 → 지속 시 IWDG 리셋 */
     }
-    dbg_hw_motor = (uint32_t)uxTaskGetStackHighWaterMark(NULL);
+    dbg.hw_motor = (uint32_t)uxTaskGetStackHighWaterMark(NULL);
   }
 #endif
   /* USER CODE END StartDefaultTask */
@@ -298,28 +282,28 @@ void StartTask02(void *argument)
   static uint32_t t_loop = 0;       /* 사이클 주기 측정 */
   static BNO055_Euler imu;          /* 최근 융합값 (read 실패 시 직전값 유지) */
 
-  uint16_t f = ULTRA_MAX_CM, l = ULTRA_MAX_CM, r = ULTRA_MAX_CM;  /* 필터 출력 (l/r은 early 메시지가 직전값 재사용) */
+  uint16_t f = ULTRA_MAX_CM, l = ULTRA_MAX_CM, r = ULTRA_MAX_CM;  /* 필터 출력 */
   uint16_t d_snap[3];
   uint8_t  v_snap[3];
 
   Ultra_Init(osThreadGetId());      /* TIM3 IC start + 측정 완료 flag 수신자 등록 */
-  imu_live = dbg_imu_ok;            /* Init 성공했을 때만 생존 시작 (실패 시 거리-only 고정) */
+  imu_live = dbg.imu_ok;            /* Init 성공했을 때만 생존 시작 (실패 시 거리-only 고정) */
 
   for(;;)
   {
       uint32_t now = HAL_GetTick();
-      dbg_loop_ms = now - t_loop;   /* 사이클 주기 미러 (반응지연 감시: 통상 6~9ms) */
+      dbg.loop_ms = now - t_loop;   /* 사이클 주기 미러 (반응지연 감시: 통상 6~9ms) */
       t_loop = now;
 
-      /* 1) 정면 측정 → 필터 → 근접 시 'early' 메시지로 선제 제동 진입(코너 반응 앞당김).
-       *    MotorTask가 높은 prio라 put 즉시 선점되어 cruise_run 재평가 → 사이드 측정(~12-30ms)을
-       *    기다리지 않고 BRAKE→SPIN(정지+제자리 피벗) 진입 = 벽 앞에서 더 일찍 정지·회전.
+      /* 1) 정면 측정 → 필터 → 근접 시 'early' 메시지로 선제 반응(전방 제동 반응 앞당김).
+       *    [req1] 관심사 분리: 센서는 제어기 상태(DS_*)를 모름 — f<FRONT_TURN_CM이면 상태 무관 우선 메시지 전송.
+       *    side_valid=0으로 표시해 drive.c가 stale l/r로 코너/측면 판단을 하지 않게 한다. MotorTask 고prio라 put 즉시 선점.
        *    모터 명령 발행자는 MotorTask 하나로 유지 */
       v_snap[0] = Ultra_Measure(0, MEAS_WAIT_MS, &d_snap[0]);    /* front (TRIG PA5, ECHO CH1) */
 
       if (v_snap[0])             { front_miss = 0; }   /* 정지 결정은 drive.c HOLD가 담당 */
       else if (front_miss < 255) { front_miss++; }
-      dbg_front_miss = front_miss;
+      dbg.front_miss = front_miss;
 
       if (v_snap[0])   /* 유효 측정만 hist 푸시 → 무회신을 200(멀다)으로 덮는 fail-open 방지 */
       {
@@ -328,18 +312,19 @@ void StartTask02(void *argument)
       }
       f = min_n(hist[0], FRONT_MIN_WIN);   /* 정면은 최근 FRONT_MIN_WIN개 min (최근접, 지연0, 보수적) */
 
-      if (Drive_GetState() == DS_CRUISE && f < FRONT_TURN_CM)
+      if (f < FRONT_TURN_CM)   /* [req1] 제어기 상태 무관 — 정면 근접이면 항상 early 전송 */
       {
           DriveInputs early;
           early.f          = f;
-          early.l          = l;            /* 직전 사이클 필터값 — 제동 판정엔 f만 쓰임 */
+          early.l          = l;            /* 직전 사이클 필터값 — side_valid=0이므로 측면 판단에는 사용 금지 */
           early.r          = r;
           early.f_valid    = v_snap[0];
+          early.side_valid = 0U;
           early.front_miss = front_miss;
           early.heading    = imu.heading;
-          early.imu_live   = imu_live;
+          early.imu_live   = 0U;           /* 이번 루프 IMU 샘플 전이므로 stale heading 사용 금지 */
           early.now        = HAL_GetTick();
-          if (osMessageQueuePut(driveQ, &early, 0U, 0U) != osOK) { dbg_q_drop++; }
+          if (osMessageQueuePut(driveQ, &early, 0U, 0U) != osOK) { dbg.q_drop++; }
       }
 
       /* 2) 측면 측정 (순차 발사 — 크로스토크 제거) + 필터 */
@@ -364,19 +349,21 @@ void StartTask02(void *argument)
       }
       l = median_n(hist[1], SIDE_MED_WIN);   /* 측면은 median (스파이크 제거 — 윈도=SIDE_MED_WIN, 조향 안정성) */
       r = median_n(hist[2], SIDE_MED_WIN);
-      dbg_front = f; dbg_left = l; dbg_right = r;
+      dbg.front = f; dbg.left = l; dbg.right = r;
 
       /* 3) IMU 샘플 (생존 게이트): 정상 시 매 사이클 heading 갱신. 연속 IMU_FAIL_LIMIT회 실패 →
        *    사망 선언 후 IMU_RETRY_MS 주기로만 재시도 — 죽은 IMU가 사이클마다 I2C timeout(10ms×2)을
        *    태워 반응지연 키우는 것 차단. CalibStatus는 디버그 전용이라 CALIB_POLL_MS 스로틀. */
+      uint8_t imu_ctrl_live = 0U;   /* 이번 제어 프레임에서 새 heading을 읽었을 때만 1 */
       if (imu_live)
       {
           if (BNO055_ReadEuler(&imu))
           {
               imu_fail = 0;
-              dbg_heading = imu.heading;
-              dbg_roll    = imu.roll;
-              dbg_pitch   = imu.pitch;
+              imu_ctrl_live = 1U;
+              dbg.heading = imu.heading;
+              dbg.roll    = imu.roll;
+              dbg.pitch   = imu.pitch;
           }
           else if (++imu_fail >= IMU_FAIL_LIMIT)
           {
@@ -386,17 +373,25 @@ void StartTask02(void *argument)
           if ((now - t_calib) >= CALIB_POLL_MS)
           {
               t_calib = now;
-              dbg_imu_calib = BNO055_ReadCalibStatus();
+              dbg.imu_calib = BNO055_ReadCalibStatus();
           }
       }
-      else if (dbg_imu_ok && (now - t_imu_retry) >= IMU_RETRY_MS)
+      else if (dbg.imu_ok && (now - t_imu_retry) >= IMU_RETRY_MS)
       {
           /* Init 성공 이력 있을 때만 재시도 — Init 실패 상태의 garbage 읽기로 살아있다고
            * 오판하는 것 방지. 버스 wedge는 bno_rd 내부 복구(10회 실패→9클럭)와 협력 */
           t_imu_retry = now;
-          if (BNO055_ReadEuler(&imu)) { imu_live = 1; imu_fail = 0; }
+          if (BNO055_ReadEuler(&imu))
+          {
+              imu_live = 1;
+              imu_fail = 0;
+              imu_ctrl_live = 1U;
+              dbg.heading = imu.heading;
+              dbg.roll    = imu.roll;
+              dbg.pitch   = imu.pitch;
+          }
       }
-      dbg_imu_live = imu_live;
+      dbg.imu_live = imu_ctrl_live;
 
       /* 4) 제어 입력 스냅샷 → 큐 (값 복사 — MotorTask가 IWDG refresh + Drive_Update) */
       DriveInputs din;
@@ -404,13 +399,14 @@ void StartTask02(void *argument)
       din.l          = l;
       din.r          = r;
       din.f_valid    = v_snap[0];
+      din.side_valid = 1U;
       din.front_miss = front_miss;
-      din.heading    = imu.heading;   /* imu_live=0이면 drive.c가 무시(거리-only 강등) */
-      din.imu_live   = imu_live;
+      din.heading    = imu.heading;   /* imu_ctrl_live=0이면 drive.c가 무시(거리-only 강등) */
+      din.imu_live   = imu_ctrl_live;
       din.now        = HAL_GetTick();
-      if (osMessageQueuePut(driveQ, &din, 0U, 0U) != osOK) { dbg_q_drop++; }
+      if (osMessageQueuePut(driveQ, &din, 0U, 0U) != osOK) { dbg.q_drop++; }
 
-      dbg_hw_sensor = (uint32_t)uxTaskGetStackHighWaterMark(NULL);
+      dbg.hw_sensor = (uint32_t)uxTaskGetStackHighWaterMark(NULL);
   }
 #endif
   /* USER CODE END StartTask02 */
@@ -485,7 +481,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     if (GPIO_Pin == IMU_INT_Pin)
     {
-        dbg_imu_evt++;
+        dbg.imu_evt++;
     }
 }
 
@@ -507,12 +503,12 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
  * 이 콜백만 호출 → 여기서 재무장하지 않으면 수신이 영구 정지(리셋 전까지 BT 먹통).
  * 모터 구동 전류로 인한 5V 브라운아웃/라인 노이즈로 바이트가 깨질 때가 트리거.
  * 에러 플래그 클리어 후 1바이트 IT를 다시 무장해 수신이 스스로 복구되게 함
- * (RxCpltCallback의 "무조건 재무장" 패턴과 일관). dbg_bt_err = SWD 관찰용 카운터. */
+ * (RxCpltCallback의 "무조건 재무장" 패턴과 일관). dbg.bt_err = SWD 관찰용 카운터. */
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == USART1)
     {
-        dbg_bt_err++;
+        dbg.bt_err++;
         __HAL_UART_CLEAR_OREFLAG(&huart1);   /* SR read + DR read로 ORE 해제 */
         __HAL_UART_CLEAR_NEFLAG(&huart1);
         __HAL_UART_CLEAR_FEFLAG(&huart1);

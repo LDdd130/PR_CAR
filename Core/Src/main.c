@@ -31,6 +31,7 @@
 #include "motor.h"   /* Motor_Init + Error_Handler의 Car_Stop */
 #include "bno055.h"
 #include "drive.h"   /* Drive_Init. 튜닝 노브 블록도 drive.h 단일 유지 */
+#include "debug.h"   /* DebugMonitor_t dbg (dbg.imu_ok 기록) */
 
 /* USER CODE END Includes */
 
@@ -59,9 +60,7 @@
 
 /* USER CODE BEGIN PV */
 
-/* 디버그 미러(dbg_*)는 전부 이전됨: 측정/IMU → freertos.c, 제어 상태 → drive.c.
- * dbg_imu_ok만 여기서 기록(BNO055_Init 결과) — 정의는 freertos.c */
-extern volatile uint8_t dbg_imu_ok;
+/* 디버그 미러는 debug.h의 DebugMonitor_t dbg로 통합 (정의 drive.c). dbg.imu_ok만 여기서 기록 */
 
 /* USER CODE END PV */
 
@@ -124,7 +123,7 @@ int main(void)
   /* BNO055는 커널 시작 전에 초기화(HAL_Delay ~800ms) — pre-kernel이라 결정적·안전.
    * 실패해도 주행은 계속(거리-only). IWDG 예산: 위 MX_IWDG_Init(2.048s) 시동 후
    * 본 Init ~800ms + 커널 기동 + SensorTask 첫 사이클(수십ms) → MotorTask 첫 refresh까지 여유 */
-  dbg_imu_ok = BNO055_Init() ? 1 : 0;   /* RST→CHIP_ID 확인→IMU모드 */
+  dbg.imu_ok = BNO055_Init() ? 1 : 0;   /* RST→CHIP_ID 확인→IMU모드 */
 
   /* IWDG 이중 호출 무해(2.048s 재장전). CubeMX가 위쪽 생성부에서 이미 시작했어도,
    * BNO055 대기 직후 재장전해 두면 커널 기동 구간 예산이 최대로 확보됨 */

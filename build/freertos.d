@@ -40,7 +40,7 @@ build/freertos.o: Core/Src/freertos.c \
  Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os.h \
  Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.h \
  Core/Inc/iwdg.h Core/Inc/main.h Core/Inc/motor.h Core/Inc/drive.h \
- Core/Inc/bno055.h Core/Inc/ultra.h Core/Inc/usart.h
+ Core/Inc/debug.h Core/Inc/bno055.h Core/Inc/ultra.h Core/Inc/usart.h
 Middlewares/Third_Party/FreeRTOS/Source/include/FreeRTOS.h:
 Core/Inc/FreeRTOSConfig.h:
 Middlewares/Third_Party/FreeRTOS/Source/include/projdefs.h:
@@ -88,6 +88,7 @@ Core/Inc/iwdg.h:
 Core/Inc/main.h:
 Core/Inc/motor.h:
 Core/Inc/drive.h:
+Core/Inc/debug.h:
 Core/Inc/bno055.h:
 Core/Inc/ultra.h:
 Core/Inc/usart.h:
