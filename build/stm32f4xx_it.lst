@@ -1,4 +1,4 @@
-ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 1
+ARM GAS  /tmp/ccd3FJvv.s 			page 1
 
 
    1              		.cpu cortex-m4
@@ -58,7 +58,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 1
   28:Core/Src/stm32f4xx_it.c **** /* USER CODE END Includes */
   29:Core/Src/stm32f4xx_it.c **** 
   30:Core/Src/stm32f4xx_it.c **** /* Private typedef -----------------------------------------------------------*/
-ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 2
+ARM GAS  /tmp/ccd3FJvv.s 			page 2
 
 
   31:Core/Src/stm32f4xx_it.c **** /* USER CODE BEGIN TD */
@@ -118,7 +118,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 1
   75:Core/Src/stm32f4xx_it.c ****   /* USER CODE BEGIN NonMaskableInt_IRQn 0 */
   76:Core/Src/stm32f4xx_it.c ****   Car_Stop();   /* HSE CSS 실패 등 NMI 시 모터 런어웨이 방지 (폴트 핸들러와 동�
   39              		.loc 1 76 3 view .LVU1
-ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 3
+ARM GAS  /tmp/ccd3FJvv.s 			page 3
 
 
   40 0002 FFF7FEFF 		bl	Car_Stop
@@ -178,7 +178,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 1
   74              		.loc 1 97 3 view .LVU8
   93:Core/Src/stm32f4xx_it.c ****   {
   75              		.loc 1 93 9 view .LVU9
-ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 4
+ARM GAS  /tmp/ccd3FJvv.s 			page 4
 
 
   76 0006 FEE7     		b	.L5
@@ -238,7 +238,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 1
  118              	.LFB141:
  113:Core/Src/stm32f4xx_it.c **** }
  114:Core/Src/stm32f4xx_it.c **** 
-ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 5
+ARM GAS  /tmp/ccd3FJvv.s 			page 5
 
 
  115:Core/Src/stm32f4xx_it.c **** /**
@@ -298,7 +298,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 1
  154 0000 08B5     		push	{r3, lr}
  155              	.LCFI4:
  156              		.cfi_def_cfa_offset 8
-ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 6
+ARM GAS  /tmp/ccd3FJvv.s 			page 6
 
 
  157              		.cfi_offset 3, -8
@@ -358,7 +358,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 1
  191              		.global	SysTick_Handler
  192              		.syntax unified
  193              		.thumb
-ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 7
+ARM GAS  /tmp/ccd3FJvv.s 			page 7
 
 
  194              		.thumb_func
@@ -418,7 +418,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 1
  226              		.cfi_endproc
  227              	.LFE144:
  229              		.section	.text.EXTI0_IRQHandler,"ax",%progbits
-ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 8
+ARM GAS  /tmp/ccd3FJvv.s 			page 8
 
 
  230              		.align	1
@@ -478,7 +478,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 1
  201:Core/Src/stm32f4xx_it.c **** /**
  202:Core/Src/stm32f4xx_it.c ****   * @brief This function handles TIM3 global interrupt.
  203:Core/Src/stm32f4xx_it.c ****   */
-ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 9
+ARM GAS  /tmp/ccd3FJvv.s 			page 9
 
 
  204:Core/Src/stm32f4xx_it.c **** void TIM3_IRQHandler(void)
@@ -538,7 +538,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 1
  220:Core/Src/stm32f4xx_it.c ****   /* USER CODE BEGIN USART1_IRQn 0 */
  221:Core/Src/stm32f4xx_it.c **** 
  222:Core/Src/stm32f4xx_it.c ****   /* USER CODE END USART1_IRQn 0 */
-ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 10
+ARM GAS  /tmp/ccd3FJvv.s 			page 10
 
 
  223:Core/Src/stm32f4xx_it.c ****   HAL_UART_IRQHandler(&huart1);
@@ -560,56 +560,50 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 1
  316              	.LFE147:
  318              		.text
  319              	.Letext0:
- 320              		.file 2 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
- 321              		.file 3 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
- 322              		.file 4 "Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f411xe.h"
- 323              		.file 5 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_def.h"
- 324              		.file 6 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_dma.h"
- 325              		.file 7 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h"
- 326              		.file 8 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h"
- 327              		.file 9 "Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F/portmacro.h"
- 328              		.file 10 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_gpio.h"
- 329              		.file 11 "Core/Inc/FreeRTOSConfig.h"
- 330              		.file 12 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h"
- 331              		.file 13 "Core/Inc/motor.h"
- 332              		.file 14 "Middlewares/Third_Party/FreeRTOS/Source/include/task.h"
-ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 11
+ 320              		.file 2 "/usr/lib/gcc/arm-none-eabi/13.2.1/include/stdint.h"
+ 321              		.file 3 "Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f411xe.h"
+ 322              		.file 4 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_def.h"
+ 323              		.file 5 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_dma.h"
+ 324              		.file 6 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h"
+ 325              		.file 7 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h"
+ 326              		.file 8 "Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F/portmacro.h"
+ 327              		.file 9 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_gpio.h"
+ 328              		.file 10 "Core/Inc/FreeRTOSConfig.h"
+ 329              		.file 11 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h"
+ 330              		.file 12 "Core/Inc/motor.h"
+ 331              		.file 13 "Middlewares/Third_Party/FreeRTOS/Source/include/task.h"
+ARM GAS  /tmp/ccd3FJvv.s 			page 11
 
 
 DEFINED SYMBOLS
                             *ABS*:00000000 stm32f4xx_it.c
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:21     .text.NMI_Handler:00000000 $t
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:27     .text.NMI_Handler:00000000 NMI_Handler
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:51     .text.HardFault_Handler:00000000 $t
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:57     .text.HardFault_Handler:00000000 HardFault_Handler
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:81     .text.MemManage_Handler:00000000 $t
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:87     .text.MemManage_Handler:00000000 MemManage_Handler
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:111    .text.BusFault_Handler:00000000 $t
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:117    .text.BusFault_Handler:00000000 BusFault_Handler
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:141    .text.UsageFault_Handler:00000000 $t
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:147    .text.UsageFault_Handler:00000000 UsageFault_Handler
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:171    .text.DebugMon_Handler:00000000 $t
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:177    .text.DebugMon_Handler:00000000 DebugMon_Handler
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:190    .text.SysTick_Handler:00000000 $t
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:196    .text.SysTick_Handler:00000000 SysTick_Handler
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:230    .text.EXTI0_IRQHandler:00000000 $t
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:236    .text.EXTI0_IRQHandler:00000000 EXTI0_IRQHandler
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:257    .text.TIM3_IRQHandler:00000000 $t
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:263    .text.TIM3_IRQHandler:00000000 TIM3_IRQHandler
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:283    .text.TIM3_IRQHandler:0000000c $d
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:288    .text.USART1_IRQHandler:00000000 $t
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:294    .text.USART1_IRQHandler:00000000 USART1_IRQHandler
-C:\Users\user\AppData\Local\Temp\cc67XL1c.s:314    .text.USART1_IRQHandler:0000000c $d
-                           .group:00000000 wm4.0.3e3bd4fae48ed4285b9fe9ad79008a8e
+     /tmp/ccd3FJvv.s:21     .text.NMI_Handler:00000000 $t
+     /tmp/ccd3FJvv.s:27     .text.NMI_Handler:00000000 NMI_Handler
+     /tmp/ccd3FJvv.s:51     .text.HardFault_Handler:00000000 $t
+     /tmp/ccd3FJvv.s:57     .text.HardFault_Handler:00000000 HardFault_Handler
+     /tmp/ccd3FJvv.s:81     .text.MemManage_Handler:00000000 $t
+     /tmp/ccd3FJvv.s:87     .text.MemManage_Handler:00000000 MemManage_Handler
+     /tmp/ccd3FJvv.s:111    .text.BusFault_Handler:00000000 $t
+     /tmp/ccd3FJvv.s:117    .text.BusFault_Handler:00000000 BusFault_Handler
+     /tmp/ccd3FJvv.s:141    .text.UsageFault_Handler:00000000 $t
+     /tmp/ccd3FJvv.s:147    .text.UsageFault_Handler:00000000 UsageFault_Handler
+     /tmp/ccd3FJvv.s:171    .text.DebugMon_Handler:00000000 $t
+     /tmp/ccd3FJvv.s:177    .text.DebugMon_Handler:00000000 DebugMon_Handler
+     /tmp/ccd3FJvv.s:190    .text.SysTick_Handler:00000000 $t
+     /tmp/ccd3FJvv.s:196    .text.SysTick_Handler:00000000 SysTick_Handler
+     /tmp/ccd3FJvv.s:230    .text.EXTI0_IRQHandler:00000000 $t
+     /tmp/ccd3FJvv.s:236    .text.EXTI0_IRQHandler:00000000 EXTI0_IRQHandler
+     /tmp/ccd3FJvv.s:257    .text.TIM3_IRQHandler:00000000 $t
+     /tmp/ccd3FJvv.s:263    .text.TIM3_IRQHandler:00000000 TIM3_IRQHandler
+     /tmp/ccd3FJvv.s:283    .text.TIM3_IRQHandler:0000000c $d
+     /tmp/ccd3FJvv.s:288    .text.USART1_IRQHandler:00000000 $t
+     /tmp/ccd3FJvv.s:294    .text.USART1_IRQHandler:00000000 USART1_IRQHandler
+     /tmp/ccd3FJvv.s:314    .text.USART1_IRQHandler:0000000c $d
+                           .group:00000000 wm4.0.2990dd1d9de167bdf17825c6c7518e18
                            .group:00000000 wm4.stm32f4xx_hal_conf.h.25.0e66e2bdd1e693edb8cfdc624d1a6bd4
                            .group:00000000 wm4.stm32f4xx.h.38.63e3ea23bd63a94457417730025259b6
                            .group:00000000 wm4.stm32f411xe.h.34.f2908321cbbda12187706c23063bbc28
-                           .group:00000000 wm4._newlib_version.h.4.0eb654b64686e2bd29646258853f6c22
-                           .group:00000000 wm4.features.h.33.d554620bb17bd3b714c3fb5c268772bc
-                           .group:00000000 wm4._default_types.h.15.247e5cd201eca3442cbf5404108c4935
-                           .group:00000000 wm4._intsup.h.10.48bafbb683905c4daa4565a85aeeb264
-                           .group:00000000 wm4._stdint.h.10.c24fa3af3bc1706662bb5593a907e841
-                           .group:00000000 wm4.stdint.h.23.d53047a68f4a85177f80b422d52785ed
+                           .group:00000000 wm4.stdint.h.29.6d480f4ba0f60596e88234283d42444f
                            .group:00000000 wm4.cmsis_version.h.32.0ac195c83bb4537824e6ad1c47474b79
                            .group:00000000 wm4.core_cm4.h.66.e4ff136c4a17abc46741866f64f8e729
                            .group:00000000 wm4.cmsis_gcc.h.26.498d0ad17a45fc9ef20fdc01caf02259
@@ -618,7 +612,7 @@ C:\Users\user\AppData\Local\Temp\cc67XL1c.s:314    .text.USART1_IRQHandler:00000
                            .group:00000000 wm4.stm32f411xe.h.636.37cf950cfbbaac9e193dbe2b79c3e749
                            .group:00000000 wm4.stm32f4xx.h.195.a4b8bf80f37cc96981498656ffe5f588
                            .group:00000000 wm4.stm32_hal_legacy.h.22.8b7d303dc46a0b7ac6d3edf19ce2608d
-                           .group:00000000 wm4.stddef.h.39.811583f327f35b0df7808fda70b062a0
+                           .group:00000000 wm4.stddef.h.39.0dc9006b34572d4d9cae4c8b422c4971
                            .group:00000000 wm4.stm32f4xx_hal_def.h.58.3cb484e92e5ccf2e55312a4714e27917
                            .group:00000000 wm4.stm32f4xx_hal_rcc_ex.h.20.6bc7ed2ae7969e22afc815a811faa8ee
                            .group:00000000 wm4.stm32f4xx_hal_rcc.h.106.0887cf5d985ae88e345b0aed0ceb4729
@@ -633,38 +627,41 @@ C:\Users\user\AppData\Local\Temp\cc67XL1c.s:314    .text.USART1_IRQHandler:00000
                            .group:00000000 wm4.stm32f4xx_hal_flash_ex.h.20.2abe4a01ce8028804a922735defa62fd
                            .group:00000000 wm4.stm32f4xx_hal_flash.h.361.23bc19b9eac79b0956d913651841ede8
                            .group:00000000 wm4.stm32f4xx_hal_i2c.h.21.147e96a27b1f7b1f2f8ee22132703ee3
-ARM GAS  C:\Users\user\AppData\Local\Temp\cc67XL1c.s 			page 12
-
-
                            .group:00000000 wm4.stm32f4xx_hal_i2c_ex.h.21.951ef5bfa13cf131d2015c338e82e461
                            .group:00000000 wm4.stm32f4xx_hal_i2c.h.647.ade9c3447780b1cc0ece02f0ce83aedc
                            .group:00000000 wm4.stm32f4xx_hal_iwdg.h.21.6227ccfbb99238d6637d6fd22341e211
                            .group:00000000 wm4.stm32f4xx_hal_pwr.h.20.1905a0783a9c83adefd7df0c4b501e40
                            .group:00000000 wm4.stm32f4xx_hal_pwr_ex.h.20.68994c4c23e76d9aeabea12988d5ec3f
+ARM GAS  /tmp/ccd3FJvv.s 			page 12
+
+
                            .group:00000000 wm4.stm32f4xx_hal_pwr.h.338.debc0a4a62ba54688e63ab53dd99c4ea
                            .group:00000000 wm4.stm32f4xx_hal_tim.h.21.c31cbc03c25f07a932427770396c59d2
                            .group:00000000 wm4.stm32f4xx_hal_tim_ex.h.21.918fa7fcd405cc3ba11632ed1d07a240
                            .group:00000000 wm4.stm32f4xx_hal_uart.h.21.ba8e24dd05c77faac3f3d48472e636ba
                            .group:00000000 wm4.stm32f4xx_hal.h.71.02372bc31d47d29d3f67fbfe1429649e
-                           .group:00000000 wm4.main.h.60.43ab73d02ecae73036be54daa58e8549
+                           .group:00000000 wm4.main.h.66.d4d281037744f6f3dbef7ed1ab6c26f3
                            .group:00000000 wm4.FreeRTOSConfig.h.32.ee5fbadc0004c265a3895b3d7cbc1e86
                            .group:00000000 wm4.projdefs.h.29.3472c8470d131a5f474bc7437ea94609
                            .group:00000000 wm4.portmacro.h.30.ebb5f3ce711e1dad21b3172c9bc8e19f
                            .group:00000000 wm4.portable.h.64.742f2ce568820e866a7b541b4c77966f
                            .group:00000000 wm4.mpu_wrappers.h.29.4f9aea82ee68d943d141825e5294de63
-                           .group:00000000 wm4.newlib.h.7.decd5b9657e2c5df625d9eac6e10520c
-                           .group:00000000 wm4.ieeefp.h.77.61a77db5804869b1dadd307a77cf78c9
+                           .group:00000000 wm4._newlib_version.h.4.411db44ea2338a62eca2f0777f81481b
+                           .group:00000000 wm4.newlib.h.27.07bf1b8b16da454ae07478107717878b
+                           .group:00000000 wm4.ieeefp.h.77.5ad60f72ea25fc152400b550ac118212
+                           .group:00000000 wm4.features.h.22.4e5514d51694f64cae235f84d9e565a5
                            .group:00000000 wm4.config.h.224.10ee1ad185d877c6e334e6581faab44d
                            .group:00000000 wm4._ansi.h.31.de524f58584151836e90d8620a16f8e8
-                           .group:00000000 wm4.cdefs.h.49.56fd742369e655e7e8a7e365e706e208
+                           .group:00000000 wm4._default_types.h.6.959254cf5f09734ea7516c89e8bb21bd
+                           .group:00000000 wm4.cdefs.h.49.70fc7af612f78ddcace70fdd90b5623b
                            .group:00000000 wm4._types.h.20.dd0d04dca3800a0d2a6129b87f3adbb2
-                           .group:00000000 wm4.stddef.h.173.4903093a50a8482cb062b176ea61fac3
+                           .group:00000000 wm4.stddef.h.158.6f8e08a347b1cff664332fa350bfceb3
                            .group:00000000 wm4._types.h.127.3bdfe3ff8ea2d0985b03d9cbe93480e3
                            .group:00000000 wm4.reent.h.18.25503cdc8b7e55dd0d6ea7b3e5af7a03
-                           .group:00000000 wm4.lock.h.2.1461d1fff82dffe8bfddc23307f6484f
-                           .group:00000000 wm4.reent.h.78.6d702f69a6d6435d2dbe915b10150b1a
+                           .group:00000000 wm4.lock.h.2.c0958401bd0ce484d507ee19aacab817
+                           .group:00000000 wm4.reent.h.78.7f0775353a33c852a1479c008f68cd03
                            .group:00000000 wm4.reent.h.96.88022c5a22979c33a20a5d76964119ed
-                           .group:00000000 wm4.stddef.h.173.1cea4f16a943c8e875db6791959c3141
+                           .group:00000000 wm4.stddef.h.158.eec8bf00b5213f43d095cb984c5f22e3
                            .group:00000000 wm4.FreeRTOS.h.136.a17c2bf78722c1d7b86ba8d45e5b5f29
                            .group:00000000 wm4.list.h.61.5c5a38f6bc6687eed6d893e57dabd8e6
                            .group:00000000 wm4.task.h.46.9fb92b2c1a30a52e436f6063552b709b

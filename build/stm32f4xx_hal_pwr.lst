@@ -1,4 +1,4 @@
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
+ARM GAS  /tmp/ccyWU5UZ.s 			page 1
 
 
    1              		.cpu cortex-m4
@@ -58,7 +58,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
   28:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   */
   29:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c **** 
   30:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c **** /** @defgroup PWR PWR
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 2
+ARM GAS  /tmp/ccyWU5UZ.s 			page 2
 
 
   31:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   * @brief PWR HAL module driver
@@ -118,7 +118,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
   85:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c **** 
   86:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c **** /**
   87:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   * @brief Deinitializes the HAL PWR peripheral registers to their default reset values.
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 3
+ARM GAS  /tmp/ccyWU5UZ.s 			page 3
 
 
   88:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   * @retval None
@@ -178,7 +178,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
   63              		@ args = 0, pretend = 0, frame = 8
   64              		@ frame_needed = 0, uses_anonymous_args = 0
   65              		@ link register save eliminated.
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 4
+ARM GAS  /tmp/ccyWU5UZ.s 			page 4
 
 
   66 0000 82B0     		sub	sp, sp, #8
@@ -238,7 +238,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  126:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   * @retval None
  127:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   */
  128:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c **** void HAL_PWR_DisableBkUpAccess(void)
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 5
+ARM GAS  /tmp/ccyWU5UZ.s 			page 5
 
 
  129:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c **** {
@@ -298,7 +298,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  139:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c **** 
  140:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c **** /** @defgroup PWR_Exported_Functions_Group2 Peripheral Control functions 
  141:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   *  @brief Low Power modes configuration functions 
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 6
+ARM GAS  /tmp/ccyWU5UZ.s 			page 6
 
 
  142:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   *
@@ -358,7 +358,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  196:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****    *** Stop mode ***
  197:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****    =================
  198:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****     [..]
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 7
+ARM GAS  /tmp/ccyWU5UZ.s 			page 7
 
 
  199:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****       In Stop mode, all clocks in the 1.2V domain are stopped, the PLL, the HSI,
@@ -418,7 +418,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  253:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****               configure the RTC to generate the RTC alarm using the HAL_RTC_SetAlarm_IT() function.
  254:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c **** 
  255:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****         (++) To wake up from the Stop mode with an RTC Tamper or time stamp event, it 
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 8
+ARM GAS  /tmp/ccyWU5UZ.s 			page 8
 
 
  256:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****              is necessary to configure the RTC to detect the tamper or time stamp event using the
@@ -478,7 +478,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  287:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   __HAL_PWR_PVD_EXTI_DISABLE_RISING_EDGE();
  175              		.loc 1 287 3 view .LVU28
  176 0020 9A68     		ldr	r2, [r3, #8]
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 9
+ARM GAS  /tmp/ccyWU5UZ.s 			page 9
 
 
  177 0022 22F48032 		bic	r2, r2, #65536
@@ -538,7 +538,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  213              		.loc 1 305 5 is_stmt 1 view .LVU41
  214 005c 084A     		ldr	r2, .L17+4
  215 005e 9368     		ldr	r3, [r2, #8]
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 10
+ARM GAS  /tmp/ccyWU5UZ.s 			page 10
 
 
  216 0060 43F48033 		orr	r3, r3, #65536
@@ -598,7 +598,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  257 0000 014B     		ldr	r3, .L20
  258 0002 0122     		movs	r2, #1
  259 0004 1A61     		str	r2, [r3, #16]
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 11
+ARM GAS  /tmp/ccyWU5UZ.s 			page 11
 
 
  321:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c **** }
@@ -658,7 +658,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  332:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c **** /**
  333:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   * @brief Enables the Wake-up PINx functionality.
  334:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   * @param WakeUpPinx Specifies the Power Wake-Up pin to enable.
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 12
+ARM GAS  /tmp/ccyWU5UZ.s 			page 12
 
 
  335:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   *         This parameter can be one of the following values:
@@ -718,7 +718,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  337              		.loc 1 360 1 is_stmt 1 view -0
  338              		.cfi_startproc
  339              		@ args = 0, pretend = 0, frame = 0
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 13
+ARM GAS  /tmp/ccyWU5UZ.s 			page 13
 
 
  340              		@ frame_needed = 0, uses_anonymous_args = 0
@@ -778,7 +778,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  390:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   */
  391:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c **** void HAL_PWR_EnterSLEEPMode(uint32_t Regulator, uint8_t SLEEPEntry)
  392:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c **** {
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 14
+ARM GAS  /tmp/ccyWU5UZ.s 			page 14
 
 
  367              		.loc 1 392 1 is_stmt 1 view -0
@@ -838,7 +838,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  398              		.syntax unified
  399              	.L34:
  416:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****     }
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 15
+ARM GAS  /tmp/ccyWU5UZ.s 			page 15
 
 
  417:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c **** 
@@ -898,7 +898,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  437:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   *          This parameter can be one of the following values:
  438:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   *            @arg PWR_STOPENTRY_WFI              : Enter Stop mode with WFI instruction 
  439:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   *            @arg PWR_STOPENTRY_WFE              : Enter Stop mode with WFE instruction and
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 16
+ARM GAS  /tmp/ccyWU5UZ.s 			page 16
 
 
  440:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   *                                                  clear of pending events before.
@@ -958,7 +958,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  468:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****       __SEV();
  461              		.loc 1 468 7 is_stmt 1 view .LVU86
  462              		.syntax unified
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 17
+ARM GAS  /tmp/ccyWU5UZ.s 			page 17
 
 
  463              	@ 468 "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c" 1
@@ -1018,7 +1018,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  509              		.thumb
  510              		.thumb_func
  512              	HAL_PWR_EnterSTANDBYMode:
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 18
+ARM GAS  /tmp/ccyWU5UZ.s 			page 18
 
 
  513              	.LFB144:
@@ -1078,7 +1078,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  541 0018 00700040 		.word	1073770496
  542 001c 00ED00E0 		.word	-536810240
  543              		.cfi_endproc
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 19
+ARM GAS  /tmp/ccyWU5UZ.s 			page 19
 
 
  544              	.LFE144:
@@ -1138,7 +1138,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  573              	.LFB145:
  510:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   /* Check PWR Exti flag */
  574              		.loc 1 510 1 view -0
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 20
+ARM GAS  /tmp/ccyWU5UZ.s 			page 20
 
 
  575              		.cfi_startproc
@@ -1198,7 +1198,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  537:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   *       Setting this bit is useful when the processor is expected to run only on
  538:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   *       interruptions handling.         
  539:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   * @retval None
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 21
+ARM GAS  /tmp/ccyWU5UZ.s 			page 21
 
 
  540:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   */
@@ -1258,7 +1258,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  657              		.loc 1 557 1 is_stmt 0 view .LVU112
  658 000a 7047     		bx	lr
  659              	.L60:
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 22
+ARM GAS  /tmp/ccyWU5UZ.s 			page 22
 
 
  660              		.align	2
@@ -1318,7 +1318,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  573:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   * @note Clears SEVONPEND bit of SCR register. When this bit is set, this causes 
  574:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   *       WFE to wake up when an interrupt moves from inactive to pended.         
  575:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   * @retval None
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 23
+ARM GAS  /tmp/ccyWU5UZ.s 			page 23
 
 
  576:Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c ****   */
@@ -1347,80 +1347,74 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 1
  720              	.LFE150:
  722              		.text
  723              	.Letext0:
- 724              		.file 2 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
- 725              		.file 3 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
- 726              		.file 4 "Drivers/CMSIS/Include/core_cm4.h"
- 727              		.file 5 "Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f411xe.h"
- 728              		.file 6 "Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f4xx.h"
- 729              		.file 7 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_pwr.h"
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 24
+ 724              		.file 2 "/usr/lib/gcc/arm-none-eabi/13.2.1/include/stdint.h"
+ 725              		.file 3 "Drivers/CMSIS/Include/core_cm4.h"
+ 726              		.file 4 "Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f411xe.h"
+ 727              		.file 5 "Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f4xx.h"
+ 728              		.file 6 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_pwr.h"
+ARM GAS  /tmp/ccyWU5UZ.s 			page 24
 
 
 DEFINED SYMBOLS
                             *ABS*:00000000 stm32f4xx_hal_pwr.c
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:21     .text.HAL_PWR_DeInit:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:27     .text.HAL_PWR_DeInit:00000000 HAL_PWR_DeInit
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:48     .text.HAL_PWR_DeInit:00000014 $d
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:53     .text.HAL_PWR_EnableBkUpAccess:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:59     .text.HAL_PWR_EnableBkUpAccess:00000000 HAL_PWR_EnableBkUpAccess
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:92     .text.HAL_PWR_EnableBkUpAccess:00000014 $d
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:98     .text.HAL_PWR_DisableBkUpAccess:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:104    .text.HAL_PWR_DisableBkUpAccess:00000000 HAL_PWR_DisableBkUpAccess
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:137    .text.HAL_PWR_DisableBkUpAccess:00000014 $d
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:143    .text.HAL_PWR_ConfigPVD:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:149    .text.HAL_PWR_ConfigPVD:00000000 HAL_PWR_ConfigPVD
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:236    .text.HAL_PWR_ConfigPVD:0000007c $d
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:242    .text.HAL_PWR_EnablePVD:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:248    .text.HAL_PWR_EnablePVD:00000000 HAL_PWR_EnablePVD
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:265    .text.HAL_PWR_EnablePVD:00000008 $d
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:270    .text.HAL_PWR_DisablePVD:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:276    .text.HAL_PWR_DisablePVD:00000000 HAL_PWR_DisablePVD
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:293    .text.HAL_PWR_DisablePVD:00000008 $d
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:298    .text.HAL_PWR_EnableWakeUpPin:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:304    .text.HAL_PWR_EnableWakeUpPin:00000000 HAL_PWR_EnableWakeUpPin
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:323    .text.HAL_PWR_EnableWakeUpPin:0000000c $d
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:328    .text.HAL_PWR_DisableWakeUpPin:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:334    .text.HAL_PWR_DisableWakeUpPin:00000000 HAL_PWR_DisableWakeUpPin
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:353    .text.HAL_PWR_DisableWakeUpPin:0000000c $d
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:358    .text.HAL_PWR_EnterSLEEPMode:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:364    .text.HAL_PWR_EnterSLEEPMode:00000000 HAL_PWR_EnterSLEEPMode
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:421    .text.HAL_PWR_EnterSLEEPMode:00000020 $d
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:426    .text.HAL_PWR_EnterSTOPMode:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:432    .text.HAL_PWR_EnterSTOPMode:00000000 HAL_PWR_EnterSTOPMode
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:500    .text.HAL_PWR_EnterSTOPMode:00000034 $d
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:506    .text.HAL_PWR_EnterSTANDBYMode:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:512    .text.HAL_PWR_EnterSTANDBYMode:00000000 HAL_PWR_EnterSTANDBYMode
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:541    .text.HAL_PWR_EnterSTANDBYMode:00000018 $d
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:547    .text.HAL_PWR_PVDCallback:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:553    .text.HAL_PWR_PVDCallback:00000000 HAL_PWR_PVDCallback
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:566    .text.HAL_PWR_PVD_IRQHandler:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:572    .text.HAL_PWR_PVD_IRQHandler:00000000 HAL_PWR_PVD_IRQHandler
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:606    .text.HAL_PWR_PVD_IRQHandler:0000001c $d
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:611    .text.HAL_PWR_EnableSleepOnExit:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:617    .text.HAL_PWR_EnableSleepOnExit:00000000 HAL_PWR_EnableSleepOnExit
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:634    .text.HAL_PWR_EnableSleepOnExit:0000000c $d
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:639    .text.HAL_PWR_DisableSleepOnExit:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:645    .text.HAL_PWR_DisableSleepOnExit:00000000 HAL_PWR_DisableSleepOnExit
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:662    .text.HAL_PWR_DisableSleepOnExit:0000000c $d
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:667    .text.HAL_PWR_EnableSEVOnPend:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:673    .text.HAL_PWR_EnableSEVOnPend:00000000 HAL_PWR_EnableSEVOnPend
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:690    .text.HAL_PWR_EnableSEVOnPend:0000000c $d
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:695    .text.HAL_PWR_DisableSEVOnPend:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:701    .text.HAL_PWR_DisableSEVOnPend:00000000 HAL_PWR_DisableSEVOnPend
-C:\Users\user\AppData\Local\Temp\ccr05SDt.s:718    .text.HAL_PWR_DisableSEVOnPend:0000000c $d
-                           .group:00000000 wm4.0.3e3bd4fae48ed4285b9fe9ad79008a8e
+     /tmp/ccyWU5UZ.s:21     .text.HAL_PWR_DeInit:00000000 $t
+     /tmp/ccyWU5UZ.s:27     .text.HAL_PWR_DeInit:00000000 HAL_PWR_DeInit
+     /tmp/ccyWU5UZ.s:48     .text.HAL_PWR_DeInit:00000014 $d
+     /tmp/ccyWU5UZ.s:53     .text.HAL_PWR_EnableBkUpAccess:00000000 $t
+     /tmp/ccyWU5UZ.s:59     .text.HAL_PWR_EnableBkUpAccess:00000000 HAL_PWR_EnableBkUpAccess
+     /tmp/ccyWU5UZ.s:92     .text.HAL_PWR_EnableBkUpAccess:00000014 $d
+     /tmp/ccyWU5UZ.s:98     .text.HAL_PWR_DisableBkUpAccess:00000000 $t
+     /tmp/ccyWU5UZ.s:104    .text.HAL_PWR_DisableBkUpAccess:00000000 HAL_PWR_DisableBkUpAccess
+     /tmp/ccyWU5UZ.s:137    .text.HAL_PWR_DisableBkUpAccess:00000014 $d
+     /tmp/ccyWU5UZ.s:143    .text.HAL_PWR_ConfigPVD:00000000 $t
+     /tmp/ccyWU5UZ.s:149    .text.HAL_PWR_ConfigPVD:00000000 HAL_PWR_ConfigPVD
+     /tmp/ccyWU5UZ.s:236    .text.HAL_PWR_ConfigPVD:0000007c $d
+     /tmp/ccyWU5UZ.s:242    .text.HAL_PWR_EnablePVD:00000000 $t
+     /tmp/ccyWU5UZ.s:248    .text.HAL_PWR_EnablePVD:00000000 HAL_PWR_EnablePVD
+     /tmp/ccyWU5UZ.s:265    .text.HAL_PWR_EnablePVD:00000008 $d
+     /tmp/ccyWU5UZ.s:270    .text.HAL_PWR_DisablePVD:00000000 $t
+     /tmp/ccyWU5UZ.s:276    .text.HAL_PWR_DisablePVD:00000000 HAL_PWR_DisablePVD
+     /tmp/ccyWU5UZ.s:293    .text.HAL_PWR_DisablePVD:00000008 $d
+     /tmp/ccyWU5UZ.s:298    .text.HAL_PWR_EnableWakeUpPin:00000000 $t
+     /tmp/ccyWU5UZ.s:304    .text.HAL_PWR_EnableWakeUpPin:00000000 HAL_PWR_EnableWakeUpPin
+     /tmp/ccyWU5UZ.s:323    .text.HAL_PWR_EnableWakeUpPin:0000000c $d
+     /tmp/ccyWU5UZ.s:328    .text.HAL_PWR_DisableWakeUpPin:00000000 $t
+     /tmp/ccyWU5UZ.s:334    .text.HAL_PWR_DisableWakeUpPin:00000000 HAL_PWR_DisableWakeUpPin
+     /tmp/ccyWU5UZ.s:353    .text.HAL_PWR_DisableWakeUpPin:0000000c $d
+     /tmp/ccyWU5UZ.s:358    .text.HAL_PWR_EnterSLEEPMode:00000000 $t
+     /tmp/ccyWU5UZ.s:364    .text.HAL_PWR_EnterSLEEPMode:00000000 HAL_PWR_EnterSLEEPMode
+     /tmp/ccyWU5UZ.s:421    .text.HAL_PWR_EnterSLEEPMode:00000020 $d
+     /tmp/ccyWU5UZ.s:426    .text.HAL_PWR_EnterSTOPMode:00000000 $t
+     /tmp/ccyWU5UZ.s:432    .text.HAL_PWR_EnterSTOPMode:00000000 HAL_PWR_EnterSTOPMode
+     /tmp/ccyWU5UZ.s:500    .text.HAL_PWR_EnterSTOPMode:00000034 $d
+     /tmp/ccyWU5UZ.s:506    .text.HAL_PWR_EnterSTANDBYMode:00000000 $t
+     /tmp/ccyWU5UZ.s:512    .text.HAL_PWR_EnterSTANDBYMode:00000000 HAL_PWR_EnterSTANDBYMode
+     /tmp/ccyWU5UZ.s:541    .text.HAL_PWR_EnterSTANDBYMode:00000018 $d
+     /tmp/ccyWU5UZ.s:547    .text.HAL_PWR_PVDCallback:00000000 $t
+     /tmp/ccyWU5UZ.s:553    .text.HAL_PWR_PVDCallback:00000000 HAL_PWR_PVDCallback
+     /tmp/ccyWU5UZ.s:566    .text.HAL_PWR_PVD_IRQHandler:00000000 $t
+     /tmp/ccyWU5UZ.s:572    .text.HAL_PWR_PVD_IRQHandler:00000000 HAL_PWR_PVD_IRQHandler
+     /tmp/ccyWU5UZ.s:606    .text.HAL_PWR_PVD_IRQHandler:0000001c $d
+     /tmp/ccyWU5UZ.s:611    .text.HAL_PWR_EnableSleepOnExit:00000000 $t
+     /tmp/ccyWU5UZ.s:617    .text.HAL_PWR_EnableSleepOnExit:00000000 HAL_PWR_EnableSleepOnExit
+     /tmp/ccyWU5UZ.s:634    .text.HAL_PWR_EnableSleepOnExit:0000000c $d
+     /tmp/ccyWU5UZ.s:639    .text.HAL_PWR_DisableSleepOnExit:00000000 $t
+     /tmp/ccyWU5UZ.s:645    .text.HAL_PWR_DisableSleepOnExit:00000000 HAL_PWR_DisableSleepOnExit
+     /tmp/ccyWU5UZ.s:662    .text.HAL_PWR_DisableSleepOnExit:0000000c $d
+     /tmp/ccyWU5UZ.s:667    .text.HAL_PWR_EnableSEVOnPend:00000000 $t
+     /tmp/ccyWU5UZ.s:673    .text.HAL_PWR_EnableSEVOnPend:00000000 HAL_PWR_EnableSEVOnPend
+     /tmp/ccyWU5UZ.s:690    .text.HAL_PWR_EnableSEVOnPend:0000000c $d
+     /tmp/ccyWU5UZ.s:695    .text.HAL_PWR_DisableSEVOnPend:00000000 $t
+     /tmp/ccyWU5UZ.s:701    .text.HAL_PWR_DisableSEVOnPend:00000000 HAL_PWR_DisableSEVOnPend
+     /tmp/ccyWU5UZ.s:718    .text.HAL_PWR_DisableSEVOnPend:0000000c $d
+                           .group:00000000 wm4.0.2990dd1d9de167bdf17825c6c7518e18
                            .group:00000000 wm4.stm32f4xx_hal_conf.h.25.0e66e2bdd1e693edb8cfdc624d1a6bd4
                            .group:00000000 wm4.stm32f4xx.h.38.63e3ea23bd63a94457417730025259b6
                            .group:00000000 wm4.stm32f411xe.h.34.f2908321cbbda12187706c23063bbc28
-                           .group:00000000 wm4._newlib_version.h.4.0eb654b64686e2bd29646258853f6c22
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccr05SDt.s 			page 25
+                           .group:00000000 wm4.stdint.h.29.6d480f4ba0f60596e88234283d42444f
+ARM GAS  /tmp/ccyWU5UZ.s 			page 25
 
 
-                           .group:00000000 wm4.features.h.33.d554620bb17bd3b714c3fb5c268772bc
-                           .group:00000000 wm4._default_types.h.15.247e5cd201eca3442cbf5404108c4935
-                           .group:00000000 wm4._intsup.h.10.48bafbb683905c4daa4565a85aeeb264
-                           .group:00000000 wm4._stdint.h.10.c24fa3af3bc1706662bb5593a907e841
-                           .group:00000000 wm4.stdint.h.23.d53047a68f4a85177f80b422d52785ed
                            .group:00000000 wm4.cmsis_version.h.32.0ac195c83bb4537824e6ad1c47474b79
                            .group:00000000 wm4.core_cm4.h.66.e4ff136c4a17abc46741866f64f8e729
                            .group:00000000 wm4.cmsis_gcc.h.26.498d0ad17a45fc9ef20fdc01caf02259
@@ -1429,7 +1423,7 @@ C:\Users\user\AppData\Local\Temp\ccr05SDt.s:718    .text.HAL_PWR_DisableSEVOnPen
                            .group:00000000 wm4.stm32f411xe.h.636.37cf950cfbbaac9e193dbe2b79c3e749
                            .group:00000000 wm4.stm32f4xx.h.195.a4b8bf80f37cc96981498656ffe5f588
                            .group:00000000 wm4.stm32_hal_legacy.h.22.8b7d303dc46a0b7ac6d3edf19ce2608d
-                           .group:00000000 wm4.stddef.h.39.811583f327f35b0df7808fda70b062a0
+                           .group:00000000 wm4.stddef.h.39.0dc9006b34572d4d9cae4c8b422c4971
                            .group:00000000 wm4.stm32f4xx_hal_def.h.58.3cb484e92e5ccf2e55312a4714e27917
                            .group:00000000 wm4.stm32f4xx_hal_rcc_ex.h.20.6bc7ed2ae7969e22afc815a811faa8ee
                            .group:00000000 wm4.stm32f4xx_hal_rcc.h.106.0887cf5d985ae88e345b0aed0ceb4729

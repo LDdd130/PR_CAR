@@ -1,0 +1,872 @@
+{
+  ".claude/settings.json": {
+    "mtime": 1782897591.0342054,
+    "ast_hash": "e51077b6a7f1f67afc748f1a32a1557d",
+    "semantic_hash": ""
+  },
+  ".codex-plugins/caveman/.codex-plugin/plugin.json": {
+    "mtime": 1782895783.532111,
+    "ast_hash": "9d520ea08c2719064226097e28570453",
+    "semantic_hash": ""
+  },
+  ".codex/hooks.json": {
+    "mtime": 1782897598.931453,
+    "ast_hash": "75a53a91123e15321a05aa7b6e96598a",
+    "semantic_hash": ""
+  },
+  ".settings/bundles-lock.store.json": {
+    "mtime": 1783149358.3413756,
+    "ast_hash": "4e86b72b5c9be9496db2ca43d13da900",
+    "semantic_hash": ""
+  },
+  ".settings/bundles.store.json": {
+    "mtime": 1783149358.3413756,
+    "ast_hash": "2098ad8c716b0db6eaccb69733381303",
+    "semantic_hash": ""
+  },
+  ".settings/ide.store.json": {
+    "mtime": 1782895957.9812033,
+    "ast_hash": "fdb9c1d293811152e54b0531962018ee",
+    "semantic_hash": ""
+  },
+  ".vscode/c_cpp_properties.json": {
+    "mtime": 1783149357.0231779,
+    "ast_hash": "f2192ceb80c89fb68cad15885bd793de",
+    "semantic_hash": ""
+  },
+  ".vscode/settings.json": {
+    "mtime": 1782895961.8422232,
+    "ast_hash": "bedf5cb8f60d26d53970bf906e84109a",
+    "semantic_hash": ""
+  },
+  "CMakePresets.json": {
+    "mtime": 1782895920.4344628,
+    "ast_hash": "dc763926ab6f5de9a3a7efe8a89742fb",
+    "semantic_hash": ""
+  },
+  "Core/Inc/FreeRTOSConfig.h": {
+    "mtime": 1782895919.261,
+    "ast_hash": "adef405f09347e147c34497bf0e976cb",
+    "semantic_hash": ""
+  },
+  "Core/Inc/bno055.h": {
+    "mtime": 1782895783.5343451,
+    "ast_hash": "07069b7caabb2a8018ca3fd111a77e3c",
+    "semantic_hash": ""
+  },
+  "Core/Inc/debug.h": {
+    "mtime": 1782907146.7657542,
+    "ast_hash": "789855dd2c7db7b87ba728666dd0a824",
+    "semantic_hash": ""
+  },
+  "Core/Inc/delay.h": {
+    "mtime": 1782895783.534495,
+    "ast_hash": "eecdb022cae764fd15579ae6dfd702c6",
+    "semantic_hash": ""
+  },
+  "Core/Inc/drive.h": {
+    "mtime": 1783151138.177313,
+    "ast_hash": "144c8585b6c0cc1c111511dcdd940d28",
+    "semantic_hash": ""
+  },
+  "Core/Inc/gpio.h": {
+    "mtime": 1782895918.434,
+    "ast_hash": "8f8f0410e0509c4b0ca7724d68ae503b",
+    "semantic_hash": ""
+  },
+  "Core/Inc/i2c.h": {
+    "mtime": 1782895919.398,
+    "ast_hash": "afe8d5a094f17b89e53e5d511768817e",
+    "semantic_hash": ""
+  },
+  "Core/Inc/iwdg.h": {
+    "mtime": 1782895919.486,
+    "ast_hash": "39fddbfba06bee4c7ae6bff871dd7ab0",
+    "semantic_hash": ""
+  },
+  "Core/Inc/main.h": {
+    "mtime": 1783073736.0368302,
+    "ast_hash": "f7e119e1577c5cf8d64ff85d35364ce1",
+    "semantic_hash": ""
+  },
+  "Core/Inc/motor.h": {
+    "mtime": 1782895783.536193,
+    "ast_hash": "676068ce106b01b1fdc6cc6abd1ed9d5",
+    "semantic_hash": ""
+  },
+  "Core/Inc/stm32f4xx_hal_conf.h": {
+    "mtime": 1782895919.881,
+    "ast_hash": "a33ecb4c187d87c71ba6a411c36e514a",
+    "semantic_hash": ""
+  },
+  "Core/Inc/stm32f4xx_it.h": {
+    "mtime": 1782895919.75,
+    "ast_hash": "80a49f2f6592c19b8177686bd1d04d30",
+    "semantic_hash": ""
+  },
+  "Core/Inc/tim.h": {
+    "mtime": 1782895919.581,
+    "ast_hash": "7750c20d6165ea904cf93a04fb583e17",
+    "semantic_hash": ""
+  },
+  "Core/Inc/ultra.h": {
+    "mtime": 1783073548.7236881,
+    "ast_hash": "2b5ec40d6e4cd903b1d200dc382f1dd2",
+    "semantic_hash": ""
+  },
+  "Core/Inc/usart.h": {
+    "mtime": 1782895919.669,
+    "ast_hash": "36c7e6671ccc1edd3ff458d2464df641",
+    "semantic_hash": ""
+  },
+  "Core/Src/bno055.c": {
+    "mtime": 1782895783.5370977,
+    "ast_hash": "a2464f98d889358df53f760ef6f77cb1",
+    "semantic_hash": ""
+  },
+  "Core/Src/delay.c": {
+    "mtime": 1782895783.5372581,
+    "ast_hash": "35af992e260d4616d9d51c2caef63d17",
+    "semantic_hash": ""
+  },
+  "Core/Src/drive.c": {
+    "mtime": 1783151346.2909114,
+    "ast_hash": "e929212f12365b4926b198df7e1a69e0",
+    "semantic_hash": ""
+  },
+  "Core/Src/freertos.c": {
+    "mtime": 1783075993.250505,
+    "ast_hash": "116a572d7f8e8daf343eb5e79de87bbc",
+    "semantic_hash": ""
+  },
+  "Core/Src/gpio.c": {
+    "mtime": 1783073144.612,
+    "ast_hash": "48448705fd3ce68d8fbe97fb0c1c4388",
+    "semantic_hash": ""
+  },
+  "Core/Src/i2c.c": {
+    "mtime": 1782895919.362,
+    "ast_hash": "95f8b6834ffdd6880a5d00a87454f0de",
+    "semantic_hash": ""
+  },
+  "Core/Src/iwdg.c": {
+    "mtime": 1782895919.449,
+    "ast_hash": "c207756a789cee24cbcfe75034db52d0",
+    "semantic_hash": ""
+  },
+  "Core/Src/main.c": {
+    "mtime": 1782895920.004,
+    "ast_hash": "ab258d016c74acda43bee6d3b552091a",
+    "semantic_hash": ""
+  },
+  "Core/Src/motor.c": {
+    "mtime": 1782895783.5393708,
+    "ast_hash": "627d4ffef4bc191dcf27f3a28d40b8a1",
+    "semantic_hash": ""
+  },
+  "Core/Src/stm32f4xx_hal_msp.c": {
+    "mtime": 1782895919.804,
+    "ast_hash": "be46a5dfb37a191b7134ffaf38d34b60",
+    "semantic_hash": ""
+  },
+  "Core/Src/stm32f4xx_it.c": {
+    "mtime": 1782895919.714,
+    "ast_hash": "2ade82801b8200e3f7e3873afc07efa1",
+    "semantic_hash": ""
+  },
+  "Core/Src/syscalls.c": {
+    "mtime": 1782895783.5397384,
+    "ast_hash": "78a7ebc7b089df863fb60627d3edafdd",
+    "semantic_hash": ""
+  },
+  "Core/Src/sysmem.c": {
+    "mtime": 1782895783.5398507,
+    "ast_hash": "adf6197087da1dd63a34fb7f79d06a18",
+    "semantic_hash": ""
+  },
+  "Core/Src/system_stm32f4xx.c": {
+    "mtime": 1782895783.5401797,
+    "ast_hash": "11cb35f1d37d0560c4f1d09511a51049",
+    "semantic_hash": ""
+  },
+  "Core/Src/tim.c": {
+    "mtime": 1783073146.167,
+    "ast_hash": "c4572624f5c1d34999957883cefafcb1",
+    "semantic_hash": ""
+  },
+  "Core/Src/ultra.c": {
+    "mtime": 1783073582.7109358,
+    "ast_hash": "5e399aa0fe47252b16ec20da319404b1",
+    "semantic_hash": ""
+  },
+  "Core/Src/usart.c": {
+    "mtime": 1782895919.633,
+    "ast_hash": "71ee45f060523aacf8435abfba328834",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f411xe.h": {
+    "mtime": 1783073146.8731694,
+    "ast_hash": "7b69982bf93478009e8c258206cae58f",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f4xx.h": {
+    "mtime": 1783073146.8743856,
+    "ast_hash": "33eaa4b7917ee4becb3e25ecba90e211",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Device/ST/STM32F4xx/Include/system_stm32f4xx.h": {
+    "mtime": 1783073146.8746002,
+    "ast_hash": "f417cbebe84eebfbde54f160ae4b30c8",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/cachel1_armv7.h": {
+    "mtime": 1783073146.8775134,
+    "ast_hash": "3ca6f13eca8ba832bce97ebc5d65a787",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/cmsis_armcc.h": {
+    "mtime": 1783073146.8851714,
+    "ast_hash": "ad50079cf74fb6a99622ad0f47bdc66d",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/cmsis_armclang.h": {
+    "mtime": 1783073146.8899677,
+    "ast_hash": "9bad9983fad8d05248c76b638ed3f19c",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/cmsis_armclang_ltm.h": {
+    "mtime": 1783073146.8789375,
+    "ast_hash": "7f013eba3df6b279fdee2c4670ad239a",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/cmsis_compiler.h": {
+    "mtime": 1783073146.8896005,
+    "ast_hash": "0e29be67b6b6797424cc0051821a5aac",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/cmsis_gcc.h": {
+    "mtime": 1783073146.8773232,
+    "ast_hash": "d77b75733274714dc3429dbc0cd35f4f",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/cmsis_iccarm.h": {
+    "mtime": 1783073146.8793495,
+    "ast_hash": "4f3c51f0f127abda524c318048ee1efc",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/cmsis_version.h": {
+    "mtime": 1783073146.8832953,
+    "ast_hash": "4d1478bdc703e7712834fb798c29a5d7",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/core_armv81mml.h": {
+    "mtime": 1783073146.8780336,
+    "ast_hash": "92bb654a1111b1060193a4783bc97a07",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/core_armv8mbl.h": {
+    "mtime": 1783073146.8837647,
+    "ast_hash": "b118eefe7e556f7c5ab656ba472bc6e1",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/core_armv8mml.h": {
+    "mtime": 1783073146.8842907,
+    "ast_hash": "b3c3ab2b6f5dc79ed3b4d8033f34388e",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/core_cm0.h": {
+    "mtime": 1783073146.880502,
+    "ast_hash": "3da60937604dd39bd7b4c584a936b1f9",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/core_cm0plus.h": {
+    "mtime": 1783073146.8857858,
+    "ast_hash": "897df19c9d5c9f41f0fcf56c1478f842",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/core_cm1.h": {
+    "mtime": 1783073146.884885,
+    "ast_hash": "7454d4fd659125c736fa2e4d1761ce46",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/core_cm23.h": {
+    "mtime": 1783073146.8863194,
+    "ast_hash": "f16b1e670736414b10152ee96e0acf9a",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/core_cm3.h": {
+    "mtime": 1783073146.8809628,
+    "ast_hash": "470efa7be9a14f761f4d23caaa50fe33",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/core_cm33.h": {
+    "mtime": 1783073146.8816595,
+    "ast_hash": "1cf3742dac45b634a950e6ea0a325203",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/core_cm35p.h": {
+    "mtime": 1783073146.8764784,
+    "ast_hash": "06d42b357706eeec3217512d45c8dd44",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/core_cm4.h": {
+    "mtime": 1783073146.8881774,
+    "ast_hash": "0b50476c9eb684ea3d9e3c1c08aa24bd",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/core_cm55.h": {
+    "mtime": 1783073146.888745,
+    "ast_hash": "fe98a4c9794e32570a870aedc94814f6",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/core_cm7.h": {
+    "mtime": 1783073146.879862,
+    "ast_hash": "b8ae6368d8dd8b0a000665864188ed2e",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/core_cm85.h": {
+    "mtime": 1783073146.8825412,
+    "ast_hash": "f47c58880e85160047e46753a461c5fa",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/core_sc000.h": {
+    "mtime": 1783073146.8866763,
+    "ast_hash": "cb5e6c36fbaeb81cf18a8831e4f018ed",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/core_sc300.h": {
+    "mtime": 1783073146.8904605,
+    "ast_hash": "71e9efb303991e50413a5f69c5d74b11",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/core_starmc1.h": {
+    "mtime": 1783073146.8873422,
+    "ast_hash": "bee825fb30818bc07c4b74f95aa31db3",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/mpu_armv7.h": {
+    "mtime": 1783073146.881164,
+    "ast_hash": "8fd9e958bd86ab599b779ed02e9014a8",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/mpu_armv8.h": {
+    "mtime": 1783073146.8868883,
+    "ast_hash": "71f6ad8ef3cd89b959feb7a01ed7c927",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/pac_armv81.h": {
+    "mtime": 1783073146.8791146,
+    "ast_hash": "4c023eca368b8520ce68d89d20de3b8c",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/pmu_armv8.h": {
+    "mtime": 1783073146.8853989,
+    "ast_hash": "dba99f7e3e159983bf8ef284f6efd12a",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Include/tz_context.h": {
+    "mtime": 1783073146.8759801,
+    "ast_hash": "1ca54eba7e2aab696bbe179aaedc1734",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/Legacy/stm32_hal_legacy.h": {
+    "mtime": 1783073146.8706512,
+    "ast_hash": "e3011720e52f6e45daa4b968e71b3fa3",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h": {
+    "mtime": 1783073146.8706512,
+    "ast_hash": "d184b237ea19cafdc00a2403b35497ba",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_cortex.h": {
+    "mtime": 1783073146.8706512,
+    "ast_hash": "355900255a6cb269392bb00f2d587ba9",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_def.h": {
+    "mtime": 1783073146.8706512,
+    "ast_hash": "f7e732d1c8a9331347de50a4a5da0667",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_dma.h": {
+    "mtime": 1783073146.8704474,
+    "ast_hash": "4aa504c0f6db36ff7ec493579f81cf2d",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_dma_ex.h": {
+    "mtime": 1783073146.8704474,
+    "ast_hash": "bc0cc52ef2a92e3b550c2364589cd871",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_exti.h": {
+    "mtime": 1783073146.8706512,
+    "ast_hash": "5b64b370740d9c380898e761f74989b1",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_flash.h": {
+    "mtime": 1783073146.870226,
+    "ast_hash": "e4f44f3af7541a3698cdb0a1ca9c4084",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_flash_ex.h": {
+    "mtime": 1783073146.870226,
+    "ast_hash": "a32c744be7258ab430b3c659e224bae6",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_flash_ramfunc.h": {
+    "mtime": 1783073146.870226,
+    "ast_hash": "2976f0d08f65d6edbb6d17e4256371ce",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_gpio.h": {
+    "mtime": 1783073146.870226,
+    "ast_hash": "2442b457ee8fac9eabda0625d5b0689b",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_gpio_ex.h": {
+    "mtime": 1783073146.8704474,
+    "ast_hash": "a4e09e6c8ad0c0b578bc751eeeb6f4ed",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_i2c.h": {
+    "mtime": 1783073146.8706512,
+    "ast_hash": "36ac57fb1b21e5e15148a8a30bdea065",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_i2c_ex.h": {
+    "mtime": 1783073146.8711934,
+    "ast_hash": "13fb9d1f0b40fd699090d83c42ea3430",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_iwdg.h": {
+    "mtime": 1783073146.8711934,
+    "ast_hash": "88271f50158d084d30da6333436b12ab",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_pwr.h": {
+    "mtime": 1783073146.8706512,
+    "ast_hash": "bd0e5de84785fa3e2bcb332d6c2f7835",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_pwr_ex.h": {
+    "mtime": 1783073146.8706512,
+    "ast_hash": "b1ea5176e6d2dae0c91aa5b737f9ac32",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_rcc.h": {
+    "mtime": 1783073146.869827,
+    "ast_hash": "be7ea16f4d96516de50d8982b8834b22",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_rcc_ex.h": {
+    "mtime": 1783073146.869899,
+    "ast_hash": "6ae8d57de4560377685ebd86c1d033de",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h": {
+    "mtime": 1783073146.8713405,
+    "ast_hash": "86ab3d3bb22752e953cc15a469fa1a8b",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim_ex.h": {
+    "mtime": 1783073146.8714037,
+    "ast_hash": "4773901b7830c4fca25f6c9b7676943c",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h": {
+    "mtime": 1783073146.8714037,
+    "ast_hash": "b11a63c8c5c2329ca9c25625fbbb7e4e",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_ll_bus.h": {
+    "mtime": 1783073146.8700387,
+    "ast_hash": "0d7245f14886afedc06720b06e93608b",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_ll_cortex.h": {
+    "mtime": 1783073146.8706512,
+    "ast_hash": "85d9e3483951b8d5c0516591c6120081",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_ll_dma.h": {
+    "mtime": 1783073146.8706512,
+    "ast_hash": "36a5342f97a0517bcd43063c4868e171",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_ll_exti.h": {
+    "mtime": 1783073146.8706512,
+    "ast_hash": "8c13ac8aa637ac54001c6f35954f5a08",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_ll_gpio.h": {
+    "mtime": 1783073146.8704474,
+    "ast_hash": "efb7e3edfe176a53899c26991b1145e1",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_ll_i2c.h": {
+    "mtime": 1783073146.8711934,
+    "ast_hash": "58a16aefeb3e4eccead31615acc393de",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_ll_iwdg.h": {
+    "mtime": 1783073146.8711934,
+    "ast_hash": "5bd9a5530edc2998704932b4a02abf06",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_ll_pwr.h": {
+    "mtime": 1783073146.8706512,
+    "ast_hash": "16de0924882859692c622362e5207a8f",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_ll_rcc.h": {
+    "mtime": 1783073146.870111,
+    "ast_hash": "b9f382bbc84319d41160f9fdf9e13f17",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_ll_system.h": {
+    "mtime": 1783073146.870226,
+    "ast_hash": "ed2db0a56aa282ff68201bdc056fd5a1",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_ll_tim.h": {
+    "mtime": 1783073146.8714037,
+    "ast_hash": "bf4b5f8f38c41d4a643e0d21d8f0297b",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_ll_usart.h": {
+    "mtime": 1783073146.8715467,
+    "ast_hash": "05326fb27479e16ae3c8b8cedc3b095d",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_ll_utils.h": {
+    "mtime": 1783073146.870226,
+    "ast_hash": "672b3d3255441f1714281fa0cb1f5e2e",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.c": {
+    "mtime": 1783073146.8619254,
+    "ast_hash": "4679acaf92cd90e55cec7714c189f1c6",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_cortex.c": {
+    "mtime": 1783073146.8617113,
+    "ast_hash": "2fab62d8db0c1466183c8e777cbcdfd7",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dma.c": {
+    "mtime": 1783073146.8610518,
+    "ast_hash": "fdf1ea5de948cfd25c886d0c50e4a5c4",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dma_ex.c": {
+    "mtime": 1783073146.860789,
+    "ast_hash": "a010cb1d3a8e82d50cfcb36a9afdce7a",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_exti.c": {
+    "mtime": 1783073146.8621516,
+    "ast_hash": "2472a903a212ccd1ddf7ac661f828963",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash.c": {
+    "mtime": 1783073146.85975,
+    "ast_hash": "06151f43bafa82120b20340aa5a88e3b",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash_ex.c": {
+    "mtime": 1783073146.8601387,
+    "ast_hash": "fa8d0f8b52b3db2a92fdbf5efa1693f3",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash_ramfunc.c": {
+    "mtime": 1783073146.86038,
+    "ast_hash": "724cc324d524cdaa79481c2e5b780a12",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_gpio.c": {
+    "mtime": 1783073146.8606086,
+    "ast_hash": "5965d7c875cf8f5ab9dc567ed178cc04",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_i2c.c": {
+    "mtime": 1783073146.8626633,
+    "ast_hash": "9460fda3441eb12c174075bfc3243f86",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_i2c_ex.c": {
+    "mtime": 1783073146.8634093,
+    "ast_hash": "d72446d392039ddb89bed534b1e66cf9",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_iwdg.c": {
+    "mtime": 1783073146.8635805,
+    "ast_hash": "73fcbdad9f657718957dbe254cd1377b",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c": {
+    "mtime": 1783073146.8612866,
+    "ast_hash": "e340b529521f263a623b265e8e938ce5",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr_ex.c": {
+    "mtime": 1783073146.8614926,
+    "ast_hash": "4215a57c12af9cc7ec4777f81520478b",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc.c": {
+    "mtime": 1783073146.8571694,
+    "ast_hash": "393a60082d9622a3eaecde9e894a35c7",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc_ex.c": {
+    "mtime": 1783073146.8581696,
+    "ast_hash": "45138b0e4ae345ad65aa3526ab2ce1e7",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim.c": {
+    "mtime": 1783073146.864105,
+    "ast_hash": "cf48f057fc03f189eb1cc198b8936fe2",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim_ex.c": {
+    "mtime": 1783073146.8641696,
+    "ast_hash": "b5587d22c2a710017c0c3b05e535882e",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.c": {
+    "mtime": 1783073146.865596,
+    "ast_hash": "3126b13c79bd155fa79b1cc78f97f9ed",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os.h": {
+    "mtime": 1783073146.8721333,
+    "ast_hash": "61b322d17e5c51494983f63fbdcaca37",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.c": {
+    "mtime": 1783073146.86923,
+    "ast_hash": "8988856276b40fbb2cf485ebc74c216c",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.h": {
+    "mtime": 1783073146.8721333,
+    "ast_hash": "a03c86c3b1bece2e447df34643aafc0b",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/freertos_mpool.h": {
+    "mtime": 1783073146.8721333,
+    "ast_hash": "d31de8d32c31cdee9c31e43afd82d17d",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/freertos_os2.h": {
+    "mtime": 1783073146.8721333,
+    "ast_hash": "a26347dee643c433caa7b4b33535826f",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/croutine.c": {
+    "mtime": 1783073146.865997,
+    "ast_hash": "324efe873d198e018e17b09861be2f77",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/event_groups.c": {
+    "mtime": 1783073146.866252,
+    "ast_hash": "e4feb4714ef0e03599d251e524523476",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/include/FreeRTOS.h": {
+    "mtime": 1783073146.8715467,
+    "ast_hash": "05695ef107fc6a4aefa8bc9f14d8a018",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/include/StackMacros.h": {
+    "mtime": 1783073146.8715467,
+    "ast_hash": "159a063ba39bfb91c6dac869fc025e1e",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/include/atomic.h": {
+    "mtime": 1783073146.8721333,
+    "ast_hash": "07b9f239630dd9cef6310614527778fa",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/include/croutine.h": {
+    "mtime": 1783073146.8715467,
+    "ast_hash": "39e1e0cdf91d8871ee974d9e1242e9ce",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/include/deprecated_definitions.h": {
+    "mtime": 1783073146.8715467,
+    "ast_hash": "fcca417a1e48d284540051243896872a",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/include/event_groups.h": {
+    "mtime": 1783073146.8715467,
+    "ast_hash": "9277169a4ded2c94fe584fafc31c6a86",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/include/list.h": {
+    "mtime": 1783073146.8715467,
+    "ast_hash": "32966c16d63cc02c3c2085bb611d99cf",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/include/message_buffer.h": {
+    "mtime": 1783073146.8715467,
+    "ast_hash": "cc63a8ace5179fdf5951943e7b9cb6ab",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/include/mpu_prototypes.h": {
+    "mtime": 1783073146.8715467,
+    "ast_hash": "9e3c83d669c1e09d83e9b34bdf365b34",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/include/mpu_wrappers.h": {
+    "mtime": 1783073146.8715467,
+    "ast_hash": "d2688d98e17963916dd58c8a54d2ef3c",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/include/portable.h": {
+    "mtime": 1783073146.8715467,
+    "ast_hash": "e840e66f546b20c0566f6a36dce43f25",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/include/projdefs.h": {
+    "mtime": 1783073146.8715467,
+    "ast_hash": "97308171ff91a1a07099a569c05b3eb7",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/include/queue.h": {
+    "mtime": 1783073146.8715467,
+    "ast_hash": "9ae99e0593f6fb04bc9aa05c6a5d4566",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/include/semphr.h": {
+    "mtime": 1783073146.8715467,
+    "ast_hash": "b2aeb1e4bbd2c332c4eea4bd961f873d",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/include/stack_macros.h": {
+    "mtime": 1783073146.8715467,
+    "ast_hash": "1a7266bdd60ee58649971f5fb9486021",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/include/stream_buffer.h": {
+    "mtime": 1783073146.8715467,
+    "ast_hash": "ae50000d54739a2fecfda69d560b86af",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/include/task.h": {
+    "mtime": 1783073146.8721333,
+    "ast_hash": "d32690b14c9d0468891bf5e050752363",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/include/timers.h": {
+    "mtime": 1783073146.8721333,
+    "ast_hash": "6c03cb4f5c43f4e8195fac8aa7087e34",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/list.c": {
+    "mtime": 1783073146.8665721,
+    "ast_hash": "37dd2e62432352aebec83527568c6a95",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F/port.c": {
+    "mtime": 1783073146.8694706,
+    "ast_hash": "1aa31963b59d374ee2096bbebeac12d0",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F/portmacro.h": {
+    "mtime": 1783073146.8721333,
+    "ast_hash": "2f588c676c107f3d951beafdb8be240c",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang/heap_4.c": {
+    "mtime": 1783073146.8694706,
+    "ast_hash": "d99d733b61c082b91d4b48dfb4c17242",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/queue.c": {
+    "mtime": 1783073146.8670661,
+    "ast_hash": "09d9203a1eed33c92b33443d5d63bae9",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/stream_buffer.c": {
+    "mtime": 1783073146.8674715,
+    "ast_hash": "d7a0df783d17f04994644d67f713714c",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/tasks.c": {
+    "mtime": 1783073146.8680043,
+    "ast_hash": "3077f31cd8847126f862071429f26fca",
+    "semantic_hash": ""
+  },
+  "Middlewares/Third_Party/FreeRTOS/Source/timers.c": {
+    "mtime": 1783073146.868774,
+    "ast_hash": "5a863362583252b1bb248767fbee5205",
+    "semantic_hash": ""
+  },
+  ".codex-plugins/caveman/skills/caveman/SKILL.md": {
+    "mtime": 1782895783.5325565,
+    "ast_hash": "9d11dbae464c2f942cd51d4462db33d6",
+    "semantic_hash": ""
+  },
+  "AGENTS.md": {
+    "mtime": 1782897598.9311597,
+    "ast_hash": "6a47d64fcc136324ca395065a707ef76",
+    "semantic_hash": ""
+  },
+  "CLAUDE.md": {
+    "mtime": 1782897591.0333893,
+    "ast_hash": "82efb97a359f5c7290bf2513d14686be",
+    "semantic_hash": ""
+  },
+  "CMakeLists.txt": {
+    "mtime": 1783073797.0758495,
+    "ast_hash": "4fc34d025726d887fb90c953351fc8ed",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/Device/ST/STM32F4xx/LICENSE.txt": {
+    "mtime": 1783073146.837868,
+    "ast_hash": "f096e61439c29f0f6f3ed28d02a71b4c",
+    "semantic_hash": ""
+  },
+  "Drivers/CMSIS/LICENSE.txt": {
+    "mtime": 1783073146.838025,
+    "ast_hash": "e3fc50a88d0a364313df4b21ef20c29e",
+    "semantic_hash": ""
+  },
+  "Drivers/STM32F4xx_HAL_Driver/LICENSE.txt": {
+    "mtime": 1783073146.8372343,
+    "ast_hash": "f6e600c452070fd272885c362ef73853",
+    "semantic_hash": ""
+  },
+  "cmake/stm32cubemx/CMakeLists.txt": {
+    "mtime": 1783073147.2985106,
+    "ast_hash": "fc2b7e77644c74be84d017bbef7d81b5",
+    "semantic_hash": ""
+  },
+  "Core/Inc/vl53l0x.h": {
+    "mtime": 1783075974.5319467,
+    "ast_hash": "de166f2e2ed6c7f03ce978ce3e474a50",
+    "semantic_hash": ""
+  },
+  "Core/Src/vl53l0x.c": {
+    "mtime": 1783075970.2588098,
+    "ast_hash": "f5c915cecf3eb5fd188dc46120517ae4",
+    "semantic_hash": ""
+  },
+  ".vscode/launch.json": {
+    "mtime": 1783074236.7358565,
+    "ast_hash": "e9ded7b78034427515c5b2ff9dca4507",
+    "semantic_hash": ""
+  },
+  "HANDOVER.md": {
+    "mtime": 1783150009.466824,
+    "ast_hash": "1fde7e4f3487ba02dde1fd3408112b82",
+    "semantic_hash": ""
+  },
+  "IMG_2986.mov": {
+    "mtime": 1783149802.10805,
+    "ast_hash": "f7853eb25a1f7a1f9833e5fcb30506c7",
+    "semantic_hash": ""
+  }
+}

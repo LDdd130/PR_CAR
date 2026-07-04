@@ -22,7 +22,7 @@ typedef struct
 {
     /* --- 제어 상태 (구 drive.c) --- */
     uint8_t  state;        /* DriveState 0 CRUISE/1 BRAKE/2 SPIN/3 REVERSE/4 HOLD/5 SIDE_AVOID/6 CORNER */
-    uint8_t  steer_mode;   /* 0 양벽 / 1 좌벽 / 2 우벽 / 3 heading-hold / 4 open-loop */
+    uint8_t  steer_mode;   /* 0 양벽 / 3 heading-hold / 4 open-loop / 5 단일벽 추종 */
     float    steer;        /* 조향량 u [%duty], + = 좌조향 */
     int16_t  duty_l;       /* CRUISE 좌 바퀴 듀티 (데드밴드 침범 감시) */
     int16_t  duty_r;       /* CRUISE 우 바퀴 듀티 */

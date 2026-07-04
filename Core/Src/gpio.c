@@ -50,7 +50,7 @@ void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, TRIG_RIGHT_Pin|TRIG_LEFT_Pin|TRIG_FRONT_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, TOF_LEFT_XSHUT_Pin|TOF_RIGHT_XSHUT_Pin|TRIG_FRONT_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(IMU_RST_GPIO_Port, IMU_RST_Pin, GPIO_PIN_SET);
@@ -64,8 +64,8 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(IMU_INT_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : TRIG_RIGHT_Pin TRIG_LEFT_Pin TRIG_FRONT_Pin */
-  GPIO_InitStruct.Pin = TRIG_RIGHT_Pin|TRIG_LEFT_Pin|TRIG_FRONT_Pin;
+  /*Configure GPIO pins : TOF_LEFT_XSHUT_Pin TOF_RIGHT_XSHUT_Pin TRIG_FRONT_Pin */
+  GPIO_InitStruct.Pin = TOF_LEFT_XSHUT_Pin|TOF_RIGHT_XSHUT_Pin|TRIG_FRONT_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;

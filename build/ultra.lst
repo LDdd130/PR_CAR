@@ -1,4 +1,4 @@
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 1
+ARM GAS  /tmp/ccYjTY1a.s 			page 1
 
 
    1              		.cpu cortex-m4
@@ -33,1587 +33,922 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 1
    2:Core/Src/ultra.c **** /**
    3:Core/Src/ultra.c ****   ******************************************************************************
    4:Core/Src/ultra.c ****   * @file    ultra.c
-   5:Core/Src/ultra.c ****   * @brief   HC-SR04 3채널 측정 구현 — TIM3 입력캡처 ISR + 순차 발사 + RTOS flag �
-   6:Core/Src/ultra.c ****   *          (구 main.c의 측정 경로를 모듈로 분리: 캡처 콜백/TRIG 테이블/Ultra_M
-   7:Core/Src/ultra.c ****   ******************************************************************************
-   8:Core/Src/ultra.c ****   */
-   9:Core/Src/ultra.c **** /* USER CODE END Header */
-  10:Core/Src/ultra.c **** 
-  11:Core/Src/ultra.c **** #include "ultra.h"
-  12:Core/Src/ultra.c **** #include "main.h"   /* TRIG/ECHO 핀 매크로 (CubeMX 생성) */
-  13:Core/Src/ultra.c **** #include "tim.h"    /* htim3 */
-  14:Core/Src/ultra.c **** #include "delay.h"  /* delay_us — TRIG 10µs 펄스 (TIM11, main에서 start됨) */
-  15:Core/Src/ultra.c **** #include "drive.h"  /* ULTRA_MAX_CM */
-  16:Core/Src/ultra.c **** #include "FreeRTOS.h"
-  17:Core/Src/ultra.c **** #include "task.h"   /* taskENTER/EXIT_CRITICAL */
-  18:Core/Src/ultra.c **** 
-  19:Core/Src/ultra.c **** /* ISR(HAL_TIM_IC_CaptureCallback)과 SensorTask가 공유 → volatile 필수 (컴파일러 캐싱
-  20:Core/Src/ultra.c **** static volatile uint16_t IC_Value1[3]   = {0};
-  21:Core/Src/ultra.c **** static volatile uint16_t IC_Value2[3]   = {0};
-  22:Core/Src/ultra.c **** static volatile uint16_t echoTime[3]    = {0};
-  23:Core/Src/ultra.c **** static volatile uint8_t  captureFlag[3] = {0};
-  24:Core/Src/ultra.c **** static volatile uint16_t distance[3]    = {0};
-  25:Core/Src/ultra.c **** static volatile uint8_t  meas_valid[3]  = {0};   /* ISR이 완전한 에코(상승+하강) 측정 �
-  26:Core/Src/ultra.c **** 
-  27:Core/Src/ultra.c **** /* 유효 측정 완료 통지 대상(SensorTask). NULL이면 통지 생략 — 태스크 기동 �
-  28:Core/Src/ultra.c **** static osThreadId_t s_waiter = NULL;
-  29:Core/Src/ultra.c **** 
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 2
+   5:Core/Src/ultra.c ****   * @brief   HC-SR04 전방 1채널 측정 구현 — TIM3 CH1 입력캡처 ISR + RTOS flag 대기
+   6:Core/Src/ultra.c ****   *          (측면 좌/우 초음파(구 CH2/CH3)는 VL53L0X ToF로 이관 — vl53l0x.c.
+   7:Core/Src/ultra.c ****   *           채널 테이블/순차발사 로직은 전방 단일화로 제거)
+   8:Core/Src/ultra.c ****   ******************************************************************************
+   9:Core/Src/ultra.c ****   */
+  10:Core/Src/ultra.c **** /* USER CODE END Header */
+  11:Core/Src/ultra.c **** 
+  12:Core/Src/ultra.c **** #include "ultra.h"
+  13:Core/Src/ultra.c **** #include "main.h"   /* TRIG/ECHO 핀 매크로 (CubeMX 생성) */
+  14:Core/Src/ultra.c **** #include "tim.h"    /* htim3 */
+  15:Core/Src/ultra.c **** #include "delay.h"  /* delay_us — TRIG 10µs 펄스 (TIM11, main에서 start됨) */
+  16:Core/Src/ultra.c **** #include "drive.h"  /* ULTRA_MAX_CM */
+  17:Core/Src/ultra.c **** #include "FreeRTOS.h"
+  18:Core/Src/ultra.c **** #include "task.h"   /* taskENTER/EXIT_CRITICAL */
+  19:Core/Src/ultra.c **** 
+  20:Core/Src/ultra.c **** /* ISR(HAL_TIM_IC_CaptureCallback)과 SensorTask가 공유 → volatile 필수 (컴파일러 캐싱
+  21:Core/Src/ultra.c **** static volatile uint16_t IC_Value1   = 0;
+  22:Core/Src/ultra.c **** static volatile uint16_t IC_Value2   = 0;
+  23:Core/Src/ultra.c **** static volatile uint16_t echoTime    = 0;
+  24:Core/Src/ultra.c **** static volatile uint8_t  captureFlag = 0;
+  25:Core/Src/ultra.c **** static volatile uint16_t distance    = 0;
+  26:Core/Src/ultra.c **** static volatile uint8_t  meas_valid  = 0;   /* ISR이 완전한 에코(상승+하강) 측정 완료
+  27:Core/Src/ultra.c **** 
+  28:Core/Src/ultra.c **** /* 유효 측정 완료 통지 대상(SensorTask). NULL이면 통지 생략 — 태스크 기동 �
+  29:Core/Src/ultra.c **** static osThreadId_t s_waiter = NULL;
+ARM GAS  /tmp/ccYjTY1a.s 			page 2
 
 
-  30:Core/Src/ultra.c **** /* === 센서별 TRIG 핀 + TIM3 채널 매핑 (인덱스 0=front, 1=left, 2=right) ===
-  31:Core/Src/ultra.c ****  * 분리 TRIG(front=PA5, left=PA4, right=PA3)로 '순차 발사' → 3센서 동시발사 크로�
-  32:Core/Src/ultra.c ****  * ECHO는 TIM3 CH1/CH2/CH3(PA6/PA7/PB0) 고정. */
-  33:Core/Src/ultra.c **** static GPIO_TypeDef* const ULTRA_TRIG_PORT[3] = { TRIG_FRONT_GPIO_Port, TRIG_LEFT_GPIO_Port, TRIG_R
-  34:Core/Src/ultra.c **** static const uint16_t      ULTRA_TRIG_PIN [3] = { TRIG_FRONT_Pin,       TRIG_LEFT_Pin,       TRIG_R
-  35:Core/Src/ultra.c **** static const uint32_t      ULTRA_CH       [3] = { TIM_CHANNEL_1, TIM_CHANNEL_2, TIM_CHANNEL_3 };
-  36:Core/Src/ultra.c **** static const uint32_t      ULTRA_CC_IT    [3] = { TIM_IT_CC1,    TIM_IT_CC2,    TIM_IT_CC3 };
-  37:Core/Src/ultra.c **** static const uint32_t      ULTRA_CC_FLAG  [3] = { TIM_FLAG_CC1 | TIM_FLAG_CC1OF,
-  38:Core/Src/ultra.c ****                                                   TIM_FLAG_CC2 | TIM_FLAG_CC2OF,
-  39:Core/Src/ultra.c ****                                                   TIM_FLAG_CC3 | TIM_FLAG_CC3OF };
-  40:Core/Src/ultra.c **** /* ECHO 핀 (TIM3 CH1/2/3 = PA6/PA7/PB0): AF 모드여도 IDR 레벨 읽기 가능 — 발사 전 �
-  41:Core/Src/ultra.c **** static GPIO_TypeDef* const ULTRA_ECHO_PORT[3] = { ECHO_TIM3_CH1_GPIO_Port, ECHO_TIM3_CH2_GPIO_Port,
-  42:Core/Src/ultra.c **** static const uint16_t      ULTRA_ECHO_PIN [3] = { ECHO_TIM3_CH1_Pin,       ECHO_TIM3_CH2_Pin,      
-  43:Core/Src/ultra.c **** 
-  44:Core/Src/ultra.c **** void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
-  45:Core/Src/ultra.c **** {
-  30              		.loc 1 45 1 view -0
+  30:Core/Src/ultra.c **** 
+  31:Core/Src/ultra.c **** #define ULTRA_FLAG_FRONT (1UL << 0)
+  32:Core/Src/ultra.c **** 
+  33:Core/Src/ultra.c **** void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+  34:Core/Src/ultra.c **** {
+  30              		.loc 1 34 1 view -0
   31              		.cfi_startproc
   32              		@ args = 0, pretend = 0, frame = 0
   33              		@ frame_needed = 0, uses_anonymous_args = 0
-  46:Core/Src/ultra.c ****     if (htim->Instance != TIM3) return;   /* IC 콜백은 전 타이머 공용 — 추후 타이머
-  34              		.loc 1 46 5 view .LVU1
-  35              		.loc 1 46 13 is_stmt 0 view .LVU2
+  35:Core/Src/ultra.c ****     if (htim->Instance != TIM3) return;   /* IC 콜백은 전 타이머 공용 — 추후 타이머
+  34              		.loc 1 35 5 view .LVU1
+  35              		.loc 1 35 13 is_stmt 0 view .LVU2
   36 0000 0268     		ldr	r2, [r0]
-  37              		.loc 1 46 8 view .LVU3
-  38 0002 844B     		ldr	r3, .L22
+  37              		.loc 1 35 8 view .LVU3
+  38 0002 2E4B     		ldr	r3, .L12
   39 0004 9A42     		cmp	r2, r3
-  40 0006 00D0     		beq	.L15
-  41 0008 7047     		bx	lr
-  42              	.L15:
-  45:Core/Src/ultra.c ****     if (htim->Instance != TIM3) return;   /* IC 콜백은 전 타이머 공용 — 추후 타이머
-  43              		.loc 1 45 1 view .LVU4
-  44 000a 10B5     		push	{r4, lr}
-  45              	.LCFI0:
-  46              		.cfi_def_cfa_offset 8
-  47              		.cfi_offset 4, -8
-  48              		.cfi_offset 14, -4
+  40 0006 00D0     		beq	.L9
+  41              	.L6:
+  42 0008 7047     		bx	lr
+  43              	.L9:
+  36:Core/Src/ultra.c ****     if (htim->Channel != HAL_TIM_ACTIVE_CHANNEL_1) return;
+  44              		.loc 1 36 5 is_stmt 1 view .LVU4
+  45              		.loc 1 36 13 is_stmt 0 view .LVU5
+  46 000a 037F     		ldrb	r3, [r0, #28]	@ zero_extendqisi2
+  47              		.loc 1 36 8 view .LVU6
+  48 000c 012B     		cmp	r3, #1
+  49 000e FBD1     		bne	.L6
+  34:Core/Src/ultra.c ****     if (htim->Instance != TIM3) return;   /* IC 콜백은 전 타이머 공용 — 추후 타이머
+  50              		.loc 1 34 1 view .LVU7
+  51 0010 10B5     		push	{r4, lr}
+  52              	.LCFI0:
+  53              		.cfi_def_cfa_offset 8
+  54              		.cfi_offset 4, -8
+  55              		.cfi_offset 14, -4
+  37:Core/Src/ultra.c **** 
+  38:Core/Src/ultra.c ****     if (captureFlag == 0)
+  56              		.loc 1 38 5 is_stmt 1 view .LVU8
+  57              		.loc 1 38 21 is_stmt 0 view .LVU9
+  58 0012 2B4B     		ldr	r3, .L12+4
+  59 0014 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+  60              		.loc 1 38 8 view .LVU10
+  61 0016 2BB1     		cbz	r3, .L10
+  39:Core/Src/ultra.c ****     {
+  40:Core/Src/ultra.c ****         IC_Value1 = HAL_TIM_ReadCapturedValue(&htim3, TIM_CHANNEL_1);
+  41:Core/Src/ultra.c ****         captureFlag = 1;
+  42:Core/Src/ultra.c ****         __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_FALLING);
+  43:Core/Src/ultra.c ****     }
+  44:Core/Src/ultra.c ****     else if (captureFlag == 1)
+  62              		.loc 1 44 10 is_stmt 1 view .LVU11
+  63              		.loc 1 44 26 is_stmt 0 view .LVU12
+  64 0018 294B     		ldr	r3, .L12+4
+  65 001a 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+  66 001c DBB2     		uxtb	r3, r3
+  67              		.loc 1 44 13 view .LVU13
+  68 001e 012B     		cmp	r3, #1
+  69 0020 15D0     		beq	.L11
+  70              	.LVL1:
+ARM GAS  /tmp/ccYjTY1a.s 			page 3
+
+
+  71              	.L1:
+  45:Core/Src/ultra.c ****     {
+  46:Core/Src/ultra.c ****         IC_Value2 = HAL_TIM_ReadCapturedValue(&htim3, TIM_CHANNEL_1);
   47:Core/Src/ultra.c **** 
-  48:Core/Src/ultra.c ****     if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
-  49              		.loc 1 48 5 is_stmt 1 view .LVU5
-  50              		.loc 1 48 12 is_stmt 0 view .LVU6
-  51 000c 037F     		ldrb	r3, [r0, #28]	@ zero_extendqisi2
-  52              		.loc 1 48 7 view .LVU7
-  53 000e 012B     		cmp	r3, #1
-  54 0010 05D0     		beq	.L16
-  49:Core/Src/ultra.c ****     {
-  50:Core/Src/ultra.c ****         if(captureFlag[0] == 0)
-  51:Core/Src/ultra.c ****         {
-  52:Core/Src/ultra.c ****             IC_Value1[0] = HAL_TIM_ReadCapturedValue(&htim3, TIM_CHANNEL_1);
-  53:Core/Src/ultra.c ****             captureFlag[0] = 1;
-  54:Core/Src/ultra.c ****             __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_FALLING);
-  55:Core/Src/ultra.c ****         }
-  56:Core/Src/ultra.c ****         else if(captureFlag[0] == 1)
-  57:Core/Src/ultra.c ****         {
-  58:Core/Src/ultra.c ****             IC_Value2[0] = HAL_TIM_ReadCapturedValue(&htim3, TIM_CHANNEL_1);
-  59:Core/Src/ultra.c **** 
-  60:Core/Src/ultra.c ****             /* 16-bit 무부호 뺄셈: 타이머 wrap(65535→0)을 mod-65536으로 자동 보정.
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 3
+  48:Core/Src/ultra.c ****         /* 16-bit 무부호 뺄셈: 타이머 wrap(65535→0)을 mod-65536으로 자동 보정. */
+  49:Core/Src/ultra.c ****         echoTime = (uint16_t)(IC_Value2 - IC_Value1);
+  50:Core/Src/ultra.c **** 
+  51:Core/Src/ultra.c ****         /* d==0(<58µs)은 물리 불가(HC-SR04 최소 2cm=116µs) = 글리치 에지 → invalid 
+  52:Core/Src/ultra.c ****          * '멀다(MAX)'로 두면 hist를 fail-open 오염 — meas_valid 미설정으로 front_mi
+  53:Core/Src/ultra.c ****         uint16_t d0 = echoTime / 58;
+  54:Core/Src/ultra.c ****         if (d0 != 0U)
+  55:Core/Src/ultra.c ****         {
+  56:Core/Src/ultra.c ****             distance = (d0 > ULTRA_MAX_CM) ? ULTRA_MAX_CM : d0;
+  57:Core/Src/ultra.c ****             meas_valid = 1;
+  58:Core/Src/ultra.c ****             if (s_waiter != NULL) osThreadFlagsSet(s_waiter, ULTRA_FLAG_FRONT);   /* 대기 태스�
+  59:Core/Src/ultra.c ****         }
+  60:Core/Src/ultra.c ****         captureFlag = 0;
+  61:Core/Src/ultra.c ****         __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_RISING);
+  62:Core/Src/ultra.c ****         __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC1);
+  63:Core/Src/ultra.c ****     }
+  64:Core/Src/ultra.c **** }
+  72              		.loc 1 64 1 view .LVU14
+  73 0022 10BD     		pop	{r4, pc}
+  74              	.LVL2:
+  75              	.L10:
+  40:Core/Src/ultra.c ****         captureFlag = 1;
+  76              		.loc 1 40 9 is_stmt 1 view .LVU15
+  40:Core/Src/ultra.c ****         captureFlag = 1;
+  77              		.loc 1 40 21 is_stmt 0 view .LVU16
+  78 0024 274C     		ldr	r4, .L12+8
+  79 0026 0021     		movs	r1, #0
+  80 0028 2046     		mov	r0, r4
+  81              	.LVL3:
+  40:Core/Src/ultra.c ****         captureFlag = 1;
+  82              		.loc 1 40 21 view .LVU17
+  83 002a FFF7FEFF 		bl	HAL_TIM_ReadCapturedValue
+  84              	.LVL4:
+  40:Core/Src/ultra.c ****         captureFlag = 1;
+  85              		.loc 1 40 19 discriminator 1 view .LVU18
+  86 002e 80B2     		uxth	r0, r0
+  87 0030 254B     		ldr	r3, .L12+12
+  88 0032 1880     		strh	r0, [r3]	@ movhi
+  41:Core/Src/ultra.c ****         __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_FALLING);
+  89              		.loc 1 41 9 is_stmt 1 view .LVU19
+  41:Core/Src/ultra.c ****         __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_FALLING);
+  90              		.loc 1 41 21 is_stmt 0 view .LVU20
+  91 0034 224B     		ldr	r3, .L12+4
+  92 0036 0122     		movs	r2, #1
+  93 0038 1A70     		strb	r2, [r3]
+  42:Core/Src/ultra.c ****     }
+  94              		.loc 1 42 9 is_stmt 1 view .LVU21
+  42:Core/Src/ultra.c ****     }
+  95              		.loc 1 42 9 view .LVU22
+  96 003a 2368     		ldr	r3, [r4]
+  97 003c 1A6A     		ldr	r2, [r3, #32]
+  98 003e 22F00A02 		bic	r2, r2, #10
+  99 0042 1A62     		str	r2, [r3, #32]
+ARM GAS  /tmp/ccYjTY1a.s 			page 4
 
 
-  61:Core/Src/ultra.c ****              * 이전 코드의 +1 누락 오차와 IC_Value2==IC_Value1 시 echoTime 정체 버그
-  62:Core/Src/ultra.c ****             echoTime[0] = (uint16_t)(IC_Value2[0] - IC_Value1[0]);
-  63:Core/Src/ultra.c **** 
-  64:Core/Src/ultra.c ****             /* d==0(<58µs)은 물리 불가(HC-SR04 최소 2cm=116µs) = 글리치 에지 → inva
-  65:Core/Src/ultra.c ****              * '멀다(200)'로 두면 hist를 fail-open 오염 — meas_valid 미설정으로 fron
-  66:Core/Src/ultra.c ****             uint16_t d0 = echoTime[0] / 58;
-  67:Core/Src/ultra.c ****             if (d0 != 0U)
-  68:Core/Src/ultra.c ****             {
-  69:Core/Src/ultra.c ****                 distance[0] = (d0 > ULTRA_MAX_CM) ? ULTRA_MAX_CM : d0;
-  70:Core/Src/ultra.c ****                 meas_valid[0] = 1;
-  71:Core/Src/ultra.c ****                 if (s_waiter != NULL) osThreadFlagsSet(s_waiter, 1UL << 0);   /* 대기 태스크 �
-  72:Core/Src/ultra.c ****             }
-  73:Core/Src/ultra.c ****             captureFlag[0] = 0;
-  74:Core/Src/ultra.c ****             __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_RISING);
-  75:Core/Src/ultra.c ****             __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC1);
-  76:Core/Src/ultra.c ****         }
-  77:Core/Src/ultra.c ****     }
-  78:Core/Src/ultra.c ****     else if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2)
-  55              		.loc 1 78 10 is_stmt 1 view .LVU8
-  56              		.loc 1 78 12 is_stmt 0 view .LVU9
-  57 0012 022B     		cmp	r3, #2
-  58 0014 56D0     		beq	.L17
-  79:Core/Src/ultra.c ****     {
-  80:Core/Src/ultra.c ****         if(captureFlag[1] == 0)
-  81:Core/Src/ultra.c ****         {
-  82:Core/Src/ultra.c ****             IC_Value1[1] = HAL_TIM_ReadCapturedValue(&htim3, TIM_CHANNEL_2);
-  83:Core/Src/ultra.c ****             captureFlag[1] = 1;
-  84:Core/Src/ultra.c ****             __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_2, TIM_INPUTCHANNELPOLARITY_FALLING);
-  85:Core/Src/ultra.c ****         }
-  86:Core/Src/ultra.c ****         else if(captureFlag[1] == 1)
-  87:Core/Src/ultra.c ****         {
-  88:Core/Src/ultra.c ****             IC_Value2[1] = HAL_TIM_ReadCapturedValue(&htim3, TIM_CHANNEL_2);
-  89:Core/Src/ultra.c **** 
-  90:Core/Src/ultra.c ****             /* 16-bit 무부호 뺄셈: wrap 자동 보정 + V2==V1 정체 버그 해결 (CH1과 �
-  91:Core/Src/ultra.c ****             echoTime[1] = (uint16_t)(IC_Value2[1] - IC_Value1[1]);
-  92:Core/Src/ultra.c **** 
-  93:Core/Src/ultra.c ****             uint16_t d1 = echoTime[1] / 58;
-  94:Core/Src/ultra.c ****             if (d1 != 0U)   /* CH1과 동일: 글리치(0) → invalid */
-  95:Core/Src/ultra.c ****             {
-  96:Core/Src/ultra.c ****                 distance[1] = (d1 > ULTRA_MAX_CM) ? ULTRA_MAX_CM : d1;
-  97:Core/Src/ultra.c ****                 meas_valid[1] = 1;
-  98:Core/Src/ultra.c ****                 if (s_waiter != NULL) osThreadFlagsSet(s_waiter, 1UL << 1);
-  99:Core/Src/ultra.c ****             }
- 100:Core/Src/ultra.c ****             captureFlag[1] = 0;
- 101:Core/Src/ultra.c ****             __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_2, TIM_INPUTCHANNELPOLARITY_RISING);
- 102:Core/Src/ultra.c ****             __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC2);
- 103:Core/Src/ultra.c ****         }
- 104:Core/Src/ultra.c ****     }
- 105:Core/Src/ultra.c ****     else if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_3)
-  59              		.loc 1 105 10 is_stmt 1 view .LVU10
-  60              		.loc 1 105 12 is_stmt 0 view .LVU11
-  61 0016 042B     		cmp	r3, #4
-  62 0018 00F0A780 		beq	.L18
-  63              	.LVL1:
-  64              	.L1:
- 106:Core/Src/ultra.c ****     {
- 107:Core/Src/ultra.c ****         if(captureFlag[2] == 0)
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 4
+  42:Core/Src/ultra.c ****     }
+ 100              		.loc 1 42 9 view .LVU23
+ 101 0044 1A6A     		ldr	r2, [r3, #32]
+ 102 0046 42F00202 		orr	r2, r2, #2
+ 103 004a 1A62     		str	r2, [r3, #32]
+  42:Core/Src/ultra.c ****     }
+ 104              		.loc 1 42 9 view .LVU24
+ 105 004c E9E7     		b	.L1
+ 106              	.LVL5:
+ 107              	.L11:
+ 108              	.LBB2:
+  46:Core/Src/ultra.c **** 
+ 109              		.loc 1 46 9 view .LVU25
+  46:Core/Src/ultra.c **** 
+ 110              		.loc 1 46 21 is_stmt 0 view .LVU26
+ 111 004e 0021     		movs	r1, #0
+ 112 0050 1C48     		ldr	r0, .L12+8
+ 113              	.LVL6:
+  46:Core/Src/ultra.c **** 
+ 114              		.loc 1 46 21 view .LVU27
+ 115 0052 FFF7FEFF 		bl	HAL_TIM_ReadCapturedValue
+ 116              	.LVL7:
+  46:Core/Src/ultra.c **** 
+ 117              		.loc 1 46 19 discriminator 1 view .LVU28
+ 118 0056 80B2     		uxth	r0, r0
+ 119 0058 1C4B     		ldr	r3, .L12+16
+ 120 005a 1880     		strh	r0, [r3]	@ movhi
+  49:Core/Src/ultra.c **** 
+ 121              		.loc 1 49 9 is_stmt 1 view .LVU29
+  49:Core/Src/ultra.c **** 
+ 122              		.loc 1 49 20 is_stmt 0 view .LVU30
+ 123 005c 1B88     		ldrh	r3, [r3]
+ 124 005e 9BB2     		uxth	r3, r3
+ 125 0060 194A     		ldr	r2, .L12+12
+ 126 0062 1288     		ldrh	r2, [r2]
+ 127 0064 92B2     		uxth	r2, r2
+ 128 0066 9B1A     		subs	r3, r3, r2
+ 129 0068 9BB2     		uxth	r3, r3
+  49:Core/Src/ultra.c **** 
+ 130              		.loc 1 49 18 view .LVU31
+ 131 006a 194A     		ldr	r2, .L12+20
+ 132 006c 1380     		strh	r3, [r2]	@ movhi
+  53:Core/Src/ultra.c ****         if (d0 != 0U)
+ 133              		.loc 1 53 9 is_stmt 1 view .LVU32
+  53:Core/Src/ultra.c ****         if (d0 != 0U)
+ 134              		.loc 1 53 18 is_stmt 0 view .LVU33
+ 135 006e 1288     		ldrh	r2, [r2]
+ 136 0070 92B2     		uxth	r2, r2
+ 137 0072 184B     		ldr	r3, .L12+24
+ 138 0074 A3FB0213 		umull	r1, r3, r3, r2
+ 139 0078 5B09     		lsrs	r3, r3, #5
+ 140              	.LVL8:
+  54:Core/Src/ultra.c ****         {
+ 141              		.loc 1 54 9 is_stmt 1 view .LVU34
+  54:Core/Src/ultra.c ****         {
+ 142              		.loc 1 54 12 is_stmt 0 view .LVU35
+ 143 007a 392A     		cmp	r2, #57
+ARM GAS  /tmp/ccYjTY1a.s 			page 5
 
 
- 108:Core/Src/ultra.c ****         {
- 109:Core/Src/ultra.c ****             IC_Value1[2] = HAL_TIM_ReadCapturedValue(&htim3, TIM_CHANNEL_3);
- 110:Core/Src/ultra.c ****             captureFlag[2] = 1;
- 111:Core/Src/ultra.c ****             __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_3, TIM_INPUTCHANNELPOLARITY_FALLING);
- 112:Core/Src/ultra.c ****         }
- 113:Core/Src/ultra.c ****         else if(captureFlag[2] == 1)
- 114:Core/Src/ultra.c ****         {
- 115:Core/Src/ultra.c ****             IC_Value2[2] = HAL_TIM_ReadCapturedValue(&htim3, TIM_CHANNEL_3);
- 116:Core/Src/ultra.c **** 
- 117:Core/Src/ultra.c ****             /* 16-bit 무부호 뺄셈: wrap 자동 보정 + V2==V1 정체 버그 해결 (CH1과 �
- 118:Core/Src/ultra.c ****             echoTime[2] = (uint16_t)(IC_Value2[2] - IC_Value1[2]);
- 119:Core/Src/ultra.c **** 
- 120:Core/Src/ultra.c ****             uint16_t d2 = echoTime[2] / 58;
- 121:Core/Src/ultra.c ****             if (d2 != 0U)   /* CH1과 동일: 글리치(0) → invalid */
- 122:Core/Src/ultra.c ****             {
- 123:Core/Src/ultra.c ****                 distance[2] = (d2 > ULTRA_MAX_CM) ? ULTRA_MAX_CM : d2;
- 124:Core/Src/ultra.c ****                 meas_valid[2] = 1;
- 125:Core/Src/ultra.c ****                 if (s_waiter != NULL) osThreadFlagsSet(s_waiter, 1UL << 2);
- 126:Core/Src/ultra.c ****             }
- 127:Core/Src/ultra.c ****             captureFlag[2] = 0;
- 128:Core/Src/ultra.c ****             __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_3, TIM_INPUTCHANNELPOLARITY_RISING);
- 129:Core/Src/ultra.c ****             __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC3);
- 130:Core/Src/ultra.c ****         }
- 131:Core/Src/ultra.c ****     }
- 132:Core/Src/ultra.c **** }
-  65              		.loc 1 132 1 view .LVU12
-  66 001c 10BD     		pop	{r4, pc}
-  67              	.LVL2:
-  68              	.L16:
-  50:Core/Src/ultra.c ****         {
-  69              		.loc 1 50 9 is_stmt 1 view .LVU13
-  50:Core/Src/ultra.c ****         {
-  70              		.loc 1 50 23 is_stmt 0 view .LVU14
-  71 001e 7E4B     		ldr	r3, .L22+4
-  72 0020 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
-  50:Core/Src/ultra.c ****         {
-  73              		.loc 1 50 11 view .LVU15
-  74 0022 002B     		cmp	r3, #0
-  75 0024 39D0     		beq	.L19
-  56:Core/Src/ultra.c ****         {
-  76              		.loc 1 56 14 is_stmt 1 view .LVU16
-  56:Core/Src/ultra.c ****         {
-  77              		.loc 1 56 28 is_stmt 0 view .LVU17
-  78 0026 7C4B     		ldr	r3, .L22+4
-  79 0028 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
-  56:Core/Src/ultra.c ****         {
-  80              		.loc 1 56 16 view .LVU18
-  81 002a 012B     		cmp	r3, #1
-  82 002c F6D1     		bne	.L1
-  83              	.LBB2:
-  58:Core/Src/ultra.c **** 
-  84              		.loc 1 58 13 is_stmt 1 view .LVU19
-  58:Core/Src/ultra.c **** 
-  85              		.loc 1 58 28 is_stmt 0 view .LVU20
-  86 002e 0021     		movs	r1, #0
-  87 0030 7A48     		ldr	r0, .L22+8
-  88              	.LVL3:
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 5
+ 144 007c 0DD9     		bls	.L4
+  56:Core/Src/ultra.c ****             meas_valid = 1;
+ 145              		.loc 1 56 13 is_stmt 1 view .LVU36
+  56:Core/Src/ultra.c ****             meas_valid = 1;
+ 146              		.loc 1 56 59 is_stmt 0 view .LVU37
+ 147 007e 502B     		cmp	r3, #80
+ 148 0080 28BF     		it	cs
+ 149 0082 5023     		movcs	r3, #80
+ 150              	.LVL9:
+  56:Core/Src/ultra.c ****             meas_valid = 1;
+ 151              		.loc 1 56 22 view .LVU38
+ 152 0084 144A     		ldr	r2, .L12+28
+ 153              	.LVL10:
+  56:Core/Src/ultra.c ****             meas_valid = 1;
+ 154              		.loc 1 56 22 view .LVU39
+ 155 0086 1380     		strh	r3, [r2]	@ movhi
+  57:Core/Src/ultra.c ****             if (s_waiter != NULL) osThreadFlagsSet(s_waiter, ULTRA_FLAG_FRONT);   /* 대기 태스�
+ 156              		.loc 1 57 13 is_stmt 1 view .LVU40
+  57:Core/Src/ultra.c ****             if (s_waiter != NULL) osThreadFlagsSet(s_waiter, ULTRA_FLAG_FRONT);   /* 대기 태스�
+ 157              		.loc 1 57 24 is_stmt 0 view .LVU41
+ 158 0088 144B     		ldr	r3, .L12+32
+ 159 008a 0122     		movs	r2, #1
+ 160 008c 1A70     		strb	r2, [r3]
+  58:Core/Src/ultra.c ****         }
+ 161              		.loc 1 58 13 is_stmt 1 view .LVU42
+  58:Core/Src/ultra.c ****         }
+ 162              		.loc 1 58 26 is_stmt 0 view .LVU43
+ 163 008e 144B     		ldr	r3, .L12+36
+ 164 0090 1868     		ldr	r0, [r3]
+  58:Core/Src/ultra.c ****         }
+ 165              		.loc 1 58 16 view .LVU44
+ 166 0092 10B1     		cbz	r0, .L4
+  58:Core/Src/ultra.c ****         }
+ 167              		.loc 1 58 35 is_stmt 1 discriminator 1 view .LVU45
+ 168 0094 1146     		mov	r1, r2
+ 169 0096 FFF7FEFF 		bl	osThreadFlagsSet
+ 170              	.LVL11:
+ 171              	.L4:
+  60:Core/Src/ultra.c ****         __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_RISING);
+ 172              		.loc 1 60 9 view .LVU46
+  60:Core/Src/ultra.c ****         __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_RISING);
+ 173              		.loc 1 60 21 is_stmt 0 view .LVU47
+ 174 009a 094B     		ldr	r3, .L12+4
+ 175 009c 0022     		movs	r2, #0
+ 176 009e 1A70     		strb	r2, [r3]
+  61:Core/Src/ultra.c ****         __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC1);
+ 177              		.loc 1 61 9 is_stmt 1 view .LVU48
+  61:Core/Src/ultra.c ****         __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC1);
+ 178              		.loc 1 61 9 view .LVU49
+ 179 00a0 084B     		ldr	r3, .L12+8
+ 180 00a2 1B68     		ldr	r3, [r3]
+ 181 00a4 1A6A     		ldr	r2, [r3, #32]
+ 182 00a6 22F00A02 		bic	r2, r2, #10
+ 183 00aa 1A62     		str	r2, [r3, #32]
+  61:Core/Src/ultra.c ****         __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC1);
+ 184              		.loc 1 61 9 view .LVU50
+ 185 00ac 1A6A     		ldr	r2, [r3, #32]
+ARM GAS  /tmp/ccYjTY1a.s 			page 6
 
 
-  58:Core/Src/ultra.c **** 
-  89              		.loc 1 58 28 view .LVU21
-  90 0032 FFF7FEFF 		bl	HAL_TIM_ReadCapturedValue
-  91              	.LVL4:
-  58:Core/Src/ultra.c **** 
-  92              		.loc 1 58 26 discriminator 1 view .LVU22
-  93 0036 80B2     		uxth	r0, r0
-  94 0038 794B     		ldr	r3, .L22+12
-  95 003a 1880     		strh	r0, [r3]	@ movhi
-  62:Core/Src/ultra.c **** 
-  96              		.loc 1 62 13 is_stmt 1 view .LVU23
-  62:Core/Src/ultra.c **** 
-  97              		.loc 1 62 47 is_stmt 0 view .LVU24
-  98 003c 1B88     		ldrh	r3, [r3]
-  99 003e 9BB2     		uxth	r3, r3
-  62:Core/Src/ultra.c **** 
- 100              		.loc 1 62 62 view .LVU25
- 101 0040 784A     		ldr	r2, .L22+16
- 102 0042 1288     		ldrh	r2, [r2]
- 103 0044 92B2     		uxth	r2, r2
-  62:Core/Src/ultra.c **** 
- 104              		.loc 1 62 27 view .LVU26
- 105 0046 9B1A     		subs	r3, r3, r2
- 106 0048 9BB2     		uxth	r3, r3
-  62:Core/Src/ultra.c **** 
- 107              		.loc 1 62 25 view .LVU27
- 108 004a 774A     		ldr	r2, .L22+20
- 109 004c 1380     		strh	r3, [r2]	@ movhi
-  66:Core/Src/ultra.c ****             if (d0 != 0U)
- 110              		.loc 1 66 13 is_stmt 1 view .LVU28
-  66:Core/Src/ultra.c ****             if (d0 != 0U)
- 111              		.loc 1 66 35 is_stmt 0 view .LVU29
- 112 004e 1288     		ldrh	r2, [r2]
- 113 0050 92B2     		uxth	r2, r2
-  66:Core/Src/ultra.c ****             if (d0 != 0U)
- 114              		.loc 1 66 22 view .LVU30
- 115 0052 764B     		ldr	r3, .L22+24
- 116 0054 A3FB0213 		umull	r1, r3, r3, r2
- 117 0058 5B09     		lsrs	r3, r3, #5
- 118              	.LVL5:
-  67:Core/Src/ultra.c ****             {
- 119              		.loc 1 67 13 is_stmt 1 view .LVU31
-  67:Core/Src/ultra.c ****             {
- 120              		.loc 1 67 16 is_stmt 0 view .LVU32
- 121 005a 392A     		cmp	r2, #57
- 122 005c 0DD9     		bls	.L5
-  69:Core/Src/ultra.c ****                 meas_valid[0] = 1;
- 123              		.loc 1 69 17 is_stmt 1 view .LVU33
-  69:Core/Src/ultra.c ****                 meas_valid[0] = 1;
- 124              		.loc 1 69 66 is_stmt 0 view .LVU34
- 125 005e C82B     		cmp	r3, #200
- 126 0060 28BF     		it	cs
- 127 0062 C823     		movcs	r3, #200
- 128              	.LVL6:
-  69:Core/Src/ultra.c ****                 meas_valid[0] = 1;
- 129              		.loc 1 69 29 view .LVU35
- 130 0064 724A     		ldr	r2, .L22+28
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 6
+ 186 00ae 1A62     		str	r2, [r3, #32]
+  61:Core/Src/ultra.c ****         __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC1);
+ 187              		.loc 1 61 9 view .LVU51
+  62:Core/Src/ultra.c ****     }
+ 188              		.loc 1 62 9 view .LVU52
+ 189 00b0 DA68     		ldr	r2, [r3, #12]
+ 190 00b2 22F00202 		bic	r2, r2, #2
+ 191 00b6 DA60     		str	r2, [r3, #12]
+ 192 00b8 B3E7     		b	.L1
+ 193              	.L13:
+ 194 00ba 00BF     		.align	2
+ 195              	.L12:
+ 196 00bc 00040040 		.word	1073742848
+ 197 00c0 00000000 		.word	captureFlag
+ 198 00c4 00000000 		.word	htim3
+ 199 00c8 00000000 		.word	IC_Value1
+ 200 00cc 00000000 		.word	IC_Value2
+ 201 00d0 00000000 		.word	echoTime
+ 202 00d4 09CB3D8D 		.word	-1925330167
+ 203 00d8 00000000 		.word	distance
+ 204 00dc 00000000 		.word	meas_valid
+ 205 00e0 00000000 		.word	s_waiter
+ 206              	.LBE2:
+ 207              		.cfi_endproc
+ 208              	.LFE138:
+ 210              		.section	.text.Ultra_Init,"ax",%progbits
+ 211              		.align	1
+ 212              		.global	Ultra_Init
+ 213              		.syntax unified
+ 214              		.thumb
+ 215              		.thumb_func
+ 217              	Ultra_Init:
+ 218              	.LVL12:
+ 219              	.LFB139:
+  65:Core/Src/ultra.c **** 
+  66:Core/Src/ultra.c **** void Ultra_Init(osThreadId_t waiter)
+  67:Core/Src/ultra.c **** {
+ 220              		.loc 1 67 1 view -0
+ 221              		.cfi_startproc
+ 222              		@ args = 0, pretend = 0, frame = 0
+ 223              		@ frame_needed = 0, uses_anonymous_args = 0
+ 224              		.loc 1 67 1 is_stmt 0 view .LVU54
+ 225 0000 08B5     		push	{r3, lr}
+ 226              	.LCFI1:
+ 227              		.cfi_def_cfa_offset 8
+ 228              		.cfi_offset 3, -8
+ 229              		.cfi_offset 14, -4
+  68:Core/Src/ultra.c ****     s_waiter = waiter;
+ 230              		.loc 1 68 5 is_stmt 1 view .LVU55
+ 231              		.loc 1 68 14 is_stmt 0 view .LVU56
+ 232 0002 034B     		ldr	r3, .L16
+ 233 0004 1860     		str	r0, [r3]
+  69:Core/Src/ultra.c ****     HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);
+ 234              		.loc 1 69 5 is_stmt 1 view .LVU57
+ 235 0006 0021     		movs	r1, #0
+ 236 0008 0248     		ldr	r0, .L16+4
+ 237              	.LVL13:
+ARM GAS  /tmp/ccYjTY1a.s 			page 7
 
 
- 131              	.LVL7:
-  69:Core/Src/ultra.c ****                 meas_valid[0] = 1;
- 132              		.loc 1 69 29 view .LVU36
- 133 0066 1380     		strh	r3, [r2]	@ movhi
-  70:Core/Src/ultra.c ****                 if (s_waiter != NULL) osThreadFlagsSet(s_waiter, 1UL << 0);   /* 대기 태스크 �
- 134              		.loc 1 70 17 is_stmt 1 view .LVU37
-  70:Core/Src/ultra.c ****                 if (s_waiter != NULL) osThreadFlagsSet(s_waiter, 1UL << 0);   /* 대기 태스크 �
- 135              		.loc 1 70 31 is_stmt 0 view .LVU38
- 136 0068 724B     		ldr	r3, .L22+32
- 137 006a 0122     		movs	r2, #1
- 138 006c 1A70     		strb	r2, [r3]
-  71:Core/Src/ultra.c ****             }
- 139              		.loc 1 71 17 is_stmt 1 view .LVU39
-  71:Core/Src/ultra.c ****             }
- 140              		.loc 1 71 30 is_stmt 0 view .LVU40
- 141 006e 724B     		ldr	r3, .L22+36
- 142 0070 1868     		ldr	r0, [r3]
-  71:Core/Src/ultra.c ****             }
- 143              		.loc 1 71 20 view .LVU41
- 144 0072 10B1     		cbz	r0, .L5
-  71:Core/Src/ultra.c ****             }
- 145              		.loc 1 71 39 is_stmt 1 discriminator 1 view .LVU42
- 146 0074 1146     		mov	r1, r2
- 147 0076 FFF7FEFF 		bl	osThreadFlagsSet
- 148              	.LVL8:
- 149              	.L5:
-  73:Core/Src/ultra.c ****             __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_RISING);
- 150              		.loc 1 73 13 view .LVU43
-  73:Core/Src/ultra.c ****             __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_RISING);
- 151              		.loc 1 73 28 is_stmt 0 view .LVU44
- 152 007a 674B     		ldr	r3, .L22+4
- 153 007c 0022     		movs	r2, #0
- 154 007e 1A70     		strb	r2, [r3]
-  74:Core/Src/ultra.c ****             __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC1);
- 155              		.loc 1 74 13 is_stmt 1 view .LVU45
-  74:Core/Src/ultra.c ****             __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC1);
- 156              		.loc 1 74 13 view .LVU46
- 157 0080 664B     		ldr	r3, .L22+8
- 158 0082 1B68     		ldr	r3, [r3]
- 159 0084 1A6A     		ldr	r2, [r3, #32]
- 160 0086 22F00A02 		bic	r2, r2, #10
- 161 008a 1A62     		str	r2, [r3, #32]
-  74:Core/Src/ultra.c ****             __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC1);
- 162              		.loc 1 74 13 view .LVU47
- 163 008c 1A6A     		ldr	r2, [r3, #32]
- 164 008e 1A62     		str	r2, [r3, #32]
-  74:Core/Src/ultra.c ****             __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC1);
- 165              		.loc 1 74 13 view .LVU48
-  75:Core/Src/ultra.c ****         }
- 166              		.loc 1 75 13 view .LVU49
- 167 0090 DA68     		ldr	r2, [r3, #12]
- 168 0092 22F00202 		bic	r2, r2, #2
- 169 0096 DA60     		str	r2, [r3, #12]
- 170 0098 C0E7     		b	.L1
- 171              	.LVL9:
- 172              	.L19:
-  75:Core/Src/ultra.c ****         }
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 7
+ 238              		.loc 1 69 5 is_stmt 0 view .LVU58
+ 239 000a FFF7FEFF 		bl	HAL_TIM_IC_Start_IT
+ 240              	.LVL14:
+  70:Core/Src/ultra.c **** }
+ 241              		.loc 1 70 1 view .LVU59
+ 242 000e 08BD     		pop	{r3, pc}
+ 243              	.L17:
+ 244              		.align	2
+ 245              	.L16:
+ 246 0010 00000000 		.word	s_waiter
+ 247 0014 00000000 		.word	htim3
+ 248              		.cfi_endproc
+ 249              	.LFE139:
+ 251              		.section	.text.Ultra_Measure,"ax",%progbits
+ 252              		.align	1
+ 253              		.global	Ultra_Measure
+ 254              		.syntax unified
+ 255              		.thumb
+ 256              		.thumb_func
+ 258              	Ultra_Measure:
+ 259              	.LVL15:
+ 260              	.LFB140:
+  71:Core/Src/ultra.c **** 
+  72:Core/Src/ultra.c **** /* 전방 측정: 잔여상태 정리 → TRIG 10us 펄스 → 에코 회신까지 osThreadFlagsWai
+  73:Core/Src/ultra.c ****  * 에코 오면 ISR flag로 즉시 wake(근접=수ms), 무에코/글리치만 wait_ms 상한까지
+  74:Core/Src/ultra.c **** uint8_t Ultra_Measure(uint32_t wait_ms, uint16_t *out_cm)
+  75:Core/Src/ultra.c **** {
+ 261              		.loc 1 75 1 is_stmt 1 view -0
+ 262              		.cfi_startproc
+ 263              		@ args = 0, pretend = 0, frame = 0
+ 264              		@ frame_needed = 0, uses_anonymous_args = 0
+ 265              		.loc 1 75 1 is_stmt 0 view .LVU61
+ 266 0000 2DE9F041 		push	{r4, r5, r6, r7, r8, lr}
+ 267              	.LCFI2:
+ 268              		.cfi_def_cfa_offset 24
+ 269              		.cfi_offset 4, -24
+ 270              		.cfi_offset 5, -20
+ 271              		.cfi_offset 6, -16
+ 272              		.cfi_offset 7, -12
+ 273              		.cfi_offset 8, -8
+ 274              		.cfi_offset 14, -4
+ 275 0004 0546     		mov	r5, r0
+ 276 0006 0C46     		mov	r4, r1
+  76:Core/Src/ultra.c ****     distance   = ULTRA_MAX_CM;   /* 기본 멀다 (에코 오면 ISR이 실제값으로 덮음) */
+ 277              		.loc 1 76 5 is_stmt 1 view .LVU62
+ 278              		.loc 1 76 16 is_stmt 0 view .LVU63
+ 279 0008 254B     		ldr	r3, .L23
+ 280 000a 5022     		movs	r2, #80
+ 281 000c 1A80     		strh	r2, [r3]	@ movhi
+  77:Core/Src/ultra.c ****     meas_valid = 0;
+ 282              		.loc 1 77 5 is_stmt 1 view .LVU64
+ 283              		.loc 1 77 16 is_stmt 0 view .LVU65
+ 284 000e 254B     		ldr	r3, .L23+4
+ 285 0010 0022     		movs	r2, #0
+ 286 0012 1A70     		strb	r2, [r3]
+  78:Core/Src/ultra.c **** 
+  79:Core/Src/ultra.c ****     /* HC-SR04 무에코 잔류 가드: 직전 사이클이 무에코였다면 ECHO가 아직 high(
+ARM GAS  /tmp/ccYjTY1a.s 			page 8
 
 
- 173              		.loc 1 75 13 is_stmt 0 view .LVU50
- 174              	.LBE2:
-  52:Core/Src/ultra.c ****             captureFlag[0] = 1;
- 175              		.loc 1 52 13 is_stmt 1 view .LVU51
-  52:Core/Src/ultra.c ****             captureFlag[0] = 1;
- 176              		.loc 1 52 28 is_stmt 0 view .LVU52
- 177 009a 604C     		ldr	r4, .L22+8
- 178 009c 0021     		movs	r1, #0
- 179 009e 2046     		mov	r0, r4
- 180              	.LVL10:
-  52:Core/Src/ultra.c ****             captureFlag[0] = 1;
- 181              		.loc 1 52 28 view .LVU53
- 182 00a0 FFF7FEFF 		bl	HAL_TIM_ReadCapturedValue
- 183              	.LVL11:
-  52:Core/Src/ultra.c ****             captureFlag[0] = 1;
- 184              		.loc 1 52 26 discriminator 1 view .LVU54
- 185 00a4 80B2     		uxth	r0, r0
- 186 00a6 5F4B     		ldr	r3, .L22+16
- 187 00a8 1880     		strh	r0, [r3]	@ movhi
-  53:Core/Src/ultra.c ****             __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_FALLING);
- 188              		.loc 1 53 13 is_stmt 1 view .LVU55
-  53:Core/Src/ultra.c ****             __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_FALLING);
- 189              		.loc 1 53 28 is_stmt 0 view .LVU56
- 190 00aa 5B4B     		ldr	r3, .L22+4
- 191 00ac 0122     		movs	r2, #1
- 192 00ae 1A70     		strb	r2, [r3]
-  54:Core/Src/ultra.c ****         }
- 193              		.loc 1 54 13 is_stmt 1 view .LVU57
-  54:Core/Src/ultra.c ****         }
- 194              		.loc 1 54 13 view .LVU58
- 195 00b0 2368     		ldr	r3, [r4]
- 196 00b2 1A6A     		ldr	r2, [r3, #32]
- 197 00b4 22F00A02 		bic	r2, r2, #10
- 198 00b8 1A62     		str	r2, [r3, #32]
-  54:Core/Src/ultra.c ****         }
- 199              		.loc 1 54 13 view .LVU59
- 200 00ba 1A6A     		ldr	r2, [r3, #32]
- 201 00bc 42F00202 		orr	r2, r2, #2
- 202 00c0 1A62     		str	r2, [r3, #32]
-  54:Core/Src/ultra.c ****         }
- 203              		.loc 1 54 13 view .LVU60
- 204 00c2 ABE7     		b	.L1
- 205              	.LVL12:
- 206              	.L17:
-  80:Core/Src/ultra.c ****         {
- 207              		.loc 1 80 9 view .LVU61
-  80:Core/Src/ultra.c ****         {
- 208              		.loc 1 80 23 is_stmt 0 view .LVU62
- 209 00c4 544B     		ldr	r3, .L22+4
- 210 00c6 5B78     		ldrb	r3, [r3, #1]	@ zero_extendqisi2
-  80:Core/Src/ultra.c ****         {
- 211              		.loc 1 80 11 view .LVU63
- 212 00c8 002B     		cmp	r3, #0
- 213 00ca 39D0     		beq	.L20
-  86:Core/Src/ultra.c ****         {
- 214              		.loc 1 86 14 is_stmt 1 view .LVU64
-  86:Core/Src/ultra.c ****         {
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 8
+  80:Core/Src/ultra.c ****      * 그 동안의 TRIG는 무시됨 → wait_ms 헛대기 대신 이번 사이클 즉시 skip(�
+  81:Core/Src/ultra.c ****     if (HAL_GPIO_ReadPin(ECHO_TIM3_CH1_GPIO_Port, ECHO_TIM3_CH1_Pin) == GPIO_PIN_SET)
+ 287              		.loc 1 81 5 is_stmt 1 view .LVU66
+ 288              		.loc 1 81 9 is_stmt 0 view .LVU67
+ 289 0014 4021     		movs	r1, #64
+ 290              	.LVL16:
+ 291              		.loc 1 81 9 view .LVU68
+ 292 0016 2448     		ldr	r0, .L23+8
+ 293              	.LVL17:
+ 294              		.loc 1 81 9 view .LVU69
+ 295 0018 FFF7FEFF 		bl	HAL_GPIO_ReadPin
+ 296              	.LVL18:
+ 297              		.loc 1 81 8 discriminator 1 view .LVU70
+ 298 001c 0128     		cmp	r0, #1
+ 299 001e 3AD0     		beq	.L22
+  82:Core/Src/ultra.c ****     {
+  83:Core/Src/ultra.c ****         *out_cm = ULTRA_MAX_CM;
+  84:Core/Src/ultra.c ****         return 0;
+  85:Core/Src/ultra.c ****     }
+  86:Core/Src/ultra.c **** 
+  87:Core/Src/ultra.c ****     /* 잔여 캡처 상태 정리 (IT off → 플래그/극성 리셋 → CC1IF/CC1OF 클리어)
+  88:Core/Src/ultra.c ****      * + 직전 사이클 늦은 에코가 남긴 stale thread flag 제거 (IT off 후라 경쟁 �
+  89:Core/Src/ultra.c ****     __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC1);
+ 300              		.loc 1 89 5 is_stmt 1 view .LVU71
+ 301 0020 224F     		ldr	r7, .L23+12
+ 302 0022 3B68     		ldr	r3, [r7]
+ 303 0024 DA68     		ldr	r2, [r3, #12]
+ 304 0026 22F00202 		bic	r2, r2, #2
+ 305 002a DA60     		str	r2, [r3, #12]
+  90:Core/Src/ultra.c ****     captureFlag = 0;
+ 306              		.loc 1 90 5 view .LVU72
+ 307              		.loc 1 90 17 is_stmt 0 view .LVU73
+ 308 002c 0026     		movs	r6, #0
+ 309 002e 204A     		ldr	r2, .L23+16
+ 310 0030 1670     		strb	r6, [r2]
+  91:Core/Src/ultra.c ****     __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_RISING);
+ 311              		.loc 1 91 5 is_stmt 1 view .LVU74
+ 312              		.loc 1 91 5 view .LVU75
+ 313 0032 1A6A     		ldr	r2, [r3, #32]
+ 314 0034 22F00A02 		bic	r2, r2, #10
+ 315 0038 1A62     		str	r2, [r3, #32]
+ 316              		.loc 1 91 5 view .LVU76
+ 317 003a 1A6A     		ldr	r2, [r3, #32]
+ 318 003c 1A62     		str	r2, [r3, #32]
+ 319              		.loc 1 91 5 view .LVU77
+  92:Core/Src/ultra.c ****     __HAL_TIM_CLEAR_FLAG(&htim3, TIM_FLAG_CC1 | TIM_FLAG_CC1OF);
+ 320              		.loc 1 92 5 view .LVU78
+ 321 003e 1D4A     		ldr	r2, .L23+20
+ 322 0040 1A61     		str	r2, [r3, #16]
+  93:Core/Src/ultra.c ****     osThreadFlagsClear(ULTRA_FLAG_FRONT);
+ 323              		.loc 1 93 5 view .LVU79
+ 324 0042 0120     		movs	r0, #1
+ 325 0044 FFF7FEFF 		bl	osThreadFlagsClear
+ 326              	.LVL19:
+  94:Core/Src/ultra.c **** 
+  95:Core/Src/ultra.c ****     /* TRIG 10us 펄스 + 캡처 IT 활성 */
+  96:Core/Src/ultra.c ****     HAL_GPIO_WritePin(TRIG_FRONT_GPIO_Port, TRIG_FRONT_Pin, GPIO_PIN_SET);
+ARM GAS  /tmp/ccYjTY1a.s 			page 9
 
 
- 215              		.loc 1 86 28 is_stmt 0 view .LVU65
- 216 00cc 524B     		ldr	r3, .L22+4
- 217 00ce 5B78     		ldrb	r3, [r3, #1]	@ zero_extendqisi2
-  86:Core/Src/ultra.c ****         {
- 218              		.loc 1 86 16 view .LVU66
- 219 00d0 012B     		cmp	r3, #1
- 220 00d2 A3D1     		bne	.L1
- 221              	.LBB3:
-  88:Core/Src/ultra.c **** 
- 222              		.loc 1 88 13 is_stmt 1 view .LVU67
-  88:Core/Src/ultra.c **** 
- 223              		.loc 1 88 28 is_stmt 0 view .LVU68
- 224 00d4 0421     		movs	r1, #4
- 225 00d6 5148     		ldr	r0, .L22+8
- 226              	.LVL13:
-  88:Core/Src/ultra.c **** 
- 227              		.loc 1 88 28 view .LVU69
- 228 00d8 FFF7FEFF 		bl	HAL_TIM_ReadCapturedValue
- 229              	.LVL14:
-  88:Core/Src/ultra.c **** 
- 230              		.loc 1 88 26 discriminator 1 view .LVU70
- 231 00dc 83B2     		uxth	r3, r0
- 232 00de 504A     		ldr	r2, .L22+12
- 233 00e0 5380     		strh	r3, [r2, #2]	@ movhi
-  91:Core/Src/ultra.c **** 
- 234              		.loc 1 91 13 is_stmt 1 view .LVU71
-  91:Core/Src/ultra.c **** 
- 235              		.loc 1 91 47 is_stmt 0 view .LVU72
- 236 00e2 5388     		ldrh	r3, [r2, #2]
- 237 00e4 9BB2     		uxth	r3, r3
-  91:Core/Src/ultra.c **** 
- 238              		.loc 1 91 62 view .LVU73
- 239 00e6 4F4A     		ldr	r2, .L22+16
- 240 00e8 5288     		ldrh	r2, [r2, #2]
- 241 00ea 92B2     		uxth	r2, r2
-  91:Core/Src/ultra.c **** 
- 242              		.loc 1 91 27 view .LVU74
- 243 00ec 9B1A     		subs	r3, r3, r2
- 244 00ee 9BB2     		uxth	r3, r3
-  91:Core/Src/ultra.c **** 
- 245              		.loc 1 91 25 view .LVU75
- 246 00f0 4D4A     		ldr	r2, .L22+20
- 247 00f2 5380     		strh	r3, [r2, #2]	@ movhi
-  93:Core/Src/ultra.c ****             if (d1 != 0U)   /* CH1과 동일: 글리치(0) → invalid */
- 248              		.loc 1 93 13 is_stmt 1 view .LVU76
-  93:Core/Src/ultra.c ****             if (d1 != 0U)   /* CH1과 동일: 글리치(0) → invalid */
- 249              		.loc 1 93 35 is_stmt 0 view .LVU77
- 250 00f4 5288     		ldrh	r2, [r2, #2]
- 251 00f6 92B2     		uxth	r2, r2
-  93:Core/Src/ultra.c ****             if (d1 != 0U)   /* CH1과 동일: 글리치(0) → invalid */
- 252              		.loc 1 93 22 view .LVU78
- 253 00f8 4C4B     		ldr	r3, .L22+24
- 254 00fa A3FB0213 		umull	r1, r3, r3, r2
- 255 00fe 5B09     		lsrs	r3, r3, #5
- 256              	.LVL15:
-  94:Core/Src/ultra.c ****             {
- 257              		.loc 1 94 13 is_stmt 1 view .LVU79
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 9
-
-
-  94:Core/Src/ultra.c ****             {
- 258              		.loc 1 94 16 is_stmt 0 view .LVU80
- 259 0100 392A     		cmp	r2, #57
- 260 0102 0DD9     		bls	.L8
-  96:Core/Src/ultra.c ****                 meas_valid[1] = 1;
- 261              		.loc 1 96 17 is_stmt 1 view .LVU81
-  96:Core/Src/ultra.c ****                 meas_valid[1] = 1;
- 262              		.loc 1 96 66 is_stmt 0 view .LVU82
- 263 0104 C82B     		cmp	r3, #200
- 264 0106 28BF     		it	cs
- 265 0108 C823     		movcs	r3, #200
- 266              	.LVL16:
-  96:Core/Src/ultra.c ****                 meas_valid[1] = 1;
- 267              		.loc 1 96 29 view .LVU83
- 268 010a 494A     		ldr	r2, .L22+28
- 269              	.LVL17:
-  96:Core/Src/ultra.c ****                 meas_valid[1] = 1;
- 270              		.loc 1 96 29 view .LVU84
- 271 010c 5380     		strh	r3, [r2, #2]	@ movhi
-  97:Core/Src/ultra.c ****                 if (s_waiter != NULL) osThreadFlagsSet(s_waiter, 1UL << 1);
- 272              		.loc 1 97 17 is_stmt 1 view .LVU85
-  97:Core/Src/ultra.c ****                 if (s_waiter != NULL) osThreadFlagsSet(s_waiter, 1UL << 1);
- 273              		.loc 1 97 31 is_stmt 0 view .LVU86
- 274 010e 494B     		ldr	r3, .L22+32
- 275 0110 0122     		movs	r2, #1
- 276 0112 5A70     		strb	r2, [r3, #1]
-  98:Core/Src/ultra.c ****             }
- 277              		.loc 1 98 17 is_stmt 1 view .LVU87
-  98:Core/Src/ultra.c ****             }
- 278              		.loc 1 98 30 is_stmt 0 view .LVU88
- 279 0114 484B     		ldr	r3, .L22+36
- 280 0116 1868     		ldr	r0, [r3]
-  98:Core/Src/ultra.c ****             }
- 281              		.loc 1 98 20 view .LVU89
- 282 0118 10B1     		cbz	r0, .L8
-  98:Core/Src/ultra.c ****             }
- 283              		.loc 1 98 39 is_stmt 1 discriminator 1 view .LVU90
- 284 011a 0221     		movs	r1, #2
- 285 011c FFF7FEFF 		bl	osThreadFlagsSet
- 286              	.LVL18:
- 287              	.L8:
- 100:Core/Src/ultra.c ****             __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_2, TIM_INPUTCHANNELPOLARITY_RISING);
- 288              		.loc 1 100 13 view .LVU91
- 100:Core/Src/ultra.c ****             __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_2, TIM_INPUTCHANNELPOLARITY_RISING);
- 289              		.loc 1 100 28 is_stmt 0 view .LVU92
- 290 0120 3D4B     		ldr	r3, .L22+4
- 291 0122 0022     		movs	r2, #0
- 292 0124 5A70     		strb	r2, [r3, #1]
- 101:Core/Src/ultra.c ****             __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC2);
- 293              		.loc 1 101 13 is_stmt 1 view .LVU93
- 101:Core/Src/ultra.c ****             __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC2);
- 294              		.loc 1 101 13 view .LVU94
- 295 0126 3D4B     		ldr	r3, .L22+8
- 296 0128 1B68     		ldr	r3, [r3]
- 297 012a 1A6A     		ldr	r2, [r3, #32]
- 298 012c 22F0A002 		bic	r2, r2, #160
- 299 0130 1A62     		str	r2, [r3, #32]
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 10
-
-
- 101:Core/Src/ultra.c ****             __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC2);
- 300              		.loc 1 101 13 view .LVU95
- 301 0132 1A6A     		ldr	r2, [r3, #32]
- 302 0134 1A62     		str	r2, [r3, #32]
- 101:Core/Src/ultra.c ****             __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC2);
- 303              		.loc 1 101 13 view .LVU96
- 102:Core/Src/ultra.c ****         }
- 304              		.loc 1 102 13 view .LVU97
- 305 0136 DA68     		ldr	r2, [r3, #12]
- 306 0138 22F00402 		bic	r2, r2, #4
- 307 013c DA60     		str	r2, [r3, #12]
- 308 013e 6DE7     		b	.L1
- 309              	.LVL19:
- 310              	.L20:
- 102:Core/Src/ultra.c ****         }
- 311              		.loc 1 102 13 is_stmt 0 view .LVU98
- 312              	.LBE3:
-  82:Core/Src/ultra.c ****             captureFlag[1] = 1;
- 313              		.loc 1 82 13 is_stmt 1 view .LVU99
-  82:Core/Src/ultra.c ****             captureFlag[1] = 1;
- 314              		.loc 1 82 28 is_stmt 0 view .LVU100
- 315 0140 364C     		ldr	r4, .L22+8
- 316 0142 0421     		movs	r1, #4
- 317 0144 2046     		mov	r0, r4
- 318              	.LVL20:
-  82:Core/Src/ultra.c ****             captureFlag[1] = 1;
- 319              		.loc 1 82 28 view .LVU101
- 320 0146 FFF7FEFF 		bl	HAL_TIM_ReadCapturedValue
- 321              	.LVL21:
-  82:Core/Src/ultra.c ****             captureFlag[1] = 1;
- 322              		.loc 1 82 26 discriminator 1 view .LVU102
- 323 014a 80B2     		uxth	r0, r0
- 324 014c 354B     		ldr	r3, .L22+16
- 325 014e 5880     		strh	r0, [r3, #2]	@ movhi
-  83:Core/Src/ultra.c ****             __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_2, TIM_INPUTCHANNELPOLARITY_FALLING);
- 326              		.loc 1 83 13 is_stmt 1 view .LVU103
-  83:Core/Src/ultra.c ****             __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_2, TIM_INPUTCHANNELPOLARITY_FALLING);
- 327              		.loc 1 83 28 is_stmt 0 view .LVU104
- 328 0150 314B     		ldr	r3, .L22+4
- 329 0152 0122     		movs	r2, #1
- 330 0154 5A70     		strb	r2, [r3, #1]
-  84:Core/Src/ultra.c ****         }
- 331              		.loc 1 84 13 is_stmt 1 view .LVU105
-  84:Core/Src/ultra.c ****         }
- 332              		.loc 1 84 13 view .LVU106
- 333 0156 2368     		ldr	r3, [r4]
- 334 0158 1A6A     		ldr	r2, [r3, #32]
- 335 015a 22F0A002 		bic	r2, r2, #160
- 336 015e 1A62     		str	r2, [r3, #32]
-  84:Core/Src/ultra.c ****         }
- 337              		.loc 1 84 13 view .LVU107
- 338 0160 1A6A     		ldr	r2, [r3, #32]
- 339 0162 42F02002 		orr	r2, r2, #32
- 340 0166 1A62     		str	r2, [r3, #32]
-  84:Core/Src/ultra.c ****         }
- 341              		.loc 1 84 13 view .LVU108
- 342 0168 58E7     		b	.L1
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 11
-
-
+ 327              		.loc 1 96 5 view .LVU80
+ 328 0048 DFF85C80 		ldr	r8, .L23+8
+ 329 004c 0122     		movs	r2, #1
+ 330 004e 2021     		movs	r1, #32
+ 331 0050 4046     		mov	r0, r8
+ 332 0052 FFF7FEFF 		bl	HAL_GPIO_WritePin
+ 333              	.LVL20:
+  97:Core/Src/ultra.c ****     delay_us(10);
+ 334              		.loc 1 97 5 view .LVU81
+ 335 0056 0A20     		movs	r0, #10
+ 336 0058 FFF7FEFF 		bl	delay_us
+ 337              	.LVL21:
+  98:Core/Src/ultra.c ****     HAL_GPIO_WritePin(TRIG_FRONT_GPIO_Port, TRIG_FRONT_Pin, GPIO_PIN_RESET);
+ 338              		.loc 1 98 5 view .LVU82
+ 339 005c 3246     		mov	r2, r6
+ 340 005e 2021     		movs	r1, #32
+ 341 0060 4046     		mov	r0, r8
+ 342 0062 FFF7FEFF 		bl	HAL_GPIO_WritePin
  343              	.LVL22:
- 344              	.L18:
- 107:Core/Src/ultra.c ****         {
- 345              		.loc 1 107 9 view .LVU109
- 107:Core/Src/ultra.c ****         {
- 346              		.loc 1 107 23 is_stmt 0 view .LVU110
- 347 016a 2B4B     		ldr	r3, .L22+4
- 348 016c 9B78     		ldrb	r3, [r3, #2]	@ zero_extendqisi2
- 107:Core/Src/ultra.c ****         {
- 349              		.loc 1 107 11 view .LVU111
- 350 016e 002B     		cmp	r3, #0
- 351 0170 3AD0     		beq	.L21
- 113:Core/Src/ultra.c ****         {
- 352              		.loc 1 113 14 is_stmt 1 view .LVU112
- 113:Core/Src/ultra.c ****         {
- 353              		.loc 1 113 28 is_stmt 0 view .LVU113
- 354 0172 294B     		ldr	r3, .L22+4
- 355 0174 9B78     		ldrb	r3, [r3, #2]	@ zero_extendqisi2
- 113:Core/Src/ultra.c ****         {
- 356              		.loc 1 113 16 view .LVU114
- 357 0176 012B     		cmp	r3, #1
- 358 0178 7FF450AF 		bne	.L1
- 359              	.LBB4:
- 115:Core/Src/ultra.c **** 
- 360              		.loc 1 115 13 is_stmt 1 view .LVU115
- 115:Core/Src/ultra.c **** 
- 361              		.loc 1 115 28 is_stmt 0 view .LVU116
- 362 017c 0821     		movs	r1, #8
- 363 017e 2748     		ldr	r0, .L22+8
- 364              	.LVL23:
- 115:Core/Src/ultra.c **** 
- 365              		.loc 1 115 28 view .LVU117
- 366 0180 FFF7FEFF 		bl	HAL_TIM_ReadCapturedValue
- 367              	.LVL24:
- 115:Core/Src/ultra.c **** 
- 368              		.loc 1 115 26 discriminator 1 view .LVU118
- 369 0184 83B2     		uxth	r3, r0
- 370 0186 264A     		ldr	r2, .L22+12
- 371 0188 9380     		strh	r3, [r2, #4]	@ movhi
- 118:Core/Src/ultra.c **** 
- 372              		.loc 1 118 13 is_stmt 1 view .LVU119
- 118:Core/Src/ultra.c **** 
- 373              		.loc 1 118 47 is_stmt 0 view .LVU120
- 374 018a 9388     		ldrh	r3, [r2, #4]
- 375 018c 9BB2     		uxth	r3, r3
- 118:Core/Src/ultra.c **** 
- 376              		.loc 1 118 62 view .LVU121
- 377 018e 254A     		ldr	r2, .L22+16
- 378 0190 9288     		ldrh	r2, [r2, #4]
- 379 0192 92B2     		uxth	r2, r2
- 118:Core/Src/ultra.c **** 
- 380              		.loc 1 118 27 view .LVU122
- 381 0194 9B1A     		subs	r3, r3, r2
- 382 0196 9BB2     		uxth	r3, r3
- 118:Core/Src/ultra.c **** 
- 383              		.loc 1 118 25 view .LVU123
- 384 0198 234A     		ldr	r2, .L22+20
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 12
+  99:Core/Src/ultra.c ****     __HAL_TIM_ENABLE_IT(&htim3, TIM_IT_CC1);
+ 344              		.loc 1 99 5 view .LVU83
+ 345 0066 3A68     		ldr	r2, [r7]
+ 346 0068 D368     		ldr	r3, [r2, #12]
+ 347 006a 43F00203 		orr	r3, r3, #2
+ 348 006e D360     		str	r3, [r2, #12]
+ 100:Core/Src/ultra.c **** 
+ 101:Core/Src/ultra.c ****     /* 적응형 대기: 유효 측정 완료 시 ISR flag → 즉시 복귀, 무에코/글리치 �
+ 102:Core/Src/ultra.c ****     (void)osThreadFlagsWait(ULTRA_FLAG_FRONT, osFlagsWaitAny, wait_ms);
+ 349              		.loc 1 102 5 view .LVU84
+ 350              		.loc 1 102 11 is_stmt 0 view .LVU85
+ 351 0070 2A46     		mov	r2, r5
+ 352 0072 3146     		mov	r1, r6
+ 353 0074 0120     		movs	r0, #1
+ 354 0076 FFF7FEFF 		bl	osThreadFlagsWait
+ 355              	.LVL23:
+ 103:Core/Src/ultra.c **** 
+ 104:Core/Src/ultra.c ****     /* ISR 공유값 원자적 스냅샷 (timeout 직후 늦은 에코 edge로부터 일관성 보�
+ 105:Core/Src/ultra.c ****      * taskENTER_CRITICAL = BASEPRI를 syscall 경계(5)로 → TIM3(prio 5) 마스킹 */
+ 106:Core/Src/ultra.c ****     uint8_t  v;
+ 356              		.loc 1 106 5 is_stmt 1 view .LVU86
+ 107:Core/Src/ultra.c ****     uint16_t d;
+ 357              		.loc 1 107 5 view .LVU87
+ 108:Core/Src/ultra.c ****     taskENTER_CRITICAL();
+ 358              		.loc 1 108 5 view .LVU88
+ 359 007a FFF7FEFF 		bl	vPortEnterCritical
+ 360              	.LVL24:
+ 109:Core/Src/ultra.c ****     v = meas_valid;
+ 361              		.loc 1 109 5 view .LVU89
+ 362              		.loc 1 109 7 is_stmt 0 view .LVU90
+ 363 007e 094B     		ldr	r3, .L23+4
+ 364 0080 1D78     		ldrb	r5, [r3]	@ zero_extendqisi2
+ 365              	.LVL25:
+ 366              		.loc 1 109 7 view .LVU91
+ 367 0082 EDB2     		uxtb	r5, r5
+ 368              	.LVL26:
+ 110:Core/Src/ultra.c ****     d = distance;
+ 369              		.loc 1 110 5 is_stmt 1 view .LVU92
+ARM GAS  /tmp/ccYjTY1a.s 			page 10
 
 
- 385 019a 9380     		strh	r3, [r2, #4]	@ movhi
- 120:Core/Src/ultra.c ****             if (d2 != 0U)   /* CH1과 동일: 글리치(0) → invalid */
- 386              		.loc 1 120 13 is_stmt 1 view .LVU124
- 120:Core/Src/ultra.c ****             if (d2 != 0U)   /* CH1과 동일: 글리치(0) → invalid */
- 387              		.loc 1 120 35 is_stmt 0 view .LVU125
- 388 019c 9288     		ldrh	r2, [r2, #4]
- 389 019e 92B2     		uxth	r2, r2
- 120:Core/Src/ultra.c ****             if (d2 != 0U)   /* CH1과 동일: 글리치(0) → invalid */
- 390              		.loc 1 120 22 view .LVU126
- 391 01a0 224B     		ldr	r3, .L22+24
- 392 01a2 A3FB0213 		umull	r1, r3, r3, r2
- 393 01a6 5B09     		lsrs	r3, r3, #5
- 394              	.LVL25:
- 121:Core/Src/ultra.c ****             {
- 395              		.loc 1 121 13 is_stmt 1 view .LVU127
- 121:Core/Src/ultra.c ****             {
- 396              		.loc 1 121 16 is_stmt 0 view .LVU128
- 397 01a8 392A     		cmp	r2, #57
- 398 01aa 0DD9     		bls	.L10
- 123:Core/Src/ultra.c ****                 meas_valid[2] = 1;
- 399              		.loc 1 123 17 is_stmt 1 view .LVU129
- 123:Core/Src/ultra.c ****                 meas_valid[2] = 1;
- 400              		.loc 1 123 66 is_stmt 0 view .LVU130
- 401 01ac C82B     		cmp	r3, #200
- 402 01ae 28BF     		it	cs
- 403 01b0 C823     		movcs	r3, #200
- 404              	.LVL26:
- 123:Core/Src/ultra.c ****                 meas_valid[2] = 1;
- 405              		.loc 1 123 29 view .LVU131
- 406 01b2 1F4A     		ldr	r2, .L22+28
- 407              	.LVL27:
- 123:Core/Src/ultra.c ****                 meas_valid[2] = 1;
- 408              		.loc 1 123 29 view .LVU132
- 409 01b4 9380     		strh	r3, [r2, #4]	@ movhi
- 124:Core/Src/ultra.c ****                 if (s_waiter != NULL) osThreadFlagsSet(s_waiter, 1UL << 2);
- 410              		.loc 1 124 17 is_stmt 1 view .LVU133
- 124:Core/Src/ultra.c ****                 if (s_waiter != NULL) osThreadFlagsSet(s_waiter, 1UL << 2);
- 411              		.loc 1 124 31 is_stmt 0 view .LVU134
- 412 01b6 1F4B     		ldr	r3, .L22+32
- 413 01b8 0122     		movs	r2, #1
- 414 01ba 9A70     		strb	r2, [r3, #2]
- 125:Core/Src/ultra.c ****             }
- 415              		.loc 1 125 17 is_stmt 1 view .LVU135
- 125:Core/Src/ultra.c ****             }
- 416              		.loc 1 125 30 is_stmt 0 view .LVU136
- 417 01bc 1E4B     		ldr	r3, .L22+36
- 418 01be 1868     		ldr	r0, [r3]
- 125:Core/Src/ultra.c ****             }
- 419              		.loc 1 125 20 view .LVU137
- 420 01c0 10B1     		cbz	r0, .L10
- 125:Core/Src/ultra.c ****             }
- 421              		.loc 1 125 39 is_stmt 1 discriminator 1 view .LVU138
- 422 01c2 0421     		movs	r1, #4
- 423 01c4 FFF7FEFF 		bl	osThreadFlagsSet
- 424              	.LVL28:
- 425              	.L10:
- 127:Core/Src/ultra.c ****             __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_3, TIM_INPUTCHANNELPOLARITY_RISING);
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 13
+ 370              		.loc 1 110 7 is_stmt 0 view .LVU93
+ 371 0084 064B     		ldr	r3, .L23
+ 372 0086 1E88     		ldrh	r6, [r3]
+ 373 0088 B6B2     		uxth	r6, r6
+ 374              	.LVL27:
+ 111:Core/Src/ultra.c ****     taskEXIT_CRITICAL();
+ 375              		.loc 1 111 5 is_stmt 1 view .LVU94
+ 376 008a FFF7FEFF 		bl	vPortExitCritical
+ 377              	.LVL28:
+ 112:Core/Src/ultra.c **** 
+ 113:Core/Src/ultra.c ****     *out_cm = d;
+ 378              		.loc 1 113 5 view .LVU95
+ 379              		.loc 1 113 13 is_stmt 0 view .LVU96
+ 380 008e 2680     		strh	r6, [r4]	@ movhi
+ 114:Core/Src/ultra.c ****     return v;
+ 381              		.loc 1 114 5 is_stmt 1 view .LVU97
+ 382              	.LVL29:
+ 383              	.L20:
+ 115:Core/Src/ultra.c **** }
+ 384              		.loc 1 115 1 is_stmt 0 view .LVU98
+ 385 0090 2846     		mov	r0, r5
+ 386 0092 BDE8F081 		pop	{r4, r5, r6, r7, r8, pc}
+ 387              	.LVL30:
+ 388              	.L22:
+  83:Core/Src/ultra.c ****         return 0;
+ 389              		.loc 1 83 9 is_stmt 1 view .LVU99
+  83:Core/Src/ultra.c ****         return 0;
+ 390              		.loc 1 83 17 is_stmt 0 view .LVU100
+ 391 0096 5023     		movs	r3, #80
+ 392 0098 2380     		strh	r3, [r4]	@ movhi
+  84:Core/Src/ultra.c ****     }
+ 393              		.loc 1 84 9 is_stmt 1 view .LVU101
+  84:Core/Src/ultra.c ****     }
+ 394              		.loc 1 84 16 is_stmt 0 view .LVU102
+ 395 009a 0025     		movs	r5, #0
+ 396              	.LVL31:
+  84:Core/Src/ultra.c ****     }
+ 397              		.loc 1 84 16 view .LVU103
+ 398 009c F8E7     		b	.L20
+ 399              	.L24:
+ 400 009e 00BF     		.align	2
+ 401              	.L23:
+ 402 00a0 00000000 		.word	distance
+ 403 00a4 00000000 		.word	meas_valid
+ 404 00a8 00000240 		.word	1073872896
+ 405 00ac 00000000 		.word	htim3
+ 406 00b0 00000000 		.word	captureFlag
+ 407 00b4 FDFDFFFF 		.word	-515
+ 408              		.cfi_endproc
+ 409              	.LFE140:
+ 411              		.section	.text.median_n,"ax",%progbits
+ 412              		.align	1
+ 413              		.global	median_n
+ 414              		.syntax unified
+ 415              		.thumb
+ 416              		.thumb_func
+ 418              	median_n:
+ARM GAS  /tmp/ccYjTY1a.s 			page 11
 
 
- 426              		.loc 1 127 13 view .LVU139
- 127:Core/Src/ultra.c ****             __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_3, TIM_INPUTCHANNELPOLARITY_RISING);
- 427              		.loc 1 127 28 is_stmt 0 view .LVU140
- 428 01c8 134B     		ldr	r3, .L22+4
- 429 01ca 0022     		movs	r2, #0
- 430 01cc 9A70     		strb	r2, [r3, #2]
- 128:Core/Src/ultra.c ****             __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC3);
- 431              		.loc 1 128 13 is_stmt 1 view .LVU141
- 128:Core/Src/ultra.c ****             __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC3);
- 432              		.loc 1 128 13 view .LVU142
- 433 01ce 134B     		ldr	r3, .L22+8
- 434 01d0 1B68     		ldr	r3, [r3]
- 435 01d2 1A6A     		ldr	r2, [r3, #32]
- 436 01d4 22F42062 		bic	r2, r2, #2560
- 437 01d8 1A62     		str	r2, [r3, #32]
- 128:Core/Src/ultra.c ****             __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC3);
- 438              		.loc 1 128 13 view .LVU143
- 439 01da 1A6A     		ldr	r2, [r3, #32]
- 440 01dc 1A62     		str	r2, [r3, #32]
- 128:Core/Src/ultra.c ****             __HAL_TIM_DISABLE_IT(&htim3, TIM_IT_CC3);
- 441              		.loc 1 128 13 view .LVU144
- 129:Core/Src/ultra.c ****         }
- 442              		.loc 1 129 13 view .LVU145
- 443 01de DA68     		ldr	r2, [r3, #12]
- 444 01e0 22F00802 		bic	r2, r2, #8
- 445 01e4 DA60     		str	r2, [r3, #12]
- 446 01e6 19E7     		b	.L1
- 447              	.LVL29:
- 448              	.L21:
- 129:Core/Src/ultra.c ****         }
- 449              		.loc 1 129 13 is_stmt 0 view .LVU146
- 450              	.LBE4:
- 109:Core/Src/ultra.c ****             captureFlag[2] = 1;
- 451              		.loc 1 109 13 is_stmt 1 view .LVU147
- 109:Core/Src/ultra.c ****             captureFlag[2] = 1;
- 452              		.loc 1 109 28 is_stmt 0 view .LVU148
- 453 01e8 0C4C     		ldr	r4, .L22+8
- 454 01ea 0821     		movs	r1, #8
- 455 01ec 2046     		mov	r0, r4
- 456              	.LVL30:
- 109:Core/Src/ultra.c ****             captureFlag[2] = 1;
- 457              		.loc 1 109 28 view .LVU149
- 458 01ee FFF7FEFF 		bl	HAL_TIM_ReadCapturedValue
- 459              	.LVL31:
- 109:Core/Src/ultra.c ****             captureFlag[2] = 1;
- 460              		.loc 1 109 26 discriminator 1 view .LVU150
- 461 01f2 80B2     		uxth	r0, r0
- 462 01f4 0B4B     		ldr	r3, .L22+16
- 463 01f6 9880     		strh	r0, [r3, #4]	@ movhi
- 110:Core/Src/ultra.c ****             __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_3, TIM_INPUTCHANNELPOLARITY_FALLING);
- 464              		.loc 1 110 13 is_stmt 1 view .LVU151
- 110:Core/Src/ultra.c ****             __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_3, TIM_INPUTCHANNELPOLARITY_FALLING);
- 465              		.loc 1 110 28 is_stmt 0 view .LVU152
- 466 01f8 074B     		ldr	r3, .L22+4
- 467 01fa 0122     		movs	r2, #1
- 468 01fc 9A70     		strb	r2, [r3, #2]
- 111:Core/Src/ultra.c ****         }
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 14
+ 419              	.LVL32:
+ 420              	.LFB141:
+ 116:Core/Src/ultra.c **** 
+ 117:Core/Src/ultra.c **** /* N-샘플 중앙값 (스파이크 제거). n개 중 (n-1)/2개까지 튀어도 거름 — 윈도 
+ 118:Core/Src/ultra.c ****  * 삽입정렬 후 중앙 인덱스 반환. n은 작음(3~7)이라 정렬 비용 무시 가능. */
+ 119:Core/Src/ultra.c **** uint16_t median_n(const uint16_t *a, uint8_t n)
+ 120:Core/Src/ultra.c **** {
+ 421              		.loc 1 120 1 is_stmt 1 view -0
+ 422              		.cfi_startproc
+ 423              		@ args = 0, pretend = 0, frame = 32
+ 424              		@ frame_needed = 0, uses_anonymous_args = 0
+ 425              		.loc 1 120 1 is_stmt 0 view .LVU105
+ 426 0000 10B5     		push	{r4, lr}
+ 427              	.LCFI3:
+ 428              		.cfi_def_cfa_offset 8
+ 429              		.cfi_offset 4, -8
+ 430              		.cfi_offset 14, -4
+ 431 0002 88B0     		sub	sp, sp, #32
+ 432              	.LCFI4:
+ 433              		.cfi_def_cfa_offset 40
+ 121:Core/Src/ultra.c ****     uint16_t b[16];
+ 434              		.loc 1 121 5 is_stmt 1 view .LVU106
+ 122:Core/Src/ultra.c ****     if (n > 16) n = 16;
+ 435              		.loc 1 122 5 view .LVU107
+ 436              		.loc 1 122 8 is_stmt 0 view .LVU108
+ 437 0004 1029     		cmp	r1, #16
+ 438 0006 00D9     		bls	.L26
+ 439              		.loc 1 122 19 discriminator 1 view .LVU109
+ 440 0008 1021     		movs	r1, #16
+ 441              	.LVL33:
+ 442              	.L26:
+ 123:Core/Src/ultra.c ****     for (uint8_t i = 0; i < n; i++) b[i] = a[i];
+ 443              		.loc 1 123 5 is_stmt 1 view .LVU110
+ 444              	.LBB3:
+ 445              		.loc 1 123 10 view .LVU111
+ 446              		.loc 1 123 18 is_stmt 0 view .LVU112
+ 447 000a 0023     		movs	r3, #0
+ 448              		.loc 1 123 5 view .LVU113
+ 449 000c 08E0     		b	.L27
+ 450              	.LVL34:
+ 451              	.L28:
+ 452              		.loc 1 123 37 is_stmt 1 discriminator 3 view .LVU114
+ 453              		.loc 1 123 45 is_stmt 0 discriminator 3 view .LVU115
+ 454 000e 30F813C0 		ldrh	ip, [r0, r3, lsl #1]
+ 455              		.loc 1 123 42 discriminator 3 view .LVU116
+ 456 0012 08AA     		add	r2, sp, #32
+ 457 0014 02EB4302 		add	r2, r2, r3, lsl #1
+ 458 0018 22F820CC 		strh	ip, [r2, #-32]	@ movhi
+ 459              		.loc 1 123 33 is_stmt 1 discriminator 3 view .LVU117
+ 460 001c 0133     		adds	r3, r3, #1
+ 461              	.LVL35:
+ 462              		.loc 1 123 33 is_stmt 0 discriminator 3 view .LVU118
+ 463 001e DBB2     		uxtb	r3, r3
+ 464              	.LVL36:
+ 465              	.L27:
+ 466              		.loc 1 123 27 is_stmt 1 discriminator 1 view .LVU119
+ 467 0020 9942     		cmp	r1, r3
+ARM GAS  /tmp/ccYjTY1a.s 			page 12
 
 
- 469              		.loc 1 111 13 is_stmt 1 view .LVU153
- 111:Core/Src/ultra.c ****         }
- 470              		.loc 1 111 13 view .LVU154
- 471 01fe 2368     		ldr	r3, [r4]
- 472 0200 1A6A     		ldr	r2, [r3, #32]
- 473 0202 22F42062 		bic	r2, r2, #2560
- 474 0206 1A62     		str	r2, [r3, #32]
- 111:Core/Src/ultra.c ****         }
- 475              		.loc 1 111 13 view .LVU155
- 476 0208 1A6A     		ldr	r2, [r3, #32]
- 477 020a 42F40072 		orr	r2, r2, #512
- 478 020e 1A62     		str	r2, [r3, #32]
- 111:Core/Src/ultra.c ****         }
- 479              		.loc 1 111 13 view .LVU156
- 480 0210 04E7     		b	.L1
- 481              	.L23:
- 482 0212 00BF     		.align	2
- 483              	.L22:
- 484 0214 00040040 		.word	1073742848
- 485 0218 00000000 		.word	captureFlag
- 486 021c 00000000 		.word	htim3
- 487 0220 00000000 		.word	IC_Value2
- 488 0224 00000000 		.word	IC_Value1
- 489 0228 00000000 		.word	echoTime
- 490 022c 09CB3D8D 		.word	-1925330167
- 491 0230 00000000 		.word	distance
- 492 0234 00000000 		.word	meas_valid
- 493 0238 00000000 		.word	s_waiter
- 494              		.cfi_endproc
- 495              	.LFE138:
- 497              		.section	.text.Ultra_Init,"ax",%progbits
- 498              		.align	1
- 499              		.global	Ultra_Init
- 500              		.syntax unified
- 501              		.thumb
- 502              		.thumb_func
- 504              	Ultra_Init:
- 505              	.LVL32:
- 506              	.LFB139:
+ 468 0022 F4D8     		bhi	.L28
+ 469              	.LBE3:
+ 470              	.LBB4:
+ 124:Core/Src/ultra.c ****     for (uint8_t i = 1; i < n; i++)
+ 471              		.loc 1 124 18 is_stmt 0 view .LVU120
+ 472 0024 4FF0010E 		mov	lr, #1
+ 473 0028 1AE0     		b	.L29
+ 474              	.LVL37:
+ 475              	.L32:
+ 476              	.LBB5:
+ 125:Core/Src/ultra.c ****     {
+ 126:Core/Src/ultra.c ****         uint16_t k = b[i];
+ 127:Core/Src/ultra.c ****         int8_t j = (int8_t)i - 1;
+ 128:Core/Src/ultra.c ****         while (j >= 0 && b[j] > k) { b[j + 1] = b[j]; j--; }
+ 477              		.loc 1 128 38 is_stmt 1 discriminator 3 view .LVU121
+ 478              		.loc 1 128 42 is_stmt 0 discriminator 3 view .LVU122
+ 479 002a 5A1C     		adds	r2, r3, #1
+ 480              		.loc 1 128 47 discriminator 3 view .LVU123
+ 481 002c 08AC     		add	r4, sp, #32
+ 482 002e 04EB4202 		add	r2, r4, r2, lsl #1
+ 483 0032 22F8200C 		strh	r0, [r2, #-32]	@ movhi
+ 484              		.loc 1 128 55 is_stmt 1 discriminator 3 view .LVU124
+ 485              		.loc 1 128 56 is_stmt 0 discriminator 3 view .LVU125
+ 486 0036 013B     		subs	r3, r3, #1
+ 487              	.LVL38:
+ 488              		.loc 1 128 56 discriminator 3 view .LVU126
+ 489 0038 5BB2     		sxtb	r3, r3
+ 490              	.LVL39:
+ 491              	.L30:
+ 492              		.loc 1 128 23 is_stmt 1 discriminator 1 view .LVU127
+ 493 003a 002B     		cmp	r3, #0
+ 494 003c 06DB     		blt	.L31
+ 495              		.loc 1 128 27 is_stmt 0 discriminator 2 view .LVU128
+ 496 003e 08AA     		add	r2, sp, #32
+ 497 0040 02EB4302 		add	r2, r2, r3, lsl #1
+ 498 0044 32F8200C 		ldrh	r0, [r2, #-32]
+ 499              		.loc 1 128 23 discriminator 2 view .LVU129
+ 500 0048 6045     		cmp	r0, ip
+ 501 004a EED8     		bhi	.L32
+ 502              	.L31:
+ 129:Core/Src/ultra.c ****         b[j + 1] = k;
+ 503              		.loc 1 129 9 is_stmt 1 view .LVU130
+ 504              		.loc 1 129 13 is_stmt 0 view .LVU131
+ 505 004c 0133     		adds	r3, r3, #1
+ 506              	.LVL40:
+ 507              		.loc 1 129 18 view .LVU132
+ 508 004e 08AA     		add	r2, sp, #32
+ 509 0050 02EB4303 		add	r3, r2, r3, lsl #1
+ 510              	.LVL41:
+ 511              		.loc 1 129 18 view .LVU133
+ 512 0054 23F820CC 		strh	ip, [r3, #-32]	@ movhi
+ 513              	.LBE5:
+ 124:Core/Src/ultra.c ****     for (uint8_t i = 1; i < n; i++)
+ 514              		.loc 1 124 33 is_stmt 1 discriminator 2 view .LVU134
+ 515 0058 0EF1010E 		add	lr, lr, #1
+ 516              	.LVL42:
+ 124:Core/Src/ultra.c ****     for (uint8_t i = 1; i < n; i++)
+ARM GAS  /tmp/ccYjTY1a.s 			page 13
+
+
+ 517              		.loc 1 124 33 is_stmt 0 discriminator 2 view .LVU135
+ 518 005c 5FFA8EFE 		uxtb	lr, lr
+ 519              	.LVL43:
+ 520              	.L29:
+ 124:Core/Src/ultra.c ****     for (uint8_t i = 1; i < n; i++)
+ 521              		.loc 1 124 27 is_stmt 1 discriminator 1 view .LVU136
+ 522 0060 7145     		cmp	r1, lr
+ 523 0062 08D9     		bls	.L36
+ 524              	.LBB6:
+ 126:Core/Src/ultra.c ****         int8_t j = (int8_t)i - 1;
+ 525              		.loc 1 126 9 view .LVU137
+ 126:Core/Src/ultra.c ****         int8_t j = (int8_t)i - 1;
+ 526              		.loc 1 126 18 is_stmt 0 view .LVU138
+ 527 0064 08AB     		add	r3, sp, #32
+ 528 0066 03EB4E03 		add	r3, r3, lr, lsl #1
+ 529 006a 33F820CC 		ldrh	ip, [r3, #-32]
+ 530              	.LVL44:
+ 127:Core/Src/ultra.c ****         while (j >= 0 && b[j] > k) { b[j + 1] = b[j]; j--; }
+ 531              		.loc 1 127 9 is_stmt 1 view .LVU139
+ 127:Core/Src/ultra.c ****         while (j >= 0 && b[j] > k) { b[j + 1] = b[j]; j--; }
+ 532              		.loc 1 127 30 is_stmt 0 view .LVU140
+ 533 006e 0EF1FF33 		add	r3, lr, #-1
+ 127:Core/Src/ultra.c ****         while (j >= 0 && b[j] > k) { b[j + 1] = b[j]; j--; }
+ 534              		.loc 1 127 16 view .LVU141
+ 535 0072 5BB2     		sxtb	r3, r3
+ 536              	.LVL45:
+ 128:Core/Src/ultra.c ****         b[j + 1] = k;
+ 537              		.loc 1 128 9 is_stmt 1 view .LVU142
+ 128:Core/Src/ultra.c ****         b[j + 1] = k;
+ 538              		.loc 1 128 15 is_stmt 0 view .LVU143
+ 539 0074 E1E7     		b	.L30
+ 540              	.LVL46:
+ 541              	.L36:
+ 128:Core/Src/ultra.c ****         b[j + 1] = k;
+ 542              		.loc 1 128 15 view .LVU144
+ 543              	.LBE6:
+ 544              	.LBE4:
+ 130:Core/Src/ultra.c ****     }
+ 131:Core/Src/ultra.c ****     return b[n / 2];
+ 545              		.loc 1 131 5 is_stmt 1 view .LVU145
+ 546              		.loc 1 131 13 is_stmt 0 view .LVU146
+ 547 0076 01F0FE03 		and	r3, r1, #254
+ 548 007a 2033     		adds	r3, r3, #32
+ 549 007c 6B44     		add	r3, sp, r3
+ 132:Core/Src/ultra.c **** }
+ 550              		.loc 1 132 1 view .LVU147
+ 551 007e 33F8200C 		ldrh	r0, [r3, #-32]
+ 552 0082 08B0     		add	sp, sp, #32
+ 553              	.LCFI5:
+ 554              		.cfi_def_cfa_offset 8
+ 555              		@ sp needed
+ 556 0084 10BD     		pop	{r4, pc}
+ 557              		.cfi_endproc
+ 558              	.LFE141:
+ 560              		.section	.text.min_n,"ax",%progbits
+ 561              		.align	1
+ 562              		.global	min_n
+ARM GAS  /tmp/ccYjTY1a.s 			page 14
+
+
+ 563              		.syntax unified
+ 564              		.thumb
+ 565              		.thumb_func
+ 567              	min_n:
+ 568              	.LVL47:
+ 569              	.LFB142:
  133:Core/Src/ultra.c **** 
- 134:Core/Src/ultra.c **** void Ultra_Init(osThreadId_t waiter)
- 135:Core/Src/ultra.c **** {
- 507              		.loc 1 135 1 view -0
- 508              		.cfi_startproc
- 509              		@ args = 0, pretend = 0, frame = 0
- 510              		@ frame_needed = 0, uses_anonymous_args = 0
- 511              		.loc 1 135 1 is_stmt 0 view .LVU158
- 512 0000 10B5     		push	{r4, lr}
- 513              	.LCFI1:
- 514              		.cfi_def_cfa_offset 8
- 515              		.cfi_offset 4, -8
- 516              		.cfi_offset 14, -4
- 136:Core/Src/ultra.c ****     s_waiter = waiter;
- 517              		.loc 1 136 5 is_stmt 1 view .LVU159
- 518              		.loc 1 136 14 is_stmt 0 view .LVU160
- 519 0002 084B     		ldr	r3, .L26
- 520 0004 1860     		str	r0, [r3]
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 15
+ 134:Core/Src/ultra.c **** /* N-샘플 최소값 (가장 가까운 최근값). 정면 정지 판정용 — median과 달리 �
+ 135:Core/Src/ultra.c **** uint16_t min_n(const uint16_t *a, uint8_t n)
+ 136:Core/Src/ultra.c **** {
+ 570              		.loc 1 136 1 is_stmt 1 view -0
+ 571              		.cfi_startproc
+ 572              		@ args = 0, pretend = 0, frame = 0
+ 573              		@ frame_needed = 0, uses_anonymous_args = 0
+ 574              		@ link register save eliminated.
+ 575              		.loc 1 136 1 is_stmt 0 view .LVU149
+ 576 0000 8446     		mov	ip, r0
+ 137:Core/Src/ultra.c ****     uint16_t m = a[0];
+ 577              		.loc 1 137 5 is_stmt 1 view .LVU150
+ 578              		.loc 1 137 14 is_stmt 0 view .LVU151
+ 579 0002 0088     		ldrh	r0, [r0]
+ 580              	.LVL48:
+ 138:Core/Src/ultra.c ****     for (uint8_t i = 1; i < n; i++) if (a[i] < m) m = a[i];
+ 581              		.loc 1 138 5 is_stmt 1 view .LVU152
+ 582              	.LBB7:
+ 583              		.loc 1 138 10 view .LVU153
+ 584              		.loc 1 138 18 is_stmt 0 view .LVU154
+ 585 0004 0123     		movs	r3, #1
+ 586              		.loc 1 138 5 view .LVU155
+ 587 0006 01E0     		b	.L38
+ 588              	.LVL49:
+ 589              	.L39:
+ 590              		.loc 1 138 33 is_stmt 1 discriminator 4 view .LVU156
+ 591 0008 0133     		adds	r3, r3, #1
+ 592              	.LVL50:
+ 593              		.loc 1 138 33 is_stmt 0 discriminator 4 view .LVU157
+ 594 000a DBB2     		uxtb	r3, r3
+ 595              	.LVL51:
+ 596              	.L38:
+ 597              		.loc 1 138 27 is_stmt 1 discriminator 5 view .LVU158
+ 598 000c 8B42     		cmp	r3, r1
+ 599 000e 05D2     		bcs	.L42
+ 600              		.loc 1 138 37 discriminator 6 view .LVU159
+ 601              		.loc 1 138 42 is_stmt 0 discriminator 6 view .LVU160
+ 602 0010 3CF81320 		ldrh	r2, [ip, r3, lsl #1]
+ 603              		.loc 1 138 40 discriminator 6 view .LVU161
+ 604 0014 8242     		cmp	r2, r0
+ 605 0016 F7D2     		bcs	.L39
+ 606              		.loc 1 138 53 discriminator 2 view .LVU162
+ 607 0018 1046     		mov	r0, r2
+ 608              	.LVL52:
+ 609              		.loc 1 138 53 discriminator 2 view .LVU163
+ 610 001a F5E7     		b	.L39
+ 611              	.LVL53:
+ 612              	.L42:
+ 613              		.loc 1 138 53 discriminator 2 view .LVU164
+ 614              	.LBE7:
+ARM GAS  /tmp/ccYjTY1a.s 			page 15
 
 
- 137:Core/Src/ultra.c ****     HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);
- 521              		.loc 1 137 5 is_stmt 1 view .LVU161
- 522 0006 084C     		ldr	r4, .L26+4
- 523 0008 0021     		movs	r1, #0
- 524 000a 2046     		mov	r0, r4
- 525              	.LVL33:
- 526              		.loc 1 137 5 is_stmt 0 view .LVU162
- 527 000c FFF7FEFF 		bl	HAL_TIM_IC_Start_IT
- 528              	.LVL34:
- 138:Core/Src/ultra.c ****     HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_2);
- 529              		.loc 1 138 5 is_stmt 1 view .LVU163
- 530 0010 0421     		movs	r1, #4
- 531 0012 2046     		mov	r0, r4
- 532 0014 FFF7FEFF 		bl	HAL_TIM_IC_Start_IT
- 533              	.LVL35:
- 139:Core/Src/ultra.c ****     HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_3);
- 534              		.loc 1 139 5 view .LVU164
- 535 0018 0821     		movs	r1, #8
- 536 001a 2046     		mov	r0, r4
- 537 001c FFF7FEFF 		bl	HAL_TIM_IC_Start_IT
- 538              	.LVL36:
+ 139:Core/Src/ultra.c ****     return m;
+ 615              		.loc 1 139 5 is_stmt 1 view .LVU165
  140:Core/Src/ultra.c **** }
- 539              		.loc 1 140 1 is_stmt 0 view .LVU165
- 540 0020 10BD     		pop	{r4, pc}
- 541              	.L27:
- 542 0022 00BF     		.align	2
- 543              	.L26:
- 544 0024 00000000 		.word	s_waiter
- 545 0028 00000000 		.word	htim3
- 546              		.cfi_endproc
- 547              	.LFE139:
- 549              		.section	.text.Ultra_Measure,"ax",%progbits
- 550              		.align	1
- 551              		.global	Ultra_Measure
- 552              		.syntax unified
- 553              		.thumb
- 554              		.thumb_func
- 556              	Ultra_Measure:
- 557              	.LVL37:
- 558              	.LFB140:
- 141:Core/Src/ultra.c **** 
- 142:Core/Src/ultra.c **** /* 센서 1개 순차 측정: 해당 채널 잔여상태 정리 → 그 센서 TRIG만 10us 펄스 
- 143:Core/Src/ultra.c ****  * osThreadFlagsWait 블로킹 대기(구 busy-wait 대체 — 대기 중 CPU는 다른 태스크/i
- 144:Core/Src/ultra.c ****  * 에코 오면 ISR flag로 즉시 wake(근접=수ms), 무에코/글리치만 wait_ms 상한까지
- 145:Core/Src/ultra.c **** uint8_t Ultra_Measure(uint8_t ch, uint32_t wait_ms, uint16_t *out_cm)
- 146:Core/Src/ultra.c **** {
- 559              		.loc 1 146 1 is_stmt 1 view -0
- 560              		.cfi_startproc
- 561              		@ args = 0, pretend = 0, frame = 0
- 562              		@ frame_needed = 0, uses_anonymous_args = 0
- 563              		.loc 1 146 1 is_stmt 0 view .LVU167
- 564 0000 2DE9F84F 		push	{r3, r4, r5, r6, r7, r8, r9, r10, fp, lr}
- 565              	.LCFI2:
- 566              		.cfi_def_cfa_offset 40
- 567              		.cfi_offset 3, -40
- 568              		.cfi_offset 4, -36
- 569              		.cfi_offset 5, -32
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 16
-
-
- 570              		.cfi_offset 6, -28
- 571              		.cfi_offset 7, -24
- 572              		.cfi_offset 8, -20
- 573              		.cfi_offset 9, -16
- 574              		.cfi_offset 10, -12
- 575              		.cfi_offset 11, -8
- 576              		.cfi_offset 14, -4
- 577 0004 0446     		mov	r4, r0
- 578 0006 0F46     		mov	r7, r1
- 579 0008 1546     		mov	r5, r2
- 147:Core/Src/ultra.c ****     distance[ch]   = ULTRA_MAX_CM;   /* 기본 멀다 (에코 오면 ISR이 실제값으로 덮음)
- 580              		.loc 1 147 5 is_stmt 1 view .LVU168
- 581              		.loc 1 147 20 is_stmt 0 view .LVU169
- 582 000a 434B     		ldr	r3, .L45
- 583 000c C822     		movs	r2, #200
- 584              	.LVL38:
- 585              		.loc 1 147 20 view .LVU170
- 586 000e 23F81020 		strh	r2, [r3, r0, lsl #1]	@ movhi
- 148:Core/Src/ultra.c ****     meas_valid[ch] = 0;
- 587              		.loc 1 148 5 is_stmt 1 view .LVU171
- 588              		.loc 1 148 20 is_stmt 0 view .LVU172
- 589 0012 424B     		ldr	r3, .L45+4
- 590 0014 0022     		movs	r2, #0
- 591 0016 1A54     		strb	r2, [r3, r0]
- 149:Core/Src/ultra.c **** 
- 150:Core/Src/ultra.c ****     /* HC-SR04 무에코 잔류 가드: 직전 사이클이 무에코였다면 ECHO가 아직 high(
- 151:Core/Src/ultra.c ****      * 그 동안의 TRIG는 무시됨 → wait_ms 헛대기 대신 이번 사이클 즉시 skip(�
- 152:Core/Src/ultra.c ****      * 기존 'miss 2연속(페어)' 현상이 1회 fast-skip으로 줄어 fail-safe 반응이 빨�
- 153:Core/Src/ultra.c ****     if (HAL_GPIO_ReadPin(ULTRA_ECHO_PORT[ch], ULTRA_ECHO_PIN[ch]) == GPIO_PIN_SET)
- 592              		.loc 1 153 5 is_stmt 1 view .LVU173
- 593              		.loc 1 153 9 is_stmt 0 view .LVU174
- 594 0018 414B     		ldr	r3, .L45+8
- 595 001a 33F81010 		ldrh	r1, [r3, r0, lsl #1]
- 596              	.LVL39:
- 597              		.loc 1 153 9 view .LVU175
- 598 001e 414B     		ldr	r3, .L45+12
- 599 0020 53F82000 		ldr	r0, [r3, r0, lsl #2]
- 600              	.LVL40:
- 601              		.loc 1 153 9 view .LVU176
- 602 0024 FFF7FEFF 		bl	HAL_GPIO_ReadPin
- 603              	.LVL41:
- 604              		.loc 1 153 8 discriminator 1 view .LVU177
- 605 0028 0128     		cmp	r0, #1
- 606 002a 50D0     		beq	.L40
- 154:Core/Src/ultra.c ****     {
- 155:Core/Src/ultra.c ****         *out_cm = ULTRA_MAX_CM;
- 156:Core/Src/ultra.c ****         return 0;
- 157:Core/Src/ultra.c ****     }
- 158:Core/Src/ultra.c **** 
- 159:Core/Src/ultra.c ****     /* 해당 채널만 잔여 캡처 상태 정리 (IT off → 플래그/극성 리셋 → CCxIF/C
- 160:Core/Src/ultra.c ****      * + 직전 사이클 늦은 에코가 남긴 stale thread flag 제거 (IT off 후라 경쟁 �
- 161:Core/Src/ultra.c ****     __HAL_TIM_DISABLE_IT(&htim3, ULTRA_CC_IT[ch]);
- 607              		.loc 1 161 5 is_stmt 1 view .LVU178
- 608 002c 3E4B     		ldr	r3, .L45+16
- 609 002e 1B68     		ldr	r3, [r3]
- 610 0030 DA68     		ldr	r2, [r3, #12]
- 611 0032 3E49     		ldr	r1, .L45+20
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 17
-
-
- 612 0034 51F82460 		ldr	r6, [r1, r4, lsl #2]
- 613 0038 22EA0602 		bic	r2, r2, r6
- 614 003c DA60     		str	r2, [r3, #12]
- 162:Core/Src/ultra.c ****     captureFlag[ch] = 0;
- 615              		.loc 1 162 5 view .LVU179
- 616              		.loc 1 162 21 is_stmt 0 view .LVU180
- 617 003e 3C4A     		ldr	r2, .L45+24
- 618 0040 0021     		movs	r1, #0
- 619 0042 1155     		strb	r1, [r2, r4]
- 163:Core/Src/ultra.c ****     __HAL_TIM_SET_CAPTUREPOLARITY(&htim3, ULTRA_CH[ch], TIM_INPUTCHANNELPOLARITY_RISING);
- 620              		.loc 1 163 5 is_stmt 1 view .LVU181
- 621              		.loc 1 163 5 view .LVU182
- 622 0044 3B4A     		ldr	r2, .L45+28
- 623 0046 52F82420 		ldr	r2, [r2, r4, lsl #2]
- 624 004a 002A     		cmp	r2, #0
- 625 004c 43D1     		bne	.L31
- 626              		.loc 1 163 5 is_stmt 0 discriminator 1 view .LVU183
- 627 004e 196A     		ldr	r1, [r3, #32]
- 628 0050 21F00A01 		bic	r1, r1, #10
- 629 0054 1962     		str	r1, [r3, #32]
- 630              	.L32:
- 631              		.loc 1 163 5 is_stmt 1 discriminator 12 view .LVU184
- 632 0056 002A     		cmp	r2, #0
- 633 0058 50D1     		bne	.L35
- 634              		.loc 1 163 5 is_stmt 0 discriminator 13 view .LVU185
- 635 005a 1A6A     		ldr	r2, [r3, #32]
- 636 005c 1A62     		str	r2, [r3, #32]
- 637              	.L36:
- 638              		.loc 1 163 5 is_stmt 1 view .LVU186
- 164:Core/Src/ultra.c ****     __HAL_TIM_CLEAR_FLAG(&htim3, ULTRA_CC_FLAG[ch]);
- 639              		.loc 1 164 5 view .LVU187
- 640 005e 364A     		ldr	r2, .L45+32
- 641 0060 52F82420 		ldr	r2, [r2, r4, lsl #2]
- 642 0064 D243     		mvns	r2, r2
- 643 0066 1A61     		str	r2, [r3, #16]
- 165:Core/Src/ultra.c ****     osThreadFlagsClear(1UL << ch);
- 644              		.loc 1 165 5 view .LVU188
- 645              		.loc 1 165 28 is_stmt 0 view .LVU189
- 646 0068 4FF0010B 		mov	fp, #1
- 647 006c 0BFA04F8 		lsl	r8, fp, r4
- 648              		.loc 1 165 5 view .LVU190
- 649 0070 4046     		mov	r0, r8
- 650 0072 FFF7FEFF 		bl	osThreadFlagsClear
- 651              	.LVL42:
- 166:Core/Src/ultra.c **** 
- 167:Core/Src/ultra.c ****     /* TRIG 10us 펄스 + 해당 채널 캡처 IT 활성 */
- 168:Core/Src/ultra.c ****     HAL_GPIO_WritePin(ULTRA_TRIG_PORT[ch], ULTRA_TRIG_PIN[ch], GPIO_PIN_SET);
- 652              		.loc 1 168 5 is_stmt 1 view .LVU191
- 653              		.loc 1 168 38 is_stmt 0 view .LVU192
- 654 0076 314B     		ldr	r3, .L45+36
- 655 0078 53F82490 		ldr	r9, [r3, r4, lsl #2]
- 656              		.loc 1 168 58 view .LVU193
- 657 007c 304B     		ldr	r3, .L45+40
- 658 007e 33F814A0 		ldrh	r10, [r3, r4, lsl #1]
- 659              		.loc 1 168 5 view .LVU194
- 660 0082 5A46     		mov	r2, fp
- 661 0084 5146     		mov	r1, r10
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 18
-
-
- 662 0086 4846     		mov	r0, r9
- 663 0088 FFF7FEFF 		bl	HAL_GPIO_WritePin
- 664              	.LVL43:
- 169:Core/Src/ultra.c ****     delay_us(10);
- 665              		.loc 1 169 5 is_stmt 1 view .LVU195
- 666 008c 0A20     		movs	r0, #10
- 667 008e FFF7FEFF 		bl	delay_us
- 668              	.LVL44:
- 170:Core/Src/ultra.c ****     HAL_GPIO_WritePin(ULTRA_TRIG_PORT[ch], ULTRA_TRIG_PIN[ch], GPIO_PIN_RESET);
- 669              		.loc 1 170 5 view .LVU196
- 670 0092 0022     		movs	r2, #0
- 671 0094 5146     		mov	r1, r10
- 672 0096 4846     		mov	r0, r9
- 673 0098 FFF7FEFF 		bl	HAL_GPIO_WritePin
- 674              	.LVL45:
- 171:Core/Src/ultra.c ****     __HAL_TIM_ENABLE_IT(&htim3, ULTRA_CC_IT[ch]);
- 675              		.loc 1 171 5 view .LVU197
- 676 009c 224B     		ldr	r3, .L45+16
- 677 009e 1B68     		ldr	r3, [r3]
- 678 00a0 DA68     		ldr	r2, [r3, #12]
- 679 00a2 1643     		orrs	r6, r6, r2
- 680 00a4 DE60     		str	r6, [r3, #12]
- 172:Core/Src/ultra.c **** 
- 173:Core/Src/ultra.c ****     /* 적응형 대기: 유효 측정 완료 시 ISR flag → 즉시 복귀, 무에코/글리치 �
- 174:Core/Src/ultra.c ****     (void)osThreadFlagsWait(1UL << ch, osFlagsWaitAny, wait_ms);
- 681              		.loc 1 174 5 view .LVU198
- 682              		.loc 1 174 11 is_stmt 0 view .LVU199
- 683 00a6 3A46     		mov	r2, r7
- 684 00a8 0021     		movs	r1, #0
- 685 00aa 4046     		mov	r0, r8
- 686 00ac FFF7FEFF 		bl	osThreadFlagsWait
- 687              	.LVL46:
- 175:Core/Src/ultra.c **** 
- 176:Core/Src/ultra.c ****     /* ISR 공유값 원자적 스냅샷 (timeout 직후 늦은 에코 edge로부터 일관성 보�
- 177:Core/Src/ultra.c ****      * taskENTER_CRITICAL = BASEPRI를 syscall 경계(5)로 → TIM3(prio 5) 마스킹 (구 PRIMASK
- 178:Core/Src/ultra.c ****     uint8_t  v;
- 688              		.loc 1 178 5 is_stmt 1 view .LVU200
- 179:Core/Src/ultra.c ****     uint16_t d;
- 689              		.loc 1 179 5 view .LVU201
- 180:Core/Src/ultra.c ****     taskENTER_CRITICAL();
- 690              		.loc 1 180 5 view .LVU202
- 691 00b0 FFF7FEFF 		bl	vPortEnterCritical
- 692              	.LVL47:
- 181:Core/Src/ultra.c ****     v = meas_valid[ch];
- 693              		.loc 1 181 5 view .LVU203
- 694              		.loc 1 181 7 is_stmt 0 view .LVU204
- 695 00b4 194B     		ldr	r3, .L45+4
- 696 00b6 1E5D     		ldrb	r6, [r3, r4]	@ zero_extendqisi2
- 697 00b8 F6B2     		uxtb	r6, r6
- 698              	.LVL48:
- 182:Core/Src/ultra.c ****     d = distance[ch];
- 699              		.loc 1 182 5 is_stmt 1 view .LVU205
- 700              		.loc 1 182 7 is_stmt 0 view .LVU206
- 701 00ba 174B     		ldr	r3, .L45
- 702 00bc 33F81440 		ldrh	r4, [r3, r4, lsl #1]
- 703              	.LVL49:
- 704              		.loc 1 182 7 view .LVU207
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 19
-
-
- 705 00c0 A4B2     		uxth	r4, r4
- 706              	.LVL50:
- 183:Core/Src/ultra.c ****     taskEXIT_CRITICAL();
- 707              		.loc 1 183 5 is_stmt 1 view .LVU208
- 708 00c2 FFF7FEFF 		bl	vPortExitCritical
- 709              	.LVL51:
- 184:Core/Src/ultra.c **** 
- 185:Core/Src/ultra.c ****     *out_cm = d;
- 710              		.loc 1 185 5 view .LVU209
- 711              		.loc 1 185 13 is_stmt 0 view .LVU210
- 712 00c6 2C80     		strh	r4, [r5]	@ movhi
- 186:Core/Src/ultra.c ****     return v;
- 713              		.loc 1 186 5 is_stmt 1 view .LVU211
- 714              	.LVL52:
- 715              	.L30:
- 187:Core/Src/ultra.c **** }
- 716              		.loc 1 187 1 is_stmt 0 view .LVU212
- 717 00c8 3046     		mov	r0, r6
- 718 00ca BDE8F88F 		pop	{r3, r4, r5, r6, r7, r8, r9, r10, fp, pc}
- 719              	.LVL53:
- 720              	.L40:
- 155:Core/Src/ultra.c ****         return 0;
- 721              		.loc 1 155 9 is_stmt 1 view .LVU213
- 155:Core/Src/ultra.c ****         return 0;
- 722              		.loc 1 155 17 is_stmt 0 view .LVU214
- 723 00ce C823     		movs	r3, #200
- 724 00d0 2B80     		strh	r3, [r5]	@ movhi
- 156:Core/Src/ultra.c ****     }
- 725              		.loc 1 156 9 is_stmt 1 view .LVU215
- 156:Core/Src/ultra.c ****     }
- 726              		.loc 1 156 16 is_stmt 0 view .LVU216
- 727 00d2 0026     		movs	r6, #0
- 728 00d4 F8E7     		b	.L30
- 729              	.L31:
- 163:Core/Src/ultra.c ****     __HAL_TIM_CLEAR_FLAG(&htim3, ULTRA_CC_FLAG[ch]);
- 730              		.loc 1 163 5 discriminator 2 view .LVU217
- 731 00d6 042A     		cmp	r2, #4
- 732 00d8 06D0     		beq	.L41
- 163:Core/Src/ultra.c ****     __HAL_TIM_CLEAR_FLAG(&htim3, ULTRA_CC_FLAG[ch]);
- 733              		.loc 1 163 5 discriminator 5 view .LVU218
- 734 00da 082A     		cmp	r2, #8
- 735 00dc 09D0     		beq	.L42
- 163:Core/Src/ultra.c ****     __HAL_TIM_CLEAR_FLAG(&htim3, ULTRA_CC_FLAG[ch]);
- 736              		.loc 1 163 5 discriminator 8 view .LVU219
- 737 00de 196A     		ldr	r1, [r3, #32]
- 738 00e0 21F42041 		bic	r1, r1, #40960
- 739 00e4 1962     		str	r1, [r3, #32]
- 740 00e6 B6E7     		b	.L32
- 741              	.L41:
- 163:Core/Src/ultra.c ****     __HAL_TIM_CLEAR_FLAG(&htim3, ULTRA_CC_FLAG[ch]);
- 742              		.loc 1 163 5 discriminator 4 view .LVU220
- 743 00e8 196A     		ldr	r1, [r3, #32]
- 744 00ea 21F0A001 		bic	r1, r1, #160
- 745 00ee 1962     		str	r1, [r3, #32]
- 746 00f0 B1E7     		b	.L32
- 747              	.L42:
- 163:Core/Src/ultra.c ****     __HAL_TIM_CLEAR_FLAG(&htim3, ULTRA_CC_FLAG[ch]);
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 20
-
-
- 748              		.loc 1 163 5 discriminator 7 view .LVU221
- 749 00f2 196A     		ldr	r1, [r3, #32]
- 750 00f4 21F42061 		bic	r1, r1, #2560
- 751 00f8 1962     		str	r1, [r3, #32]
- 752 00fa ACE7     		b	.L32
- 753              	.L35:
- 163:Core/Src/ultra.c ****     __HAL_TIM_CLEAR_FLAG(&htim3, ULTRA_CC_FLAG[ch]);
- 754              		.loc 1 163 5 discriminator 14 view .LVU222
- 755 00fc 042A     		cmp	r2, #4
- 756 00fe 04D0     		beq	.L43
- 163:Core/Src/ultra.c ****     __HAL_TIM_CLEAR_FLAG(&htim3, ULTRA_CC_FLAG[ch]);
- 757              		.loc 1 163 5 discriminator 16 view .LVU223
- 758 0100 082A     		cmp	r2, #8
- 759 0102 05D0     		beq	.L44
- 163:Core/Src/ultra.c ****     __HAL_TIM_CLEAR_FLAG(&htim3, ULTRA_CC_FLAG[ch]);
- 760              		.loc 1 163 5 discriminator 19 view .LVU224
- 761 0104 1A6A     		ldr	r2, [r3, #32]
- 762 0106 1A62     		str	r2, [r3, #32]
- 763 0108 A9E7     		b	.L36
- 764              	.L43:
- 163:Core/Src/ultra.c ****     __HAL_TIM_CLEAR_FLAG(&htim3, ULTRA_CC_FLAG[ch]);
- 765              		.loc 1 163 5 discriminator 15 view .LVU225
- 766 010a 1A6A     		ldr	r2, [r3, #32]
- 767 010c 1A62     		str	r2, [r3, #32]
- 768 010e A6E7     		b	.L36
- 769              	.L44:
- 163:Core/Src/ultra.c ****     __HAL_TIM_CLEAR_FLAG(&htim3, ULTRA_CC_FLAG[ch]);
- 770              		.loc 1 163 5 discriminator 18 view .LVU226
- 771 0110 1A6A     		ldr	r2, [r3, #32]
- 772 0112 1A62     		str	r2, [r3, #32]
- 773 0114 A3E7     		b	.L36
- 774              	.L46:
- 775 0116 00BF     		.align	2
- 776              	.L45:
- 777 0118 00000000 		.word	distance
- 778 011c 00000000 		.word	meas_valid
- 779 0120 00000000 		.word	ULTRA_ECHO_PIN
- 780 0124 00000000 		.word	ULTRA_ECHO_PORT
- 781 0128 00000000 		.word	htim3
- 782 012c 00000000 		.word	ULTRA_CC_IT
- 783 0130 00000000 		.word	captureFlag
- 784 0134 00000000 		.word	ULTRA_CH
- 785 0138 00000000 		.word	ULTRA_CC_FLAG
- 786 013c 00000000 		.word	ULTRA_TRIG_PORT
- 787 0140 00000000 		.word	ULTRA_TRIG_PIN
- 788              		.cfi_endproc
- 789              	.LFE140:
- 791              		.section	.text.median_n,"ax",%progbits
- 792              		.align	1
- 793              		.global	median_n
- 794              		.syntax unified
- 795              		.thumb
- 796              		.thumb_func
- 798              	median_n:
- 799              	.LVL54:
- 800              	.LFB141:
- 188:Core/Src/ultra.c **** 
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 21
-
-
- 189:Core/Src/ultra.c **** /* N-샘플 중앙값 (스파이크/크로스토크 제거). n개 중 (n-1)/2개까지 튀어도 �
- 190:Core/Src/ultra.c ****  * 삽입정렬 후 중앙 인덱스 반환. n은 작음(3~7)이라 정렬 비용 무시 가능. */
- 191:Core/Src/ultra.c **** uint16_t median_n(const uint16_t *a, uint8_t n)
- 192:Core/Src/ultra.c **** {
- 801              		.loc 1 192 1 is_stmt 1 view -0
- 802              		.cfi_startproc
- 803              		@ args = 0, pretend = 0, frame = 32
- 804              		@ frame_needed = 0, uses_anonymous_args = 0
- 805              		.loc 1 192 1 is_stmt 0 view .LVU228
- 806 0000 10B5     		push	{r4, lr}
- 807              	.LCFI3:
- 808              		.cfi_def_cfa_offset 8
- 809              		.cfi_offset 4, -8
- 810              		.cfi_offset 14, -4
- 811 0002 88B0     		sub	sp, sp, #32
- 812              	.LCFI4:
- 813              		.cfi_def_cfa_offset 40
- 193:Core/Src/ultra.c ****     uint16_t b[16];
- 814              		.loc 1 193 5 is_stmt 1 view .LVU229
- 194:Core/Src/ultra.c ****     if (n > 16) n = 16;
- 815              		.loc 1 194 5 view .LVU230
- 816              		.loc 1 194 8 is_stmt 0 view .LVU231
- 817 0004 1029     		cmp	r1, #16
- 818 0006 00D9     		bls	.L48
- 819              		.loc 1 194 19 discriminator 1 view .LVU232
- 820 0008 1021     		movs	r1, #16
- 821              	.LVL55:
- 822              	.L48:
- 195:Core/Src/ultra.c ****     for (uint8_t i = 0; i < n; i++) b[i] = a[i];
- 823              		.loc 1 195 5 is_stmt 1 view .LVU233
- 824              	.LBB5:
- 825              		.loc 1 195 10 view .LVU234
- 826              		.loc 1 195 18 is_stmt 0 view .LVU235
- 827 000a 0023     		movs	r3, #0
- 828              		.loc 1 195 5 view .LVU236
- 829 000c 08E0     		b	.L49
- 830              	.LVL56:
- 831              	.L50:
- 832              		.loc 1 195 37 is_stmt 1 discriminator 3 view .LVU237
- 833              		.loc 1 195 45 is_stmt 0 discriminator 3 view .LVU238
- 834 000e 30F813C0 		ldrh	ip, [r0, r3, lsl #1]
- 835              		.loc 1 195 42 discriminator 3 view .LVU239
- 836 0012 08AA     		add	r2, sp, #32
- 837 0014 02EB4302 		add	r2, r2, r3, lsl #1
- 838 0018 22F820CC 		strh	ip, [r2, #-32]	@ movhi
- 839              		.loc 1 195 33 is_stmt 1 discriminator 3 view .LVU240
- 840 001c 0133     		adds	r3, r3, #1
- 841              	.LVL57:
- 842              		.loc 1 195 33 is_stmt 0 discriminator 3 view .LVU241
- 843 001e DBB2     		uxtb	r3, r3
- 844              	.LVL58:
- 845              	.L49:
- 846              		.loc 1 195 27 is_stmt 1 discriminator 1 view .LVU242
- 847 0020 9942     		cmp	r1, r3
- 848 0022 F4D8     		bhi	.L50
- 849              	.LBE5:
- 850              	.LBB6:
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 22
-
-
- 196:Core/Src/ultra.c ****     for (uint8_t i = 1; i < n; i++)
- 851              		.loc 1 196 18 is_stmt 0 view .LVU243
- 852 0024 4FF0010E 		mov	lr, #1
- 853 0028 1AE0     		b	.L51
- 854              	.LVL59:
- 855              	.L54:
- 856              	.LBB7:
- 197:Core/Src/ultra.c ****     {
- 198:Core/Src/ultra.c ****         uint16_t k = b[i];
- 199:Core/Src/ultra.c ****         int8_t j = (int8_t)i - 1;
- 200:Core/Src/ultra.c ****         while (j >= 0 && b[j] > k) { b[j + 1] = b[j]; j--; }
- 857              		.loc 1 200 38 is_stmt 1 discriminator 3 view .LVU244
- 858              		.loc 1 200 42 is_stmt 0 discriminator 3 view .LVU245
- 859 002a 5A1C     		adds	r2, r3, #1
- 860              		.loc 1 200 47 discriminator 3 view .LVU246
- 861 002c 08AC     		add	r4, sp, #32
- 862 002e 04EB4202 		add	r2, r4, r2, lsl #1
- 863 0032 22F8200C 		strh	r0, [r2, #-32]	@ movhi
- 864              		.loc 1 200 55 is_stmt 1 discriminator 3 view .LVU247
- 865              		.loc 1 200 56 is_stmt 0 discriminator 3 view .LVU248
- 866 0036 013B     		subs	r3, r3, #1
- 867              	.LVL60:
- 868              		.loc 1 200 56 discriminator 3 view .LVU249
- 869 0038 5BB2     		sxtb	r3, r3
- 870              	.LVL61:
- 871              	.L52:
- 872              		.loc 1 200 23 is_stmt 1 discriminator 1 view .LVU250
- 873 003a 002B     		cmp	r3, #0
- 874 003c 06DB     		blt	.L53
- 875              		.loc 1 200 27 is_stmt 0 discriminator 2 view .LVU251
- 876 003e 08AA     		add	r2, sp, #32
- 877 0040 02EB4302 		add	r2, r2, r3, lsl #1
- 878 0044 32F8200C 		ldrh	r0, [r2, #-32]
- 879              		.loc 1 200 23 discriminator 2 view .LVU252
- 880 0048 6045     		cmp	r0, ip
- 881 004a EED8     		bhi	.L54
- 882              	.L53:
- 201:Core/Src/ultra.c ****         b[j + 1] = k;
- 883              		.loc 1 201 9 is_stmt 1 view .LVU253
- 884              		.loc 1 201 13 is_stmt 0 view .LVU254
- 885 004c 0133     		adds	r3, r3, #1
- 886              	.LVL62:
- 887              		.loc 1 201 18 view .LVU255
- 888 004e 08AA     		add	r2, sp, #32
- 889 0050 02EB4303 		add	r3, r2, r3, lsl #1
- 890              	.LVL63:
- 891              		.loc 1 201 18 view .LVU256
- 892 0054 23F820CC 		strh	ip, [r3, #-32]	@ movhi
- 893              	.LBE7:
- 196:Core/Src/ultra.c ****     for (uint8_t i = 1; i < n; i++)
- 894              		.loc 1 196 33 is_stmt 1 discriminator 2 view .LVU257
- 895 0058 0EF1010E 		add	lr, lr, #1
- 896              	.LVL64:
- 196:Core/Src/ultra.c ****     for (uint8_t i = 1; i < n; i++)
- 897              		.loc 1 196 33 is_stmt 0 discriminator 2 view .LVU258
- 898 005c 5FFA8EFE 		uxtb	lr, lr
- 899              	.LVL65:
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 23
-
-
- 900              	.L51:
- 196:Core/Src/ultra.c ****     for (uint8_t i = 1; i < n; i++)
- 901              		.loc 1 196 27 is_stmt 1 discriminator 1 view .LVU259
- 902 0060 7145     		cmp	r1, lr
- 903 0062 08D9     		bls	.L58
- 904              	.LBB8:
- 198:Core/Src/ultra.c ****         int8_t j = (int8_t)i - 1;
- 905              		.loc 1 198 9 view .LVU260
- 198:Core/Src/ultra.c ****         int8_t j = (int8_t)i - 1;
- 906              		.loc 1 198 18 is_stmt 0 view .LVU261
- 907 0064 08AB     		add	r3, sp, #32
- 908 0066 03EB4E03 		add	r3, r3, lr, lsl #1
- 909 006a 33F820CC 		ldrh	ip, [r3, #-32]
- 910              	.LVL66:
- 199:Core/Src/ultra.c ****         while (j >= 0 && b[j] > k) { b[j + 1] = b[j]; j--; }
- 911              		.loc 1 199 9 is_stmt 1 view .LVU262
- 199:Core/Src/ultra.c ****         while (j >= 0 && b[j] > k) { b[j + 1] = b[j]; j--; }
- 912              		.loc 1 199 30 is_stmt 0 view .LVU263
- 913 006e 0EF1FF33 		add	r3, lr, #-1
- 199:Core/Src/ultra.c ****         while (j >= 0 && b[j] > k) { b[j + 1] = b[j]; j--; }
- 914              		.loc 1 199 16 view .LVU264
- 915 0072 5BB2     		sxtb	r3, r3
- 916              	.LVL67:
- 200:Core/Src/ultra.c ****         b[j + 1] = k;
- 917              		.loc 1 200 9 is_stmt 1 view .LVU265
- 200:Core/Src/ultra.c ****         b[j + 1] = k;
- 918              		.loc 1 200 15 is_stmt 0 view .LVU266
- 919 0074 E1E7     		b	.L52
- 920              	.LVL68:
- 921              	.L58:
- 200:Core/Src/ultra.c ****         b[j + 1] = k;
- 922              		.loc 1 200 15 view .LVU267
- 923              	.LBE8:
- 924              	.LBE6:
- 202:Core/Src/ultra.c ****     }
- 203:Core/Src/ultra.c ****     return b[n / 2];
- 925              		.loc 1 203 5 is_stmt 1 view .LVU268
- 926              		.loc 1 203 13 is_stmt 0 view .LVU269
- 927 0076 01F0FE03 		and	r3, r1, #254
- 928 007a 2033     		adds	r3, r3, #32
- 929 007c 6B44     		add	r3, sp, r3
- 204:Core/Src/ultra.c **** }
- 930              		.loc 1 204 1 view .LVU270
- 931 007e 33F8200C 		ldrh	r0, [r3, #-32]
- 932 0082 08B0     		add	sp, sp, #32
- 933              	.LCFI5:
- 934              		.cfi_def_cfa_offset 8
- 935              		@ sp needed
- 936 0084 10BD     		pop	{r4, pc}
- 937              		.cfi_endproc
- 938              	.LFE141:
- 940              		.section	.text.min_n,"ax",%progbits
- 941              		.align	1
- 942              		.global	min_n
- 943              		.syntax unified
- 944              		.thumb
- 945              		.thumb_func
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 24
-
-
- 947              	min_n:
- 948              	.LVL69:
- 949              	.LFB142:
- 205:Core/Src/ultra.c **** 
- 206:Core/Src/ultra.c **** /* N-샘플 최소값 (가장 가까운 최근값). 정면 정지 판정용 — median과 달리 �
- 207:Core/Src/ultra.c **** uint16_t min_n(const uint16_t *a, uint8_t n)
- 208:Core/Src/ultra.c **** {
- 950              		.loc 1 208 1 is_stmt 1 view -0
- 951              		.cfi_startproc
- 952              		@ args = 0, pretend = 0, frame = 0
- 953              		@ frame_needed = 0, uses_anonymous_args = 0
- 954              		@ link register save eliminated.
- 955              		.loc 1 208 1 is_stmt 0 view .LVU272
- 956 0000 8446     		mov	ip, r0
- 209:Core/Src/ultra.c ****     uint16_t m = a[0];
- 957              		.loc 1 209 5 is_stmt 1 view .LVU273
- 958              		.loc 1 209 14 is_stmt 0 view .LVU274
- 959 0002 0088     		ldrh	r0, [r0]
- 960              	.LVL70:
- 210:Core/Src/ultra.c ****     for (uint8_t i = 1; i < n; i++) if (a[i] < m) m = a[i];
- 961              		.loc 1 210 5 is_stmt 1 view .LVU275
- 962              	.LBB9:
- 963              		.loc 1 210 10 view .LVU276
- 964              		.loc 1 210 18 is_stmt 0 view .LVU277
- 965 0004 0123     		movs	r3, #1
- 966              		.loc 1 210 5 view .LVU278
- 967 0006 01E0     		b	.L60
- 968              	.LVL71:
- 969              	.L61:
- 970              		.loc 1 210 33 is_stmt 1 discriminator 4 view .LVU279
- 971 0008 0133     		adds	r3, r3, #1
- 972              	.LVL72:
- 973              		.loc 1 210 33 is_stmt 0 discriminator 4 view .LVU280
- 974 000a DBB2     		uxtb	r3, r3
- 975              	.LVL73:
- 976              	.L60:
- 977              		.loc 1 210 27 is_stmt 1 discriminator 5 view .LVU281
- 978 000c 8B42     		cmp	r3, r1
- 979 000e 05D2     		bcs	.L64
- 980              		.loc 1 210 37 discriminator 6 view .LVU282
- 981              		.loc 1 210 42 is_stmt 0 discriminator 6 view .LVU283
- 982 0010 3CF81320 		ldrh	r2, [ip, r3, lsl #1]
- 983              		.loc 1 210 40 discriminator 6 view .LVU284
- 984 0014 8242     		cmp	r2, r0
- 985 0016 F7D2     		bcs	.L61
- 986              		.loc 1 210 53 discriminator 2 view .LVU285
- 987 0018 1046     		mov	r0, r2
- 988              	.LVL74:
- 989              		.loc 1 210 53 discriminator 2 view .LVU286
- 990 001a F5E7     		b	.L61
- 991              	.LVL75:
- 992              	.L64:
- 993              		.loc 1 210 53 discriminator 2 view .LVU287
- 994              	.LBE9:
- 211:Core/Src/ultra.c ****     return m;
- 995              		.loc 1 211 5 is_stmt 1 view .LVU288
- 212:Core/Src/ultra.c **** }
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 25
-
-
- 996              		.loc 1 212 1 is_stmt 0 view .LVU289
- 997 001c 7047     		bx	lr
- 998              		.cfi_endproc
- 999              	.LFE142:
- 1001              		.section	.rodata.ULTRA_ECHO_PIN,"a"
- 1002              		.align	2
- 1005              	ULTRA_ECHO_PIN:
- 1006 0000 4000     		.short	64
- 1007 0002 8000     		.short	128
- 1008 0004 0100     		.short	1
- 1009              		.section	.rodata.ULTRA_ECHO_PORT,"a"
- 1010              		.align	2
- 1013              	ULTRA_ECHO_PORT:
- 1014 0000 00000240 		.word	1073872896
- 1015 0004 00000240 		.word	1073872896
- 1016 0008 00040240 		.word	1073873920
- 1017              		.section	.rodata.ULTRA_CC_FLAG,"a"
- 1018              		.align	2
- 1021              	ULTRA_CC_FLAG:
- 1022 0000 02020000 		.word	514
- 1023 0004 04040000 		.word	1028
- 1024 0008 08080000 		.word	2056
- 1025              		.section	.rodata.ULTRA_CC_IT,"a"
- 1026              		.align	2
- 1029              	ULTRA_CC_IT:
- 1030 0000 02000000 		.word	2
- 1031 0004 04000000 		.word	4
- 1032 0008 08000000 		.word	8
- 1033              		.section	.rodata.ULTRA_CH,"a"
- 1034              		.align	2
- 1037              	ULTRA_CH:
- 1038 0000 00000000 		.word	0
- 1039 0004 04000000 		.word	4
- 1040 0008 08000000 		.word	8
- 1041              		.section	.rodata.ULTRA_TRIG_PIN,"a"
- 1042              		.align	2
- 1045              	ULTRA_TRIG_PIN:
- 1046 0000 2000     		.short	32
- 1047 0002 1000     		.short	16
- 1048 0004 0800     		.short	8
- 1049              		.section	.rodata.ULTRA_TRIG_PORT,"a"
- 1050              		.align	2
- 1053              	ULTRA_TRIG_PORT:
- 1054 0000 00000240 		.word	1073872896
- 1055 0004 00000240 		.word	1073872896
- 1056 0008 00000240 		.word	1073872896
- 1057              		.section	.bss.s_waiter,"aw",%nobits
- 1058              		.align	2
- 1061              	s_waiter:
- 1062 0000 00000000 		.space	4
- 1063              		.section	.bss.meas_valid,"aw",%nobits
- 1064              		.align	2
- 1067              	meas_valid:
- 1068 0000 000000   		.space	3
- 1069              		.section	.bss.distance,"aw",%nobits
- 1070              		.align	2
- 1073              	distance:
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 26
-
-
- 1074 0000 00000000 		.space	6
- 1074      0000
- 1075              		.section	.bss.captureFlag,"aw",%nobits
- 1076              		.align	2
- 1079              	captureFlag:
- 1080 0000 000000   		.space	3
- 1081              		.section	.bss.echoTime,"aw",%nobits
- 1082              		.align	2
- 1085              	echoTime:
- 1086 0000 00000000 		.space	6
- 1086      0000
- 1087              		.section	.bss.IC_Value2,"aw",%nobits
- 1088              		.align	2
- 1091              	IC_Value2:
- 1092 0000 00000000 		.space	6
- 1092      0000
- 1093              		.section	.bss.IC_Value1,"aw",%nobits
- 1094              		.align	2
- 1097              	IC_Value1:
- 1098 0000 00000000 		.space	6
- 1098      0000
- 1099              		.text
- 1100              	.Letext0:
- 1101              		.file 2 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
- 1102              		.file 3 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
- 1103              		.file 4 "Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.h"
- 1104              		.file 5 "Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f411xe.h"
- 1105              		.file 6 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_def.h"
- 1106              		.file 7 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_gpio.h"
- 1107              		.file 8 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_dma.h"
- 1108              		.file 9 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h"
- 1109              		.file 10 "Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F/portmacro.h"
- 1110              		.file 11 "Core/Inc/delay.h"
- 1111              		.file 12 "Core/Inc/tim.h"
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 27
+ 616              		.loc 1 140 1 is_stmt 0 view .LVU166
+ 617 001c 7047     		bx	lr
+ 618              		.cfi_endproc
+ 619              	.LFE142:
+ 621              		.section	.bss.s_waiter,"aw",%nobits
+ 622              		.align	2
+ 625              	s_waiter:
+ 626 0000 00000000 		.space	4
+ 627              		.section	.bss.meas_valid,"aw",%nobits
+ 630              	meas_valid:
+ 631 0000 00       		.space	1
+ 632              		.section	.bss.distance,"aw",%nobits
+ 633              		.align	1
+ 636              	distance:
+ 637 0000 0000     		.space	2
+ 638              		.section	.bss.captureFlag,"aw",%nobits
+ 641              	captureFlag:
+ 642 0000 00       		.space	1
+ 643              		.section	.bss.echoTime,"aw",%nobits
+ 644              		.align	1
+ 647              	echoTime:
+ 648 0000 0000     		.space	2
+ 649              		.section	.bss.IC_Value2,"aw",%nobits
+ 650              		.align	1
+ 653              	IC_Value2:
+ 654 0000 0000     		.space	2
+ 655              		.section	.bss.IC_Value1,"aw",%nobits
+ 656              		.align	1
+ 659              	IC_Value1:
+ 660 0000 0000     		.space	2
+ 661              		.text
+ 662              	.Letext0:
+ 663              		.file 2 "/usr/lib/gcc/arm-none-eabi/13.2.1/include/stdint.h"
+ 664              		.file 3 "Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.h"
+ 665              		.file 4 "Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f411xe.h"
+ 666              		.file 5 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_def.h"
+ 667              		.file 6 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_gpio.h"
+ 668              		.file 7 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_dma.h"
+ 669              		.file 8 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h"
+ 670              		.file 9 "Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F/portmacro.h"
+ 671              		.file 10 "Core/Inc/delay.h"
+ 672              		.file 11 "Core/Inc/tim.h"
+ARM GAS  /tmp/ccYjTY1a.s 			page 16
 
 
 DEFINED SYMBOLS
                             *ABS*:00000000 ultra.c
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:21     .text.HAL_TIM_IC_CaptureCallback:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:27     .text.HAL_TIM_IC_CaptureCallback:00000000 HAL_TIM_IC_CaptureCallback
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:484    .text.HAL_TIM_IC_CaptureCallback:00000214 $d
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1079   .bss.captureFlag:00000000 captureFlag
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1091   .bss.IC_Value2:00000000 IC_Value2
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1097   .bss.IC_Value1:00000000 IC_Value1
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1085   .bss.echoTime:00000000 echoTime
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1073   .bss.distance:00000000 distance
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1067   .bss.meas_valid:00000000 meas_valid
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1061   .bss.s_waiter:00000000 s_waiter
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:498    .text.Ultra_Init:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:504    .text.Ultra_Init:00000000 Ultra_Init
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:544    .text.Ultra_Init:00000024 $d
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:550    .text.Ultra_Measure:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:556    .text.Ultra_Measure:00000000 Ultra_Measure
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:777    .text.Ultra_Measure:00000118 $d
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1005   .rodata.ULTRA_ECHO_PIN:00000000 ULTRA_ECHO_PIN
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1013   .rodata.ULTRA_ECHO_PORT:00000000 ULTRA_ECHO_PORT
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1029   .rodata.ULTRA_CC_IT:00000000 ULTRA_CC_IT
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1037   .rodata.ULTRA_CH:00000000 ULTRA_CH
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1021   .rodata.ULTRA_CC_FLAG:00000000 ULTRA_CC_FLAG
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1053   .rodata.ULTRA_TRIG_PORT:00000000 ULTRA_TRIG_PORT
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1045   .rodata.ULTRA_TRIG_PIN:00000000 ULTRA_TRIG_PIN
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:792    .text.median_n:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:798    .text.median_n:00000000 median_n
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:941    .text.min_n:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:947    .text.min_n:00000000 min_n
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1002   .rodata.ULTRA_ECHO_PIN:00000000 $d
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1010   .rodata.ULTRA_ECHO_PORT:00000000 $d
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1018   .rodata.ULTRA_CC_FLAG:00000000 $d
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1026   .rodata.ULTRA_CC_IT:00000000 $d
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1034   .rodata.ULTRA_CH:00000000 $d
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1042   .rodata.ULTRA_TRIG_PIN:00000000 $d
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1050   .rodata.ULTRA_TRIG_PORT:00000000 $d
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1058   .bss.s_waiter:00000000 $d
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1064   .bss.meas_valid:00000000 $d
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1070   .bss.distance:00000000 $d
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1076   .bss.captureFlag:00000000 $d
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1082   .bss.echoTime:00000000 $d
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1088   .bss.IC_Value2:00000000 $d
-C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1094   .bss.IC_Value1:00000000 $d
-                           .group:00000000 wm4.0.3e3bd4fae48ed4285b9fe9ad79008a8e
-                           .group:00000000 wm4._newlib_version.h.4.0eb654b64686e2bd29646258853f6c22
-                           .group:00000000 wm4.features.h.33.d554620bb17bd3b714c3fb5c268772bc
-                           .group:00000000 wm4._default_types.h.15.247e5cd201eca3442cbf5404108c4935
-                           .group:00000000 wm4._intsup.h.10.48bafbb683905c4daa4565a85aeeb264
-                           .group:00000000 wm4._stdint.h.10.c24fa3af3bc1706662bb5593a907e841
-                           .group:00000000 wm4.stdint.h.23.d53047a68f4a85177f80b422d52785ed
-                           .group:00000000 wm4.stddef.h.39.811583f327f35b0df7808fda70b062a0
+     /tmp/ccYjTY1a.s:21     .text.HAL_TIM_IC_CaptureCallback:00000000 $t
+     /tmp/ccYjTY1a.s:27     .text.HAL_TIM_IC_CaptureCallback:00000000 HAL_TIM_IC_CaptureCallback
+     /tmp/ccYjTY1a.s:196    .text.HAL_TIM_IC_CaptureCallback:000000bc $d
+     /tmp/ccYjTY1a.s:641    .bss.captureFlag:00000000 captureFlag
+     /tmp/ccYjTY1a.s:659    .bss.IC_Value1:00000000 IC_Value1
+     /tmp/ccYjTY1a.s:653    .bss.IC_Value2:00000000 IC_Value2
+     /tmp/ccYjTY1a.s:647    .bss.echoTime:00000000 echoTime
+     /tmp/ccYjTY1a.s:636    .bss.distance:00000000 distance
+     /tmp/ccYjTY1a.s:630    .bss.meas_valid:00000000 meas_valid
+     /tmp/ccYjTY1a.s:625    .bss.s_waiter:00000000 s_waiter
+     /tmp/ccYjTY1a.s:211    .text.Ultra_Init:00000000 $t
+     /tmp/ccYjTY1a.s:217    .text.Ultra_Init:00000000 Ultra_Init
+     /tmp/ccYjTY1a.s:246    .text.Ultra_Init:00000010 $d
+     /tmp/ccYjTY1a.s:252    .text.Ultra_Measure:00000000 $t
+     /tmp/ccYjTY1a.s:258    .text.Ultra_Measure:00000000 Ultra_Measure
+     /tmp/ccYjTY1a.s:402    .text.Ultra_Measure:000000a0 $d
+     /tmp/ccYjTY1a.s:412    .text.median_n:00000000 $t
+     /tmp/ccYjTY1a.s:418    .text.median_n:00000000 median_n
+     /tmp/ccYjTY1a.s:561    .text.min_n:00000000 $t
+     /tmp/ccYjTY1a.s:567    .text.min_n:00000000 min_n
+     /tmp/ccYjTY1a.s:622    .bss.s_waiter:00000000 $d
+     /tmp/ccYjTY1a.s:631    .bss.meas_valid:00000000 $d
+     /tmp/ccYjTY1a.s:633    .bss.distance:00000000 $d
+     /tmp/ccYjTY1a.s:642    .bss.captureFlag:00000000 $d
+     /tmp/ccYjTY1a.s:644    .bss.echoTime:00000000 $d
+     /tmp/ccYjTY1a.s:650    .bss.IC_Value2:00000000 $d
+     /tmp/ccYjTY1a.s:656    .bss.IC_Value1:00000000 $d
+                           .group:00000000 wm4.0.2990dd1d9de167bdf17825c6c7518e18
+                           .group:00000000 wm4.stdint.h.29.6d480f4ba0f60596e88234283d42444f
+                           .group:00000000 wm4.stddef.h.39.0dc9006b34572d4d9cae4c8b422c4971
                            .group:00000000 wm4.FreeRTOSConfig.h.32.6bbd733e8d202634418384a7607bb54f
                            .group:00000000 wm4.projdefs.h.29.3472c8470d131a5f474bc7437ea94609
                            .group:00000000 wm4.portmacro.h.30.ebb5f3ce711e1dad21b3172c9bc8e19f
                            .group:00000000 wm4.portable.h.64.742f2ce568820e866a7b541b4c77966f
                            .group:00000000 wm4.mpu_wrappers.h.29.4f9aea82ee68d943d141825e5294de63
-                           .group:00000000 wm4.newlib.h.7.decd5b9657e2c5df625d9eac6e10520c
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 28
-
-
-                           .group:00000000 wm4.ieeefp.h.77.61a77db5804869b1dadd307a77cf78c9
+                           .group:00000000 wm4._newlib_version.h.4.411db44ea2338a62eca2f0777f81481b
+                           .group:00000000 wm4.newlib.h.27.07bf1b8b16da454ae07478107717878b
+                           .group:00000000 wm4.ieeefp.h.77.5ad60f72ea25fc152400b550ac118212
+                           .group:00000000 wm4.features.h.22.4e5514d51694f64cae235f84d9e565a5
                            .group:00000000 wm4.config.h.224.10ee1ad185d877c6e334e6581faab44d
                            .group:00000000 wm4._ansi.h.31.de524f58584151836e90d8620a16f8e8
-                           .group:00000000 wm4.cdefs.h.49.56fd742369e655e7e8a7e365e706e208
+                           .group:00000000 wm4._default_types.h.6.959254cf5f09734ea7516c89e8bb21bd
+                           .group:00000000 wm4.cdefs.h.49.70fc7af612f78ddcace70fdd90b5623b
                            .group:00000000 wm4._types.h.20.dd0d04dca3800a0d2a6129b87f3adbb2
-                           .group:00000000 wm4.stddef.h.173.4903093a50a8482cb062b176ea61fac3
+                           .group:00000000 wm4.stddef.h.158.6f8e08a347b1cff664332fa350bfceb3
                            .group:00000000 wm4._types.h.127.3bdfe3ff8ea2d0985b03d9cbe93480e3
                            .group:00000000 wm4.reent.h.18.25503cdc8b7e55dd0d6ea7b3e5af7a03
-                           .group:00000000 wm4.lock.h.2.1461d1fff82dffe8bfddc23307f6484f
-                           .group:00000000 wm4.reent.h.78.6d702f69a6d6435d2dbe915b10150b1a
+                           .group:00000000 wm4.lock.h.2.c0958401bd0ce484d507ee19aacab817
+                           .group:00000000 wm4.reent.h.78.7f0775353a33c852a1479c008f68cd03
                            .group:00000000 wm4.reent.h.96.88022c5a22979c33a20a5d76964119ed
-                           .group:00000000 wm4.stddef.h.173.1cea4f16a943c8e875db6791959c3141
+                           .group:00000000 wm4.stddef.h.158.eec8bf00b5213f43d095cb984c5f22e3
                            .group:00000000 wm4.FreeRTOS.h.136.a17c2bf78722c1d7b86ba8d45e5b5f29
                            .group:00000000 wm4.list.h.61.5c5a38f6bc6687eed6d893e57dabd8e6
                            .group:00000000 wm4.task.h.46.9fb92b2c1a30a52e436f6063552b709b
                            .group:00000000 wm4.cmsis_os.h.129.5f4adf2a422dfa714f64051974ebee7a
+ARM GAS  /tmp/ccYjTY1a.s 			page 17
+
+
                            .group:00000000 wm4.cmsis_os2.h.26.bfdd852fbdfd57da4063d8c5a1fd5730
                            .group:00000000 wm4.cmsis_os2.h.151.57db232dfe421e4f781dd02c42ee4360
                            .group:00000000 wm4.cmsis_os.h.179.c36f217fbf28f1f2e754518bfb5a2ae8
@@ -1652,11 +987,8 @@ C:\Users\user\AppData\Local\Temp\ccBa7l1L.s:1094   .bss.IC_Value1:00000000 $d
                            .group:00000000 wm4.stm32f4xx_hal_tim_ex.h.21.918fa7fcd405cc3ba11632ed1d07a240
                            .group:00000000 wm4.stm32f4xx_hal_uart.h.21.ba8e24dd05c77faac3f3d48472e636ba
                            .group:00000000 wm4.stm32f4xx_hal.h.71.02372bc31d47d29d3f67fbfe1429649e
-                           .group:00000000 wm4.main.h.60.43ab73d02ecae73036be54daa58e8549
-                           .group:00000000 wm4.drive.h.14.a1ee32a37f4f9444164234e265f0172a
-
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccBa7l1L.s 			page 29
-
+                           .group:00000000 wm4.main.h.66.d4d281037744f6f3dbef7ed1ab6c26f3
+                           .group:00000000 wm4.drive.h.14.b93b6d3826016cbbc4db4892d38173e3
 
 UNDEFINED SYMBOLS
 HAL_TIM_ReadCapturedValue

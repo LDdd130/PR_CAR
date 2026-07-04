@@ -1,4 +1,4 @@
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 1
+ARM GAS  /tmp/ccyFHa0D.s 			page 1
 
 
    1              		.cpu cortex-m4
@@ -58,7 +58,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 1
   28:Core/Src/system_stm32f4xx.c ****   * This software is licensed under terms that can be found in the LICENSE file
   29:Core/Src/system_stm32f4xx.c ****   * in the root directory of this software component.
   30:Core/Src/system_stm32f4xx.c ****   * If no LICENSE file comes with this software, it is provided AS-IS.
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 2
+ARM GAS  /tmp/ccyFHa0D.s 			page 2
 
 
   31:Core/Src/system_stm32f4xx.c ****   *
@@ -118,7 +118,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 1
   85:Core/Src/system_stm32f4xx.c **** /* #define DATA_IN_ExtSDRAM */
   86:Core/Src/system_stm32f4xx.c **** #endif /* STM32F427xx || STM32F437xx || STM32F429xx || STM32F439xx || STM32F446xx || STM32F469xx ||
   87:Core/Src/system_stm32f4xx.c ****           STM32F479xx */
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 3
+ARM GAS  /tmp/ccyFHa0D.s 			page 3
 
 
   88:Core/Src/system_stm32f4xx.c **** 
@@ -178,7 +178,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 1
  142:Core/Src/system_stm32f4xx.c ****   */
  143:Core/Src/system_stm32f4xx.c **** 
  144:Core/Src/system_stm32f4xx.c **** /** @addtogroup STM32F4xx_System_Private_FunctionPrototypes
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 4
+ARM GAS  /tmp/ccyFHa0D.s 			page 4
 
 
  145:Core/Src/system_stm32f4xx.c ****   * @{
@@ -238,7 +238,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 1
   45              	.L2:
   46 0010 00ED00E0 		.word	-536810240
   47              		.cfi_endproc
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 5
+ARM GAS  /tmp/ccyFHa0D.s 			page 5
 
 
   48              	.LFE134:
@@ -298,7 +298,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 1
   64              		.loc 1 222 3 view .LVU6
  223:Core/Src/system_stm32f4xx.c ****   
  224:Core/Src/system_stm32f4xx.c ****   /* Get SYSCLK source -------------------------------------------------------*/
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 6
+ARM GAS  /tmp/ccyFHa0D.s 			page 6
 
 
  225:Core/Src/system_stm32f4xx.c ****   tmp = RCC->CFGR & RCC_CFGR_SWS;
@@ -358,7 +358,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 1
  256:Core/Src/system_stm32f4xx.c ****       break;
  257:Core/Src/system_stm32f4xx.c ****     default:
  258:Core/Src/system_stm32f4xx.c ****       SystemCoreClock = HSI_VALUE;
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 7
+ARM GAS  /tmp/ccyFHa0D.s 			page 7
 
 
  259:Core/Src/system_stm32f4xx.c ****       break;
@@ -418,7 +418,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 1
  126              		.loc 1 241 7 is_stmt 1 view .LVU29
  241:Core/Src/system_stm32f4xx.c ****       
  127              		.loc 1 241 17 is_stmt 0 view .LVU30
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 8
+ARM GAS  /tmp/ccyFHa0D.s 			page 8
 
 
  128 003c 5A68     		ldr	r2, [r3, #4]
@@ -478,7 +478,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 1
  255:Core/Src/system_stm32f4xx.c ****       break;
  166              		.loc 1 255 23 view .LVU47
  167 006a 094A     		ldr	r2, .L11+4
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 9
+ARM GAS  /tmp/ccyFHa0D.s 			page 9
 
 
  168              	.LVL13:
@@ -509,88 +509,85 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 1
  251:Core/Src/system_stm32f4xx.c ****       }
  186              		.loc 1 251 16 view .LVU55
  187 007e 02FB03F3 		mul	r3, r2, r3
- 188 0082 EAE7     		b	.L10
- 189              	.LVL16:
- 190              	.L7:
+ 188              	.LVL16:
+ 251:Core/Src/system_stm32f4xx.c ****       }
+ 189              		.loc 1 251 16 view .LVU56
+ 190 0082 EAE7     		b	.L10
+ 191              	.LVL17:
+ 192              	.L7:
  258:Core/Src/system_stm32f4xx.c ****       break;
- 191              		.loc 1 258 7 is_stmt 1 view .LVU56
+ 193              		.loc 1 258 7 is_stmt 1 view .LVU57
  258:Core/Src/system_stm32f4xx.c ****       break;
- 192              		.loc 1 258 23 is_stmt 0 view .LVU57
- 193 0084 024B     		ldr	r3, .L11+4
- 194              	.LVL17:
+ 194              		.loc 1 258 23 is_stmt 0 view .LVU58
+ 195 0084 024B     		ldr	r3, .L11+4
+ 196              	.LVL18:
  258:Core/Src/system_stm32f4xx.c ****       break;
- 195              		.loc 1 258 23 view .LVU58
- 196 0086 034A     		ldr	r2, .L11+8
- 197 0088 1A60     		str	r2, [r3]
+ 197              		.loc 1 258 23 view .LVU59
+ 198 0086 034A     		ldr	r2, .L11+8
+ 199 0088 1A60     		str	r2, [r3]
  259:Core/Src/system_stm32f4xx.c ****   }
- 198              		.loc 1 259 7 is_stmt 1 view .LVU59
- 199 008a C6E7     		b	.L8
- 200              	.L12:
- 201              		.align	2
- 202              	.L11:
- 203 008c 00380240 		.word	1073887232
- 204 0090 00000000 		.word	SystemCoreClock
- 205 0094 0024F400 		.word	16000000
- 206 0098 00000000 		.word	AHBPrescTable
- 207 009c 40787D01 		.word	25000000
- 208              		.cfi_endproc
- 209              	.LFE135:
- 211              		.global	APBPrescTable
- 212              		.section	.rodata.APBPrescTable,"a"
- 213              		.align	2
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 10
+ 200              		.loc 1 259 7 is_stmt 1 view .LVU60
+ 201 008a C6E7     		b	.L8
+ 202              	.L12:
+ 203              		.align	2
+ 204              	.L11:
+ 205 008c 00380240 		.word	1073887232
+ 206 0090 00000000 		.word	SystemCoreClock
+ 207 0094 0024F400 		.word	16000000
+ 208 0098 00000000 		.word	AHBPrescTable
+ 209 009c 40787D01 		.word	25000000
+ 210              		.cfi_endproc
+ 211              	.LFE135:
+ARM GAS  /tmp/ccyFHa0D.s 			page 10
 
 
- 216              	APBPrescTable:
- 217 0000 00000000 		.ascii	"\000\000\000\000\001\002\003\004"
- 217      01020304 
- 218              		.global	AHBPrescTable
- 219              		.section	.rodata.AHBPrescTable,"a"
- 220              		.align	2
- 223              	AHBPrescTable:
- 224 0000 00000000 		.ascii	"\000\000\000\000\000\000\000\000\001\002\003\004\006"
- 224      00000000 
- 224      01020304 
- 224      06
- 225 000d 070809   		.ascii	"\007\010\011"
- 226              		.global	SystemCoreClock
- 227              		.section	.data.SystemCoreClock,"aw"
- 228              		.align	2
- 231              	SystemCoreClock:
- 232 0000 0024F400 		.word	16000000
- 233              		.text
- 234              	.Letext0:
- 235              		.file 2 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
- 236              		.file 3 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
- 237              		.file 4 "Drivers/CMSIS/Include/core_cm4.h"
- 238              		.file 5 "Drivers/CMSIS/Device/ST/STM32F4xx/Include/system_stm32f4xx.h"
- 239              		.file 6 "Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f411xe.h"
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 11
+ 213              		.global	APBPrescTable
+ 214              		.section	.rodata.APBPrescTable,"a"
+ 215              		.align	2
+ 218              	APBPrescTable:
+ 219 0000 00000000 		.ascii	"\000\000\000\000\001\002\003\004"
+ 219      01020304 
+ 220              		.global	AHBPrescTable
+ 221              		.section	.rodata.AHBPrescTable,"a"
+ 222              		.align	2
+ 225              	AHBPrescTable:
+ 226 0000 00000000 		.ascii	"\000\000\000\000\000\000\000\000\001\002\003\004\006"
+ 226      00000000 
+ 226      01020304 
+ 226      06
+ 227 000d 070809   		.ascii	"\007\010\011"
+ 228              		.global	SystemCoreClock
+ 229              		.section	.data.SystemCoreClock,"aw"
+ 230              		.align	2
+ 233              	SystemCoreClock:
+ 234 0000 0024F400 		.word	16000000
+ 235              		.text
+ 236              	.Letext0:
+ 237              		.file 2 "/usr/lib/gcc/arm-none-eabi/13.2.1/include/stdint.h"
+ 238              		.file 3 "Drivers/CMSIS/Include/core_cm4.h"
+ 239              		.file 4 "Drivers/CMSIS/Device/ST/STM32F4xx/Include/system_stm32f4xx.h"
+ 240              		.file 5 "Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f411xe.h"
+ARM GAS  /tmp/ccyFHa0D.s 			page 11
 
 
 DEFINED SYMBOLS
                             *ABS*:00000000 system_stm32f4xx.c
-C:\Users\user\AppData\Local\Temp\ccHfnb6T.s:21     .text.SystemInit:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccHfnb6T.s:27     .text.SystemInit:00000000 SystemInit
-C:\Users\user\AppData\Local\Temp\ccHfnb6T.s:46     .text.SystemInit:00000010 $d
-C:\Users\user\AppData\Local\Temp\ccHfnb6T.s:51     .text.SystemCoreClockUpdate:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccHfnb6T.s:57     .text.SystemCoreClockUpdate:00000000 SystemCoreClockUpdate
-C:\Users\user\AppData\Local\Temp\ccHfnb6T.s:203    .text.SystemCoreClockUpdate:0000008c $d
-C:\Users\user\AppData\Local\Temp\ccHfnb6T.s:231    .data.SystemCoreClock:00000000 SystemCoreClock
-C:\Users\user\AppData\Local\Temp\ccHfnb6T.s:223    .rodata.AHBPrescTable:00000000 AHBPrescTable
-C:\Users\user\AppData\Local\Temp\ccHfnb6T.s:216    .rodata.APBPrescTable:00000000 APBPrescTable
-C:\Users\user\AppData\Local\Temp\ccHfnb6T.s:213    .rodata.APBPrescTable:00000000 $d
-C:\Users\user\AppData\Local\Temp\ccHfnb6T.s:220    .rodata.AHBPrescTable:00000000 $d
-C:\Users\user\AppData\Local\Temp\ccHfnb6T.s:228    .data.SystemCoreClock:00000000 $d
-                           .group:00000000 wm4.0.3e3bd4fae48ed4285b9fe9ad79008a8e
+     /tmp/ccyFHa0D.s:21     .text.SystemInit:00000000 $t
+     /tmp/ccyFHa0D.s:27     .text.SystemInit:00000000 SystemInit
+     /tmp/ccyFHa0D.s:46     .text.SystemInit:00000010 $d
+     /tmp/ccyFHa0D.s:51     .text.SystemCoreClockUpdate:00000000 $t
+     /tmp/ccyFHa0D.s:57     .text.SystemCoreClockUpdate:00000000 SystemCoreClockUpdate
+     /tmp/ccyFHa0D.s:205    .text.SystemCoreClockUpdate:0000008c $d
+     /tmp/ccyFHa0D.s:233    .data.SystemCoreClock:00000000 SystemCoreClock
+     /tmp/ccyFHa0D.s:225    .rodata.AHBPrescTable:00000000 AHBPrescTable
+     /tmp/ccyFHa0D.s:218    .rodata.APBPrescTable:00000000 APBPrescTable
+     /tmp/ccyFHa0D.s:215    .rodata.APBPrescTable:00000000 $d
+     /tmp/ccyFHa0D.s:222    .rodata.AHBPrescTable:00000000 $d
+     /tmp/ccyFHa0D.s:230    .data.SystemCoreClock:00000000 $d
+                           .group:00000000 wm4.0.2990dd1d9de167bdf17825c6c7518e18
                            .group:00000000 wm4.stm32f4xx.h.38.63e3ea23bd63a94457417730025259b6
                            .group:00000000 wm4.stm32f411xe.h.34.f2908321cbbda12187706c23063bbc28
-                           .group:00000000 wm4._newlib_version.h.4.0eb654b64686e2bd29646258853f6c22
-                           .group:00000000 wm4.features.h.33.d554620bb17bd3b714c3fb5c268772bc
-                           .group:00000000 wm4._default_types.h.15.247e5cd201eca3442cbf5404108c4935
-                           .group:00000000 wm4._intsup.h.10.48bafbb683905c4daa4565a85aeeb264
-                           .group:00000000 wm4._stdint.h.10.c24fa3af3bc1706662bb5593a907e841
-                           .group:00000000 wm4.stdint.h.23.d53047a68f4a85177f80b422d52785ed
+                           .group:00000000 wm4.stdint.h.29.6d480f4ba0f60596e88234283d42444f
                            .group:00000000 wm4.cmsis_version.h.32.0ac195c83bb4537824e6ad1c47474b79
                            .group:00000000 wm4.core_cm4.h.66.e4ff136c4a17abc46741866f64f8e729
                            .group:00000000 wm4.cmsis_gcc.h.26.498d0ad17a45fc9ef20fdc01caf02259
@@ -600,7 +597,7 @@ C:\Users\user\AppData\Local\Temp\ccHfnb6T.s:228    .data.SystemCoreClock:0000000
                            .group:00000000 wm4.stm32f4xx.h.195.a4b8bf80f37cc96981498656ffe5f588
                            .group:00000000 wm4.stm32f4xx_hal_conf.h.25.0e66e2bdd1e693edb8cfdc624d1a6bd4
                            .group:00000000 wm4.stm32_hal_legacy.h.22.8b7d303dc46a0b7ac6d3edf19ce2608d
-                           .group:00000000 wm4.stddef.h.39.811583f327f35b0df7808fda70b062a0
+                           .group:00000000 wm4.stddef.h.39.0dc9006b34572d4d9cae4c8b422c4971
                            .group:00000000 wm4.stm32f4xx_hal_def.h.58.3cb484e92e5ccf2e55312a4714e27917
                            .group:00000000 wm4.stm32f4xx_hal_rcc_ex.h.20.6bc7ed2ae7969e22afc815a811faa8ee
                            .group:00000000 wm4.stm32f4xx_hal_rcc.h.106.0887cf5d985ae88e345b0aed0ceb4729
@@ -625,8 +622,5 @@ C:\Users\user\AppData\Local\Temp\ccHfnb6T.s:228    .data.SystemCoreClock:0000000
                            .group:00000000 wm4.stm32f4xx_hal_tim_ex.h.21.918fa7fcd405cc3ba11632ed1d07a240
                            .group:00000000 wm4.stm32f4xx_hal_uart.h.21.ba8e24dd05c77faac3f3d48472e636ba
                            .group:00000000 wm4.stm32f4xx_hal.h.71.02372bc31d47d29d3f67fbfe1429649e
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccHfnb6T.s 			page 12
-
-
 
 NO UNDEFINED SYMBOLS

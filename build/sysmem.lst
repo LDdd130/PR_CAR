@@ -1,4 +1,4 @@
-ARM GAS  C:\Users\user\AppData\Local\Temp\cccDSdLd.s 			page 1
+ARM GAS  /tmp/cc30a72M.s 			page 1
 
 
    1              		.cpu cortex-m4
@@ -58,7 +58,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\cccDSdLd.s 			page 1
   27:Core/Src/sysmem.c **** 
   28:Core/Src/sysmem.c **** /**
   29:Core/Src/sysmem.c ****  * Pointer to the current high watermark of the heap usage
-ARM GAS  C:\Users\user\AppData\Local\Temp\cccDSdLd.s 			page 2
+ARM GAS  /tmp/cc30a72M.s 			page 2
 
 
   30:Core/Src/sysmem.c ****  */
@@ -118,7 +118,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\cccDSdLd.s 			page 1
   51              		.loc 1 61 3 is_stmt 1 view .LVU8
   62:Core/Src/sysmem.c **** 
   63:Core/Src/sysmem.c ****   /* Initialize heap end at first call */
-ARM GAS  C:\Users\user\AppData\Local\Temp\cccDSdLd.s 			page 3
+ARM GAS  /tmp/cc30a72M.s 			page 3
 
 
   64:Core/Src/sysmem.c ****   if (NULL == __sbrk_heap_end)
@@ -178,7 +178,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\cccDSdLd.s 			page 1
   87 0022 084C     		ldr	r4, .L8+12
   88 0024 0460     		str	r4, [r0]
   89 0026 F2E7     		b	.L2
-ARM GAS  C:\Users\user\AppData\Local\Temp\cccDSdLd.s 			page 4
+ARM GAS  /tmp/cc30a72M.s 			page 4
 
 
   90              	.LVL8:
@@ -212,41 +212,38 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\cccDSdLd.s 			page 1
  117 0000 00000000 		.space	4
  118              		.text
  119              	.Letext0:
- 120              		.file 2 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
- 121              		.file 3 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
- 122              		.file 4 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
- 123              		.file 5 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
-ARM GAS  C:\Users\user\AppData\Local\Temp\cccDSdLd.s 			page 5
+ 120              		.file 2 "/usr/lib/gcc/arm-none-eabi/13.2.1/include/stddef.h"
+ 121              		.file 3 "/usr/lib/gcc/arm-none-eabi/13.2.1/include/stdint.h"
+ 122              		.file 4 "/usr/include/newlib/sys/errno.h"
+ARM GAS  /tmp/cc30a72M.s 			page 5
 
 
 DEFINED SYMBOLS
                             *ABS*:00000000 sysmem.c
-C:\Users\user\AppData\Local\Temp\cccDSdLd.s:21     .text._sbrk:00000000 $t
-C:\Users\user\AppData\Local\Temp\cccDSdLd.s:27     .text._sbrk:00000000 _sbrk
-C:\Users\user\AppData\Local\Temp\cccDSdLd.s:105    .text._sbrk:00000038 $d
-C:\Users\user\AppData\Local\Temp\cccDSdLd.s:116    .bss.__sbrk_heap_end:00000000 __sbrk_heap_end
-C:\Users\user\AppData\Local\Temp\cccDSdLd.s:113    .bss.__sbrk_heap_end:00000000 $d
-                           .group:00000000 wm4.0.3e3bd4fae48ed4285b9fe9ad79008a8e
+     /tmp/cc30a72M.s:21     .text._sbrk:00000000 $t
+     /tmp/cc30a72M.s:27     .text._sbrk:00000000 _sbrk
+     /tmp/cc30a72M.s:105    .text._sbrk:00000038 $d
+     /tmp/cc30a72M.s:116    .bss.__sbrk_heap_end:00000000 __sbrk_heap_end
+     /tmp/cc30a72M.s:113    .bss.__sbrk_heap_end:00000000 $d
+                           .group:00000000 wm4.0.2990dd1d9de167bdf17825c6c7518e18
                            .group:00000000 wm4.errno.h.2.ba016d646105af6cad23be83630b6a3f
-                           .group:00000000 wm4._newlib_version.h.4.0eb654b64686e2bd29646258853f6c22
-                           .group:00000000 wm4.newlib.h.27.b904f6f8971bd921b436e5701877de32
-                           .group:00000000 wm4.ieeefp.h.77.61a77db5804869b1dadd307a77cf78c9
-                           .group:00000000 wm4.features.h.22.4b93ad64e0d80833c46a20ecae380bb0
+                           .group:00000000 wm4._newlib_version.h.4.411db44ea2338a62eca2f0777f81481b
+                           .group:00000000 wm4.newlib.h.27.07bf1b8b16da454ae07478107717878b
+                           .group:00000000 wm4.ieeefp.h.77.5ad60f72ea25fc152400b550ac118212
+                           .group:00000000 wm4.features.h.22.4e5514d51694f64cae235f84d9e565a5
                            .group:00000000 wm4.config.h.224.10ee1ad185d877c6e334e6581faab44d
                            .group:00000000 wm4._ansi.h.31.de524f58584151836e90d8620a16f8e8
-                           .group:00000000 wm4.stddef.h.39.811583f327f35b0df7808fda70b062a0
+                           .group:00000000 wm4.stddef.h.39.0dc9006b34572d4d9cae4c8b422c4971
                            .group:00000000 wm4._default_types.h.6.959254cf5f09734ea7516c89e8bb21bd
-                           .group:00000000 wm4.cdefs.h.49.56fd742369e655e7e8a7e365e706e208
+                           .group:00000000 wm4.cdefs.h.49.70fc7af612f78ddcace70fdd90b5623b
                            .group:00000000 wm4._types.h.20.dd0d04dca3800a0d2a6129b87f3adbb2
-                           .group:00000000 wm4.stddef.h.173.4903093a50a8482cb062b176ea61fac3
+                           .group:00000000 wm4.stddef.h.158.6f8e08a347b1cff664332fa350bfceb3
                            .group:00000000 wm4._types.h.127.3bdfe3ff8ea2d0985b03d9cbe93480e3
                            .group:00000000 wm4.reent.h.18.25503cdc8b7e55dd0d6ea7b3e5af7a03
-                           .group:00000000 wm4.lock.h.2.1461d1fff82dffe8bfddc23307f6484f
-                           .group:00000000 wm4.reent.h.78.6d702f69a6d6435d2dbe915b10150b1a
+                           .group:00000000 wm4.lock.h.2.c0958401bd0ce484d507ee19aacab817
+                           .group:00000000 wm4.reent.h.78.7f0775353a33c852a1479c008f68cd03
                            .group:00000000 wm4.errno.h.18.87873c1c5b242e8a4fdc43daa9aad824
-                           .group:00000000 wm4._intsup.h.10.48bafbb683905c4daa4565a85aeeb264
-                           .group:00000000 wm4._stdint.h.10.c24fa3af3bc1706662bb5593a907e841
-                           .group:00000000 wm4.stdint.h.23.d53047a68f4a85177f80b422d52785ed
+                           .group:00000000 wm4.stdint.h.29.6d480f4ba0f60596e88234283d42444f
 
 UNDEFINED SYMBOLS
 __errno

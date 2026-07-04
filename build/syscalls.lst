@@ -1,4 +1,4 @@
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 1
+ARM GAS  /tmp/ccemCgax.s 			page 1
 
 
    1              		.cpu cortex-m4
@@ -58,7 +58,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 1
   28:Core/Src/syscalls.c **** #include <signal.h>
   29:Core/Src/syscalls.c **** #include <time.h>
   30:Core/Src/syscalls.c **** #include <sys/time.h>
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 2
+ARM GAS  /tmp/ccemCgax.s 			page 2
 
 
   31:Core/Src/syscalls.c **** #include <sys/times.h>
@@ -118,7 +118,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 1
   65              		.thumb_func
   67              	_kill:
   68              	.LVL0:
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 3
+ARM GAS  /tmp/ccemCgax.s 			page 3
 
 
   69              	.LFB27:
@@ -178,7 +178,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 1
  114              		.cfi_offset 3, -8
  115              		.cfi_offset 14, -4
   63:Core/Src/syscalls.c ****   _kill(status, -1);
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 4
+ARM GAS  /tmp/ccemCgax.s 			page 4
 
 
  116              		.loc 1 63 3 is_stmt 1 view .LVU15
@@ -238,7 +238,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 1
   74:Core/Src/syscalls.c ****     *ptr++ = __io_getchar();
  162              		.loc 1 74 5 is_stmt 1 view .LVU26
  163              		.loc 1 74 14 is_stmt 0 view .LVU27
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 5
+ARM GAS  /tmp/ccemCgax.s 			page 5
 
 
  164 000a FFF7FEFF 		bl	__io_getchar
@@ -298,7 +298,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 1
  211              		.cfi_offset 14, -4
  212 0002 0C46     		mov	r4, r1
  213 0004 1646     		mov	r6, r2
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 6
+ARM GAS  /tmp/ccemCgax.s 			page 6
 
 
   82:Core/Src/syscalls.c ****   (void)file;
@@ -358,7 +358,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 1
  256              		.loc 1 93 1 is_stmt 1 view -0
  257              		.cfi_startproc
  258              		@ args = 0, pretend = 0, frame = 0
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 7
+ARM GAS  /tmp/ccemCgax.s 			page 7
 
 
  259              		@ frame_needed = 0, uses_anonymous_args = 0
@@ -418,7 +418,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 1
  305              		.thumb_func
  307              	_isatty:
  308              	.LVL22:
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 8
+ARM GAS  /tmp/ccemCgax.s 			page 8
 
 
  309              	.LFB33:
@@ -478,7 +478,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 1
  352              		.section	.text._open,"ax",%progbits
  353              		.align	1
  354              		.global	_open
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 9
+ARM GAS  /tmp/ccemCgax.s 			page 9
 
 
  355              		.syntax unified
@@ -538,7 +538,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 1
  401              		.loc 1 129 1 is_stmt 1 view -0
  402              		.cfi_startproc
  403              		@ args = 0, pretend = 0, frame = 0
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 10
+ARM GAS  /tmp/ccemCgax.s 			page 10
 
 
  404              		@ frame_needed = 0, uses_anonymous_args = 0
@@ -598,7 +598,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 1
  451 0008 0360     		str	r3, [r0]
  139:Core/Src/syscalls.c ****   return -1;
  452              		.loc 1 139 3 is_stmt 1 view .LVU94
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 11
+ARM GAS  /tmp/ccemCgax.s 			page 11
 
 
  140:Core/Src/syscalls.c **** }
@@ -658,7 +658,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 1
  151:Core/Src/syscalls.c ****   st->st_mode = S_IFCHR;
  500              		.loc 1 151 3 view .LVU103
  501              		.loc 1 151 15 is_stmt 0 view .LVU104
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 12
+ARM GAS  /tmp/ccemCgax.s 			page 12
 
 
  502 0000 4FF40053 		mov	r3, #8192
@@ -718,7 +718,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 1
  549              		.align	1
  550              		.global	_fork
  551              		.syntax unified
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 13
+ARM GAS  /tmp/ccemCgax.s 			page 13
 
 
  552              		.thumb
@@ -778,7 +778,7 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 1
  599              		.loc 1 171 3 is_stmt 1 view .LVU123
  172:Core/Src/syscalls.c ****   (void)argv;
  600              		.loc 1 172 3 view .LVU124
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 14
+ARM GAS  /tmp/ccemCgax.s 			page 14
 
 
  173:Core/Src/syscalls.c ****   (void)env;
@@ -812,80 +812,80 @@ ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 1
  630              		.weak	__io_getchar
  631              		.text
  632              	.Letext0:
- 633              		.file 2 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
- 634              		.file 3 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
- 635              		.file 4 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
- 636              		.file 5 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
- 637              		.file 6 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
- 638              		.file 7 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
- 639              		.file 8 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
- 640              		.file 9 "C:\\ST\\STM32CubeIDE_2.1.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 15
+ 633              		.file 2 "/usr/include/newlib/machine/_default_types.h"
+ 634              		.file 3 "/usr/include/newlib/sys/_types.h"
+ 635              		.file 4 "/usr/include/newlib/sys/_timeval.h"
+ 636              		.file 5 "/usr/include/newlib/sys/_timespec.h"
+ 637              		.file 6 "/usr/include/newlib/sys/types.h"
+ 638              		.file 7 "/usr/include/newlib/sys/stat.h"
+ 639              		.file 8 "/usr/include/newlib/sys/times.h"
+ 640              		.file 9 "/usr/include/newlib/sys/errno.h"
+ARM GAS  /tmp/ccemCgax.s 			page 15
 
 
 DEFINED SYMBOLS
                             *ABS*:00000000 syscalls.c
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:21     .text.initialise_monitor_handles:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:27     .text.initialise_monitor_handles:00000000 initialise_monitor_handles
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:40     .text._getpid:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:46     .text._getpid:00000000 _getpid
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:61     .text._kill:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:67     .text._kill:00000000 _kill
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:96     .text._exit:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:102    .text._exit:00000000 _exit
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:129    .text._read:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:135    .text._read:00000000 _read
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:191    .text._write:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:197    .text._write:00000000 _write
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:247    .text._close:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:253    .text._close:00000000 _close
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:272    .text._fstat:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:278    .text._fstat:00000000 _fstat
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:301    .text._isatty:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:307    .text._isatty:00000000 _isatty
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:326    .text._lseek:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:332    .text._lseek:00000000 _lseek
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:353    .text._open:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:359    .text._open:00000000 _open
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:392    .text._wait:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:398    .text._wait:00000000 _wait
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:426    .text._unlink:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:432    .text._unlink:00000000 _unlink
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:460    .text._times:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:466    .text._times:00000000 _times
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:485    .text._stat:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:491    .text._stat:00000000 _stat
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:514    .text._link:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:520    .text._link:00000000 _link
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:549    .text._fork:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:555    .text._fork:00000000 _fork
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:580    .text._execve:00000000 $t
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:586    .text._execve:00000000 _execve
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:620    .data.environ:00000000 environ
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:617    .data.environ:00000000 $d
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:627    .bss.__env:00000000 __env
-C:\Users\user\AppData\Local\Temp\ccmmussr.s:624    .bss.__env:00000000 $d
-                           .group:00000000 wm4.0.3e3bd4fae48ed4285b9fe9ad79008a8e
-                           .group:00000000 wm4._newlib_version.h.4.0eb654b64686e2bd29646258853f6c22
-                           .group:00000000 wm4.newlib.h.27.b904f6f8971bd921b436e5701877de32
-                           .group:00000000 wm4.ieeefp.h.77.61a77db5804869b1dadd307a77cf78c9
-                           .group:00000000 wm4.features.h.22.4b93ad64e0d80833c46a20ecae380bb0
+     /tmp/ccemCgax.s:21     .text.initialise_monitor_handles:00000000 $t
+     /tmp/ccemCgax.s:27     .text.initialise_monitor_handles:00000000 initialise_monitor_handles
+     /tmp/ccemCgax.s:40     .text._getpid:00000000 $t
+     /tmp/ccemCgax.s:46     .text._getpid:00000000 _getpid
+     /tmp/ccemCgax.s:61     .text._kill:00000000 $t
+     /tmp/ccemCgax.s:67     .text._kill:00000000 _kill
+     /tmp/ccemCgax.s:96     .text._exit:00000000 $t
+     /tmp/ccemCgax.s:102    .text._exit:00000000 _exit
+     /tmp/ccemCgax.s:129    .text._read:00000000 $t
+     /tmp/ccemCgax.s:135    .text._read:00000000 _read
+     /tmp/ccemCgax.s:191    .text._write:00000000 $t
+     /tmp/ccemCgax.s:197    .text._write:00000000 _write
+     /tmp/ccemCgax.s:247    .text._close:00000000 $t
+     /tmp/ccemCgax.s:253    .text._close:00000000 _close
+     /tmp/ccemCgax.s:272    .text._fstat:00000000 $t
+     /tmp/ccemCgax.s:278    .text._fstat:00000000 _fstat
+     /tmp/ccemCgax.s:301    .text._isatty:00000000 $t
+     /tmp/ccemCgax.s:307    .text._isatty:00000000 _isatty
+     /tmp/ccemCgax.s:326    .text._lseek:00000000 $t
+     /tmp/ccemCgax.s:332    .text._lseek:00000000 _lseek
+     /tmp/ccemCgax.s:353    .text._open:00000000 $t
+     /tmp/ccemCgax.s:359    .text._open:00000000 _open
+     /tmp/ccemCgax.s:392    .text._wait:00000000 $t
+     /tmp/ccemCgax.s:398    .text._wait:00000000 _wait
+     /tmp/ccemCgax.s:426    .text._unlink:00000000 $t
+     /tmp/ccemCgax.s:432    .text._unlink:00000000 _unlink
+     /tmp/ccemCgax.s:460    .text._times:00000000 $t
+     /tmp/ccemCgax.s:466    .text._times:00000000 _times
+     /tmp/ccemCgax.s:485    .text._stat:00000000 $t
+     /tmp/ccemCgax.s:491    .text._stat:00000000 _stat
+     /tmp/ccemCgax.s:514    .text._link:00000000 $t
+     /tmp/ccemCgax.s:520    .text._link:00000000 _link
+     /tmp/ccemCgax.s:549    .text._fork:00000000 $t
+     /tmp/ccemCgax.s:555    .text._fork:00000000 _fork
+     /tmp/ccemCgax.s:580    .text._execve:00000000 $t
+     /tmp/ccemCgax.s:586    .text._execve:00000000 _execve
+     /tmp/ccemCgax.s:620    .data.environ:00000000 environ
+     /tmp/ccemCgax.s:617    .data.environ:00000000 $d
+     /tmp/ccemCgax.s:627    .bss.__env:00000000 __env
+     /tmp/ccemCgax.s:624    .bss.__env:00000000 $d
+                           .group:00000000 wm4.0.2990dd1d9de167bdf17825c6c7518e18
+                           .group:00000000 wm4._newlib_version.h.4.411db44ea2338a62eca2f0777f81481b
+                           .group:00000000 wm4.newlib.h.27.07bf1b8b16da454ae07478107717878b
+                           .group:00000000 wm4.ieeefp.h.77.5ad60f72ea25fc152400b550ac118212
+                           .group:00000000 wm4.features.h.22.4e5514d51694f64cae235f84d9e565a5
                            .group:00000000 wm4.config.h.224.10ee1ad185d877c6e334e6581faab44d
                            .group:00000000 wm4._ansi.h.31.de524f58584151836e90d8620a16f8e8
                            .group:00000000 wm4._default_types.h.6.959254cf5f09734ea7516c89e8bb21bd
-                           .group:00000000 wm4.stddef.h.39.811583f327f35b0df7808fda70b062a0
-                           .group:00000000 wm4.cdefs.h.49.56fd742369e655e7e8a7e365e706e208
+                           .group:00000000 wm4.stddef.h.39.0dc9006b34572d4d9cae4c8b422c4971
+                           .group:00000000 wm4.cdefs.h.49.70fc7af612f78ddcace70fdd90b5623b
                            .group:00000000 wm4._types.h.20.dd0d04dca3800a0d2a6129b87f3adbb2
-                           .group:00000000 wm4.stddef.h.173.4903093a50a8482cb062b176ea61fac3
+                           .group:00000000 wm4.stddef.h.158.6f8e08a347b1cff664332fa350bfceb3
                            .group:00000000 wm4._types.h.127.3bdfe3ff8ea2d0985b03d9cbe93480e3
                            .group:00000000 wm4.reent.h.18.25503cdc8b7e55dd0d6ea7b3e5af7a03
-                           .group:00000000 wm4.lock.h.2.1461d1fff82dffe8bfddc23307f6484f
-ARM GAS  C:\Users\user\AppData\Local\Temp\ccmmussr.s 			page 16
+                           .group:00000000 wm4.lock.h.2.c0958401bd0ce484d507ee19aacab817
+ARM GAS  /tmp/ccemCgax.s 			page 16
 
 
-                           .group:00000000 wm4.reent.h.78.6d702f69a6d6435d2dbe915b10150b1a
+                           .group:00000000 wm4.reent.h.78.7f0775353a33c852a1479c008f68cd03
                            .group:00000000 wm4.time.h.14.849270cc7997ccc4e05edd146e568a9f
-                           .group:00000000 wm4.stddef.h.173.1cea4f16a943c8e875db6791959c3141
+                           .group:00000000 wm4.stddef.h.158.eec8bf00b5213f43d095cb984c5f22e3
                            .group:00000000 wm4.time.h.2.4581ce0ffb6627cfc02162c94bf846c9
                            .group:00000000 wm4.time.h.25.0e6a0fdbc9955f5707ed54246ed2e089
                            .group:00000000 wm4.types.h.40.8b6acba56cefbb11746718204edc8f5e
@@ -894,11 +894,11 @@ C:\Users\user\AppData\Local\Temp\ccmmussr.s:624    .bss.__env:00000000 $d
                            .group:00000000 wm4.endian.h.9.49f3a4695c1b61e8a0808de3c4a106cb
                            .group:00000000 wm4._timeval.h.32.bec3221fa7a9bb0bdde696c9c57e47d2
                            .group:00000000 wm4.timespec.h.41.d855182eb0e690443ab8651bcedca6e1
-                           .group:00000000 wm4.select.h.19.8c04bee5682eafa577cf6325dd7ee64c
+                           .group:00000000 wm4.select.h.19.8f92964f85316d866d3bb193a38b5ac3
                            .group:00000000 wm4.types.h.51.e2a6e4379b4797ffcc4841f8498fd61b
                            .group:00000000 wm4.sched.h.22.c60982713a5c428609783c78f9c78d95
                            .group:00000000 wm4._pthreadtypes.h.36.fcee9961c35163dde6267ef772ad1972
-                           .group:00000000 wm4.time.h.142.ba943c1a29afc7430d41c0a92fd48e0b
+                           .group:00000000 wm4.time.h.142.403dcded079b6de6a2d2f21a34c2ae96
                            .group:00000000 wm4.stat.h.54.5a9b823658423102e7a8de4ed089eedc
                            .group:00000000 wm4.stdlib.h.13.4ed386f5c1a80d71e72172885d946ef2
                            .group:00000000 wm4.alloca.h.8.dfc0c703c47ec3e69746825b17d9e66d
@@ -910,8 +910,7 @@ C:\Users\user\AppData\Local\Temp\ccmmussr.s:624    .bss.__env:00000000 $d
                            .group:00000000 wm4.stdio.h.47.1f5845210bb9053bbca9ed76fc4018da
                            .group:00000000 wm4.stdio.h.2.4aa87247282eca6c8f36f9de33d8df1a
                            .group:00000000 wm4.stdio.h.87.a1e20d2651f9bfb66e51bfbe849db00a
-                           .group:00000000 wm4._intsup.h.10.48bafbb683905c4daa4565a85aeeb264
-                           .group:00000000 wm4.stdint.h.23.d53047a68f4a85177f80b422d52785ed
+                           .group:00000000 wm4.stdint.h.29.6d480f4ba0f60596e88234283d42444f
                            .group:00000000 wm4.signal.h.31.1e41f887ed1384065c2378e275de5bce
                            .group:00000000 wm4.signal.h.18.14c8d0c03fc1e06775633fad7399cfc7
                            .group:00000000 wm4.time.h.40.07bdef2e51e429b46276cd6f2246b78b

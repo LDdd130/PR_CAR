@@ -1,13 +1,18 @@
-# Graph Report - C:\Users\user\STM\PR_CAR  (2026-06-30)
+# Graph Report - PR_CAR  (2026-07-04)
 
 ## Corpus Check
-- 152 files · ~1,174,923 words
+- 168 files · ~870,960 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3088 nodes · 4020 edges · 121 communities detected
-- Extraction: 87% EXTRACTED · 13% INFERRED · 0% AMBIGUOUS · INFERRED: 534 edges (avg confidence: 0.8)
+- 3451 nodes · 8760 edges · 96 communities (92 shown, 4 thin omitted)
+- Extraction: 92% EXTRACTED · 8% INFERRED · 0% AMBIGUOUS · INFERRED: 704 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
+
+## Graph Freshness
+- Built from commit: `f0a74d20`
+- Run `git rev-parse HEAD` and compare to check if the graph is stale.
+- Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - [[_COMMUNITY_Community 0|Community 0]]
@@ -92,702 +97,412 @@
 - [[_COMMUNITY_Community 79|Community 79]]
 - [[_COMMUNITY_Community 80|Community 80]]
 - [[_COMMUNITY_Community 81|Community 81]]
-- [[_COMMUNITY_Community 82|Community 82]]
-- [[_COMMUNITY_Community 83|Community 83]]
 - [[_COMMUNITY_Community 84|Community 84]]
 - [[_COMMUNITY_Community 85|Community 85]]
 - [[_COMMUNITY_Community 86|Community 86]]
 - [[_COMMUNITY_Community 87|Community 87]]
 - [[_COMMUNITY_Community 88|Community 88]]
 - [[_COMMUNITY_Community 89|Community 89]]
-- [[_COMMUNITY_Community 90|Community 90]]
 - [[_COMMUNITY_Community 91|Community 91]]
 - [[_COMMUNITY_Community 92|Community 92]]
-- [[_COMMUNITY_Community 93|Community 93]]
 - [[_COMMUNITY_Community 94|Community 94]]
-- [[_COMMUNITY_Community 95|Community 95]]
-- [[_COMMUNITY_Community 96|Community 96]]
-- [[_COMMUNITY_Community 97|Community 97]]
-- [[_COMMUNITY_Community 98|Community 98]]
-- [[_COMMUNITY_Community 99|Community 99]]
-- [[_COMMUNITY_Community 100|Community 100]]
-- [[_COMMUNITY_Community 101|Community 101]]
-- [[_COMMUNITY_Community 102|Community 102]]
-- [[_COMMUNITY_Community 103|Community 103]]
-- [[_COMMUNITY_Community 104|Community 104]]
-- [[_COMMUNITY_Community 105|Community 105]]
-- [[_COMMUNITY_Community 106|Community 106]]
-- [[_COMMUNITY_Community 107|Community 107]]
-- [[_COMMUNITY_Community 108|Community 108]]
-- [[_COMMUNITY_Community 109|Community 109]]
-- [[_COMMUNITY_Community 110|Community 110]]
-- [[_COMMUNITY_Community 111|Community 111]]
-- [[_COMMUNITY_Community 112|Community 112]]
-- [[_COMMUNITY_Community 113|Community 113]]
-- [[_COMMUNITY_Community 114|Community 114]]
-- [[_COMMUNITY_Community 115|Community 115]]
-- [[_COMMUNITY_Community 116|Community 116]]
-- [[_COMMUNITY_Community 117|Community 117]]
-- [[_COMMUNITY_Community 118|Community 118]]
-- [[_COMMUNITY_Community 119|Community 119]]
-- [[_COMMUNITY_Community 120|Community 120]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `HAL_GetTick()` - 42 edges
-2. `TIM_CCxChannelCmd()` - 39 edges
-3. `main()` - 34 edges
-4. `uxListRemove()` - 26 edges
-5. `xTaskResumeAll()` - 26 edges
-6. `HAL_DMA_Start_IT()` - 24 edges
-7. `vTaskSuspendAll()` - 23 edges
-8. `HAL_DMA_Abort_IT()` - 21 edges
-9. `pvPortMalloc()` - 18 edges
-10. `Car_Stop()` - 17 edges
+1. `__DSB()` - 97 edges
+2. `__ISB()` - 77 edges
+3. `HAL_GetTick()` - 45 edges
+4. `TIM_CCxChannelCmd()` - 40 edges
+5. `uxListRemove()` - 28 edges
+6. `xTaskResumeAll()` - 27 edges
+7. `HAL_DMA_Start_IT()` - 26 edges
+8. `HAL_DMA_Abort_IT()` - 23 edges
+9. `vTaskSuspendAll()` - 23 edges
+10. `TIM_CCxNChannelCmd()` - 18 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `main()` --calls--> `osKernelInitialize()`  [INFERRED]
-  C:\Users\user\STM\PR_CAR\Core\Src\main.c → C:\Users\user\STM\PR_CAR\Middlewares\Third_Party\FreeRTOS\Source\CMSIS_RTOS_V2\cmsis_os2.c
-- `HAL_GetTick()` --calls--> `HAL_UARTEx_ReceiveToIdle()`  [INFERRED]
-  C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal.c → C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_uart.c
-- `HAL_GPIO_Init()` --calls--> `HAL_RCC_MCOConfig()`  [INFERRED]
-  C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_gpio.c → C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_rcc.c
-- `bno_bus_recover()` --calls--> `HAL_I2C_DeInit()`  [INFERRED]
-  C:\Users\user\STM\PR_CAR\Core\Src\bno055.c → C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_i2c.c
-- `bno_rd()` --calls--> `HAL_I2C_Mem_Read()`  [INFERRED]
-  C:\Users\user\STM\PR_CAR\Core\Src\bno055.c → C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_i2c.c
+- `StartTask03()` --calls--> `osMessageQueueGet()`  [INFERRED]
+  Core/Src/freertos.c → Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.c
+- `HAL_MspInit()` --calls--> `HAL_NVIC_SetPriority()`  [INFERRED]
+  Core/Src/stm32f4xx_hal_msp.c → Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_cortex.c
+- `TIM3_IRQHandler()` --calls--> `HAL_TIM_IRQHandler()`  [INFERRED]
+  Core/Src/stm32f4xx_it.c → Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim.c
+- `USART1_IRQHandler()` --calls--> `HAL_UART_IRQHandler()`  [INFERRED]
+  Core/Src/stm32f4xx_it.c → Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.c
+- `bno_bus_recover()` --calls--> `HAL_GPIO_Init()`  [INFERRED]
+  Core/Src/bno055.c → Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_gpio.c
 
-## Communities
+## Import Cycles
+- None detected.
+
+## Communities (96 total, 4 thin omitted)
 
 ### Community 0 - "Community 0"
-Cohesion: 0.01
-Nodes (225): AllocBlock(), CreateBlock(), FreeBlock(), OS_Tick_GetCount(), OS_Tick_GetInterval(), OS_Tick_GetOverflow(), osDelayUntil(), osEventFlagsClear() (+217 more)
+Cohesion: 0.03
+Nodes (180): __STATIC_INLINE, TIM_TypeDef, LL_TIM_CC_DisableChannel(), LL_TIM_CC_DisablePreload(), LL_TIM_CC_EnableChannel(), LL_TIM_CC_EnablePreload(), LL_TIM_CC_GetDMAReqTrigger(), LL_TIM_CC_IsEnabledChannel() (+172 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.02
-Nodes (155): HAL_DMA_Abort_IT(), HAL_DMA_Start_IT(), HAL_I2C_Master_Receive_DMA(), HAL_I2C_Master_Seq_Receive_DMA(), HAL_I2C_Master_Seq_Transmit_DMA(), HAL_I2C_Master_Transmit_DMA(), HAL_I2C_Slave_Receive_DMA(), HAL_I2C_Slave_Seq_Receive_DMA() (+147 more)
+Cohesion: 0.04
+Nodes (136): __STATIC_INLINE, LL_USART_ClearFlag_FE(), LL_USART_ClearFlag_IDLE(), LL_USART_ClearFlag_LBD(), LL_USART_ClearFlag_nCTS(), LL_USART_ClearFlag_NE(), LL_USART_ClearFlag_ORE(), LL_USART_ClearFlag_PE() (+128 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.01
-Nodes (0): 
+Cohesion: 0.03
+Nodes (132): __CLREX(), __CLZ(), __cmsis_start(), __disable_fault_irq(), __disable_irq(), __enable_fault_irq(), __enable_irq(), __get_APSR() (+124 more)
 
 ### Community 3 - "Community 3"
-Cohesion: 0.01
-Nodes (0): 
+Cohesion: 0.03
+Nodes (115): __CLZ(), __disable_fault_irq(), __disable_irq(), __enable_fault_irq(), __enable_irq(), __get_APSR(), __get_BASEPRI(), __get_CONTROL() (+107 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.01
-Nodes (0): 
+Cohesion: 0.05
+Nodes (111): __STATIC_INLINE, LL_I2C_AcknowledgeNextData(), LL_I2C_ClearFlag_ADDR(), LL_I2C_ClearFlag_AF(), LL_I2C_ClearFlag_ARLO(), LL_I2C_ClearFlag_BERR(), LL_I2C_ClearFlag_OVR(), LL_I2C_ClearFlag_STOP() (+103 more)
 
 ### Community 5 - "Community 5"
-Cohesion: 0.03
-Nodes (92): DMA_CalcBaseAndBitshift(), DMA_CheckFifoParam(), DMA_SetConfig(), HAL_DMA_Abort(), HAL_DMA_DeInit(), HAL_DMA_GetError(), HAL_DMA_GetState(), HAL_DMA_Init() (+84 more)
+Cohesion: 0.04
+Nodes (101): MX_FREERTOS_Init(), TIM_HandleTypeDef, HAL_TIM_IC_CaptureCallback(), Ultra_Measure(), MemPool_t, AllocBlock(), osThreadId_t, StackType_t (+93 more)
 
 ### Community 6 - "Community 6"
-Cohesion: 0.01
-Nodes (0): 
+Cohesion: 0.12
+Nodes (43): FlagStatus, HAL_StatusTypeDef, UART_HandleTypeDef, HAL_HalfDuplex_EnableReceiver(), HAL_HalfDuplex_EnableTransmitter(), HAL_LIN_SendBreak(), HAL_MultiProcessor_EnterMuteMode(), HAL_MultiProcessor_ExitMuteMode() (+35 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.02
-Nodes (5): __ROR(), __SXTAB16(), __SXTAB16_RORn(), __SXTB16(), __SXTB16_RORn()
+Cohesion: 0.06
+Nodes (83): configSTACK_DEPTH_TYPE, eNotifyAction, eTaskState, MemoryRegion_t, UBaseType_t, uxListRemove(), vListInsertEnd(), BaseType_t (+75 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.04
-Nodes (97): BNO055_HardReset(), BNO055_Init(), BNO055_ReadCalibStatus(), BNO055_ReadEuler(), bno_bus_recover(), bno_rd(), bno_wr8(), __get_PRIMASK() (+89 more)
+Cohesion: 0.02
+Nodes (84): LL_RCC_ClearFlag_HSECSS(), LL_RCC_ClearFlag_HSIRDY(), LL_RCC_ClearFlag_PLLI2SRDY(), LL_RCC_ClearResetFlags(), LL_RCC_DisableIT_HSERDY(), LL_RCC_DisableIT_LSERDY(), LL_RCC_DisableIT_LSIRDY(), LL_RCC_DisableIT_PLLSAIRDY() (+76 more)
 
 ### Community 9 - "Community 9"
 Cohesion: 0.02
-Nodes (0): 
+Nodes (85): __STATIC_INLINE, LL_RCC_ClearFlag_HSERDY(), LL_RCC_ClearFlag_LSERDY(), LL_RCC_ClearFlag_LSIRDY(), LL_RCC_ClearFlag_PLLRDY(), LL_RCC_ClearFlag_PLLSAIRDY(), LL_RCC_ConfigMCO(), LL_RCC_DisableIT_HSIRDY() (+77 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.02
-Nodes (0): 
+Cohesion: 0.08
+Nodes (76): HAL_DMA_Abort_IT(), HAL_StatusTypeDef, HAL_TIM_ChannelStateTypeDef, HAL_TIM_StateTypeDef, TIM_HandleTypeDef, HAL_TIM_Base_DeInit(), HAL_TIM_Base_GetState(), HAL_TIM_Base_MspDeInit() (+68 more)
 
 ### Community 11 - "Community 11"
-Cohesion: 0.02
-Nodes (16): NVIC_DecodePriority(), SysTick_Config(), TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS(), HAL_NVIC_GetPriority(), HAL_NVIC_SetPriorityGrouping(), HAL_SYSTICK_Callback(), HAL_SYSTICK_Config() (+8 more)
+Cohesion: 0.05
+Nodes (69): __CLZ(), __disable_fault_irq(), __disable_irq(), __enable_fault_irq(), __enable_irq(), __get_APSR(), __get_BASEPRI(), __get_CONTROL() (+61 more)
 
 ### Community 12 - "Community 12"
-Cohesion: 0.02
-Nodes (0): 
+Cohesion: 0.11
+Nodes (64): osMessageQueueGetCount(), xCoRoutineRemoveFromEventList(), BaseType_t, TaskHandle_t, TickType_t, UBaseType_t, pcQueueGetName(), prvCopyDataFromQueue() (+56 more)
 
 ### Community 13 - "Community 13"
-Cohesion: 0.05
-Nodes (51): HAL_UART_ErrorCallback(), HAL_HalfDuplex_Init(), HAL_LIN_Init(), HAL_MultiProcessor_Init(), HAL_UART_Abort_IT(), HAL_UART_AbortCpltCallback(), HAL_UART_AbortReceive_IT(), HAL_UART_AbortReceiveCpltCallback() (+43 more)
+Cohesion: 0.10
+Nodes (47): DCB_GetAuthCtrl(), DCB_SetAuthCtrl(), DIB_GetAuthStatus(), IRQn_Type, __STATIC_INLINE, ITM_CheckChar(), ITM_ReceiveChar(), ITM_SendChar() (+39 more)
 
 ### Community 14 - "Community 14"
-Cohesion: 0.03
-Nodes (0): 
+Cohesion: 0.06
+Nodes (62): __STATIC_INLINE, LL_PWR_ClearFlag_SB(), LL_PWR_ClearFlag_UD(), LL_PWR_ClearFlag_WU(), LL_PWR_DisableBkUpAccess(), LL_PWR_DisableBkUpRegulator(), LL_PWR_DisableFLASHInterfaceSTOP(), LL_PWR_DisableFLASHMemorySTOP() (+54 more)
 
 ### Community 15 - "Community 15"
-Cohesion: 0.03
-Nodes (0): 
+Cohesion: 0.08
+Nodes (56): DCB_GetAuthCtrl(), DCB_SetAuthCtrl(), DIB_GetAuthStatus(), IRQn_Type, __STATIC_INLINE, ITM_CheckChar(), ITM_ReceiveChar(), ITM_SendChar() (+48 more)
 
 ### Community 16 - "Community 16"
-Cohesion: 0.03
-Nodes (0): 
+Cohesion: 0.07
+Nodes (55): __CLZ(), __get_APSR(), __get_MSPLIM(), __get_PSPLIM(), __packed, __STATIC_FORCEINLINE, __STATIC_INLINE, __iar_u32() (+47 more)
 
 ### Community 17 - "Community 17"
-Cohesion: 0.04
-Nodes (2): TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS()
+Cohesion: 0.10
+Nodes (52): DMA_HandleTypeDef, HAL_StatusTypeDef, HAL_TIM_ChannelStateTypeDef, HAL_TIM_StateTypeDef, TIM_HandleTypeDef, TIM_TypeDef, __weak, HAL_TIMEx_BreakCallback() (+44 more)
 
 ### Community 18 - "Community 18"
 Cohesion: 0.04
-Nodes (2): TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS()
+Nodes (49): DMA_TypeDef, LL_DMA_ClearFlag_DME1(), LL_DMA_ClearFlag_DME2(), LL_DMA_ClearFlag_DME4(), LL_DMA_ClearFlag_DME7(), LL_DMA_ClearFlag_HT0(), LL_DMA_ClearFlag_HT3(), LL_DMA_ClearFlag_TC5() (+41 more)
 
 ### Community 19 - "Community 19"
 Cohesion: 0.04
-Nodes (2): TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS()
+Nodes (48): LL_DMA_ClearFlag_DME3(), LL_DMA_ClearFlag_DME5(), LL_DMA_ClearFlag_FE0(), LL_DMA_ClearFlag_FE6(), LL_DMA_ClearFlag_FE7(), LL_DMA_ClearFlag_HT2(), LL_DMA_ClearFlag_TC2(), LL_DMA_ClearFlag_TC3() (+40 more)
 
 ### Community 20 - "Community 20"
-Cohesion: 0.05
-Nodes (2): TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS()
+Cohesion: 0.04
+Nodes (49): __STATIC_INLINE, LL_DMA_ClearFlag_DME0(), LL_DMA_ClearFlag_DME6(), LL_DMA_ClearFlag_FE1(), LL_DMA_ClearFlag_FE2(), LL_DMA_ClearFlag_FE3(), LL_DMA_ClearFlag_FE4(), LL_DMA_ClearFlag_FE5() (+41 more)
 
 ### Community 21 - "Community 21"
-Cohesion: 0.05
-Nodes (2): TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS()
+Cohesion: 0.10
+Nodes (45): HAL_StatusTypeDef, __weak, HAL_StatusTypeDef, FLASH_Erase_Sector(), FLASH_FlushCaches(), FLASH_MassErase(), FLASH_OB_BootConfig(), FLASH_OB_BOR_LevelConfig() (+37 more)
 
 ### Community 22 - "Community 22"
-Cohesion: 0.05
-Nodes (2): TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS()
+Cohesion: 0.10
+Nodes (46): DCB_GetAuthCtrl(), DCB_SetAuthCtrl(), DIB_GetAuthStatus(), IRQn_Type, __STATIC_INLINE, ITM_CheckChar(), ITM_ReceiveChar(), ITM_SendChar() (+38 more)
 
 ### Community 23 - "Community 23"
-Cohesion: 0.09
-Nodes (32): FLASH_Erase_Sector(), FLASH_FlushCaches(), FLASH_MassErase(), FLASH_OB_BootConfig(), FLASH_OB_BOR_LevelConfig(), FLASH_OB_DisablePCROP(), FLASH_OB_DisableWRP(), FLASH_OB_EnablePCROP() (+24 more)
+Cohesion: 0.10
+Nodes (46): DCB_GetAuthCtrl(), DCB_SetAuthCtrl(), DIB_GetAuthStatus(), IRQn_Type, __STATIC_INLINE, ITM_CheckChar(), ITM_ReceiveChar(), ITM_SendChar() (+38 more)
 
 ### Community 24 - "Community 24"
-Cohesion: 0.05
-Nodes (2): TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS()
+Cohesion: 0.11
+Nodes (43): DCB_GetAuthCtrl(), DIB_GetAuthStatus(), IRQn_Type, __STATIC_INLINE, ITM_CheckChar(), ITM_ReceiveChar(), ITM_SendChar(), __NVIC_ClearPendingIRQ() (+35 more)
 
 ### Community 25 - "Community 25"
-Cohesion: 0.05
-Nodes (2): TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS()
+Cohesion: 0.10
+Nodes (47): DCB_GetAuthCtrl(), DCB_SetAuthCtrl(), DIB_GetAuthStatus(), IRQn_Type, __STATIC_INLINE, ITM_CheckChar(), ITM_ReceiveChar(), ITM_SendChar() (+39 more)
 
 ### Community 26 - "Community 26"
-Cohesion: 0.06
-Nodes (0): 
+Cohesion: 0.11
+Nodes (43): DCB_GetAuthCtrl(), DIB_GetAuthStatus(), IRQn_Type, __STATIC_INLINE, ITM_CheckChar(), ITM_ReceiveChar(), ITM_SendChar(), __NVIC_ClearPendingIRQ() (+35 more)
 
 ### Community 27 - "Community 27"
 Cohesion: 0.12
-Nodes (21): osThreadFlagsWait(), prvBytesInBuffer(), prvInitialiseNewStreamBuffer(), prvReadBytesFromBuffer(), prvReadMessageFromBuffer(), prvWriteBytesToBuffer(), prvWriteMessageToBuffer(), xStreamBufferBytesAvailable() (+13 more)
+Nodes (45): HAL_DMA_Start_IT(), HAL_StatusTypeDef, I2C_HandleTypeDef, HAL_I2C_AddrCallback(), HAL_I2C_DeInit(), HAL_I2C_DisableListen_IT(), HAL_I2C_EnableListen_IT(), HAL_I2C_GetError() (+37 more)
 
 ### Community 28 - "Community 28"
-Cohesion: 0.07
-Nodes (0): 
+Cohesion: 0.05
+Nodes (41): LL_DBGMCU_APB2_GRP1_FreezePeriph(), LL_DBGMCU_APB2_GRP1_UnFreezePeriph(), LL_DBGMCU_DisableDBGStandbyMode(), LL_DBGMCU_DisableDBGStopMode(), LL_DBGMCU_EnableDBGSleepMode(), LL_DBGMCU_EnableDBGStopMode(), LL_DBGMCU_GetRevisionID(), LL_DBGMCU_GetTracePinAssignment() (+33 more)
 
 ### Community 29 - "Community 29"
-Cohesion: 0.08
-Nodes (0): 
+Cohesion: 0.05
+Nodes (42): __STATIC_INLINE, LL_DBGMCU_APB1_GRP1_FreezePeriph(), LL_DBGMCU_APB1_GRP1_UnFreezePeriph(), LL_DBGMCU_DisableDBGSleepMode(), LL_DBGMCU_EnableDBGStandbyMode(), LL_DBGMCU_GetDeviceID(), LL_FLASH_DisableDataCacheReset(), LL_FLASH_DisableInstCache() (+34 more)
 
 ### Community 30 - "Community 30"
-Cohesion: 0.08
-Nodes (0): 
+Cohesion: 0.12
+Nodes (39): DCB_GetAuthCtrl(), DCB_SetAuthCtrl(), DIB_GetAuthStatus(), IRQn_Type, __STATIC_INLINE, __NVIC_ClearPendingIRQ(), NVIC_ClearTargetState(), NVIC_DecodePriority() (+31 more)
 
 ### Community 31 - "Community 31"
-Cohesion: 0.09
-Nodes (0): 
+Cohesion: 0.14
+Nodes (29): EventBits_t, EventGroupHandle_t, osEventFlagsClear(), osEventFlagsDelete(), osEventFlagsGet(), osEventFlagsNew(), osEventFlagsSet(), osEventFlagsWait() (+21 more)
 
 ### Community 32 - "Community 32"
-Cohesion: 0.09
-Nodes (0): 
+Cohesion: 0.12
+Nodes (39): DCB_GetAuthCtrl(), DCB_SetAuthCtrl(), DIB_GetAuthStatus(), IRQn_Type, __STATIC_INLINE, __NVIC_ClearPendingIRQ(), NVIC_ClearTargetState(), NVIC_DecodePriority() (+31 more)
 
 ### Community 33 - "Community 33"
-Cohesion: 0.09
-Nodes (0): 
+Cohesion: 0.11
+Nodes (36): __STATIC_INLINE, LL_AHB1_GRP1_DisableClock(), LL_AHB1_GRP1_DisableClockLowPower(), LL_AHB1_GRP1_EnableClock(), LL_AHB1_GRP1_EnableClockLowPower(), LL_AHB1_GRP1_ForceReset(), LL_AHB1_GRP1_IsEnabledClock(), LL_AHB1_GRP1_ReleaseReset() (+28 more)
 
 ### Community 34 - "Community 34"
-Cohesion: 0.09
-Nodes (0): 
+Cohesion: 0.08
+Nodes (17): SysTick_Handler(), HAL_StatusTypeDef, __weak, HAL_NVIC_SetPriorityGrouping(), HAL_SYSTICK_Config(), HAL_DeInit(), HAL_GetTickFreq(), HAL_IncTick() (+9 more)
 
 ### Community 35 - "Community 35"
-Cohesion: 0.1
-Nodes (2): _exit(), _kill()
+Cohesion: 0.12
+Nodes (27): HAL_GetTick(), FlagStatus, HAL_I2C_IsDeviceReady(), HAL_I2C_Master_Receive(), HAL_I2C_Master_Transmit(), HAL_I2C_Mem_Read(), HAL_I2C_Mem_Write(), HAL_I2C_Slave_Receive() (+19 more)
 
 ### Community 36 - "Community 36"
-Cohesion: 0.17
-Nodes (13): ARM_MPU_ClrRegion(), ARM_MPU_ClrRegion_NS(), ARM_MPU_ClrRegionEx(), ARM_MPU_Load(), ARM_MPU_Load_NS(), ARM_MPU_LoadEx(), ARM_MPU_OrderedMemcpy(), ARM_MPU_SetMemAttr() (+5 more)
+Cohesion: 0.15
+Nodes (36): __STATIC_FORCEINLINE, SCB_CleanDCache(), SCB_CleanDCache_by_Addr(), SCB_CleanInvalidateDCache(), SCB_CleanInvalidateDCache_by_Addr(), SCB_DisableDCache(), SCB_DisableICache(), SCB_EnableDCache() (+28 more)
 
 ### Community 37 - "Community 37"
-Cohesion: 0.12
-Nodes (2): HAL_PWR_PVD_IRQHandler(), HAL_PWR_PVDCallback()
+Cohesion: 0.15
+Nodes (34): BaseType_t, TaskHandle_t, TickType_t, TimerHandle_t, UBaseType_t, pcTimerGetName(), prvCheckForValidListAndQueue(), prvGetNextExpireTime() (+26 more)
 
 ### Community 38 - "Community 38"
-Cohesion: 0.12
-Nodes (0): 
+Cohesion: 0.15
+Nodes (32): BaseType_t, TickType_t, UBaseType_t, prvBytesInBuffer(), prvInitialiseNewStreamBuffer(), prvReadBytesFromBuffer(), prvReadMessageFromBuffer(), prvWriteBytesToBuffer() (+24 more)
 
 ### Community 39 - "Community 39"
-Cohesion: 0.12
-Nodes (0): 
+Cohesion: 0.11
+Nodes (17): UART_HandleTypeDef, VL53L0X, HAL_UART_ErrorCallback(), HAL_UART_RxCpltCallback(), sensor_put_front_early(), sensor_record_front(), StartTask02(), StartTask03() (+9 more)
 
 ### Community 40 - "Community 40"
-Cohesion: 0.12
-Nodes (0): 
+Cohesion: 0.18
+Nodes (36): CenteringContext, brake_enter(), brake_run(), center_sanitize_cm(), Centering_Reset(), clampf(), corner_enter(), corner_run() (+28 more)
 
 ### Community 41 - "Community 41"
-Cohesion: 0.12
-Nodes (0): 
+Cohesion: 0.14
+Nodes (27): __STATIC_INLINE, LL_CPUID_GetConstant(), LL_CPUID_GetImplementer(), LL_CPUID_GetParNo(), LL_CPUID_GetRevision(), LL_CPUID_GetVariant(), LL_HANDLER_DisableFault(), LL_HANDLER_EnableFault() (+19 more)
 
 ### Community 42 - "Community 42"
-Cohesion: 0.13
-Nodes (0): 
+Cohesion: 0.21
+Nodes (21): DMA_HandleTypeDef, HAL_StatusTypeDef, DMA_CalcBaseAndBitshift(), DMA_CheckFifoParam(), DMA_SetConfig(), HAL_DMA_Abort(), HAL_DMA_DeInit(), HAL_DMA_GetError() (+13 more)
 
 ### Community 43 - "Community 43"
-Cohesion: 0.14
-Nodes (0): 
+Cohesion: 0.19
+Nodes (23): IRQn_Type, __STATIC_INLINE, ITM_CheckChar(), ITM_ReceiveChar(), ITM_SendChar(), __NVIC_ClearPendingIRQ(), NVIC_DecodePriority(), __NVIC_DisableIRQ() (+15 more)
 
 ### Community 44 - "Community 44"
-Cohesion: 0.15
-Nodes (0): 
+Cohesion: 0.06
+Nodes (62): SystemInit(), SystemInit_ExtMemCtl(), IRQn_Type, __STATIC_INLINE, ITM_CheckChar(), ITM_ReceiveChar(), ITM_SendChar(), __NVIC_ClearPendingIRQ() (+54 more)
 
 ### Community 45 - "Community 45"
-Cohesion: 0.17
-Nodes (0): 
+Cohesion: 0.07
+Nodes (36): MX_GPIO_Init(), EXTI0_IRQHandler(), TIM_HandleTypeDef, HAL_TIM_Base_MspDeInit(), HAL_TIM_Base_MspInit(), UART_HandleTypeDef, HAL_UART_MspDeInit(), HAL_UART_MspInit() (+28 more)
 
 ### Community 46 - "Community 46"
-Cohesion: 0.17
-Nodes (0): 
+Cohesion: 0.10
+Nodes (17): eSleepModeStatus, SysTick_Handler(), BaseType_t, StackType_t, TaskFunction_t, TickType_t, prvPortStartFirstTask(), prvTaskExitError() (+9 more)
 
 ### Community 47 - "Community 47"
-Cohesion: 0.2
-Nodes (0): 
+Cohesion: 0.19
+Nodes (23): IRQn_Type, __STATIC_INLINE, ITM_CheckChar(), ITM_ReceiveChar(), ITM_SendChar(), __NVIC_ClearPendingIRQ(), NVIC_DecodePriority(), __NVIC_DisableIRQ() (+15 more)
 
 ### Community 48 - "Community 48"
-Cohesion: 0.22
-Nodes (0): 
+Cohesion: 0.19
+Nodes (23): IRQn_Type, __STATIC_INLINE, ITM_CheckChar(), ITM_ReceiveChar(), ITM_SendChar(), __NVIC_ClearPendingIRQ(), NVIC_DecodePriority(), __NVIC_DisableIRQ() (+15 more)
 
 ### Community 49 - "Community 49"
-Cohesion: 0.29
-Nodes (2): ARM_MPU_Load(), ARM_MPU_OrderedMemcpy()
+Cohesion: 0.33
+Nodes (19): Init_ToF_Sensors(), VL53L0X, get_spad_info(), rd16(), rd8(), rd_n(), ref_calibration(), tmo_decode() (+11 more)
 
 ### Community 50 - "Community 50"
-Cohesion: 0.29
-Nodes (0): 
+Cohesion: 0.21
+Nodes (25): GPIO_TypeDef, __STATIC_INLINE, LL_GPIO_GetAFPin_0_7(), LL_GPIO_GetAFPin_8_15(), LL_GPIO_GetPinMode(), LL_GPIO_GetPinOutputType(), LL_GPIO_GetPinPull(), LL_GPIO_GetPinSpeed() (+17 more)
 
 ### Community 51 - "Community 51"
-Cohesion: 0.33
-Nodes (0): 
+Cohesion: 0.09
+Nodes (7): clock_t, _exit(), _kill(), starm_getc(), starm_putc(), _times(), FILE
 
 ### Community 52 - "Community 52"
-Cohesion: 0.33
-Nodes (0): 
+Cohesion: 0.25
+Nodes (8): Car_Stop(), BusFault_Handler(), HardFault_Handler(), MemManage_Handler(), NMI_Handler(), TIM3_IRQHandler(), UsageFault_Handler(), USART1_IRQHandler()
 
 ### Community 53 - "Community 53"
-Cohesion: 0.6
-Nodes (3): DMA_MultiBufferSetConfig(), HAL_DMAEx_MultiBufferStart(), HAL_DMAEx_MultiBufferStart_IT()
+Cohesion: 0.11
+Nodes (28): BlockLink_t, HeapStats_t, osKernelGetState(), osKernelLock(), osKernelRestoreLock(), osKernelUnlock(), osMemoryPoolNew(), osThreadEnumerate() (+20 more)
 
 ### Community 54 - "Community 54"
-Cohesion: 0.67
-Nodes (2): SystemInit(), SystemInit_ExtMemCtl()
+Cohesion: 0.14
+Nodes (22): __get_APSR(), __get_BASEPRI(), __get_CONTROL(), __get_FAULTMASK(), __get_FPSCR(), __get_IPSR(), __get_MSP(), __get_PRIMASK() (+14 more)
 
 ### Community 55 - "Community 55"
-Cohesion: 0.67
-Nodes (0): 
+Cohesion: 0.13
+Nodes (23): DMA_HandleTypeDef, __weak, HAL_TIM_Base_MspInit(), HAL_TIM_ErrorCallback(), HAL_TIM_IC_CaptureCallback(), HAL_TIM_IC_CaptureHalfCpltCallback(), HAL_TIM_IRQHandler(), HAL_TIM_OC_DelayElapsedCallback() (+15 more)
 
 ### Community 56 - "Community 56"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.16
+Nodes (20): DMA_HandleTypeDef, __weak, HAL_UART_AbortCpltCallback(), HAL_UART_AbortReceiveCpltCallback(), HAL_UART_ErrorCallback(), HAL_UART_IRQHandler(), HAL_UART_RxCpltCallback(), HAL_UART_RxHalfCpltCallback() (+12 more)
 
 ### Community 57 - "Community 57"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.17
+Nodes (21): DMA_HandleTypeDef, __weak, HAL_I2C_AbortCpltCallback(), HAL_I2C_ER_IRQHandler(), HAL_I2C_ErrorCallback(), HAL_I2C_ListenCpltCallback(), HAL_I2C_MasterRxCpltCallback(), HAL_I2C_MemRxCpltCallback() (+13 more)
 
 ### Community 58 - "Community 58"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.25
+Nodes (17): IRQn_Type, __STATIC_INLINE, __NVIC_ClearPendingIRQ(), NVIC_DecodePriority(), __NVIC_DisableIRQ(), __NVIC_EnableIRQ(), NVIC_EncodePriority(), __NVIC_GetEnableIRQ() (+9 more)
 
 ### Community 59 - "Community 59"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.23
+Nodes (15): ARM_PMU_CNTR_Disable(), ARM_PMU_CNTR_Enable(), ARM_PMU_CNTR_Increment(), ARM_PMU_CYCCNT_Reset(), ARM_PMU_Disable(), ARM_PMU_Enable(), ARM_PMU_EVCNTR_ALL_Reset(), ARM_PMU_Get_CCNTR() (+7 more)
 
 ### Community 60 - "Community 60"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.13
+Nodes (26): MX_I2C1_Init(), MX_IWDG_Init(), Error_Handler(), main(), SystemClock_Config(), Motor_Init(), HAL_TIM_MspPostInit(), MX_TIM11_Init() (+18 more)
 
 ### Community 61 - "Community 61"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.16
+Nodes (16): HAL_StatusTypeDef, RCC_OscInitTypeDef, __weak, HAL_RCC_ClockConfig(), HAL_RCC_CSSCallback(), HAL_RCC_GetClockConfig(), HAL_RCC_GetHCLKFreq(), HAL_RCC_GetOscConfig() (+8 more)
 
 ### Community 62 - "Community 62"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.38
+Nodes (6): test_delay(), HAL_StatusTypeDef, HAL_IWDG_Init(), HAL_IWDG_Refresh(), IWDG_HandleTypeDef, osDelay()
 
 ### Community 63 - "Community 63"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.23
+Nodes (21): __DMB(), ARM_MPU_ClrRegion(), ARM_MPU_ClrRegion_NS(), ARM_MPU_ClrRegionEx(), ARM_MPU_Disable(), ARM_MPU_Disable_NS(), ARM_MPU_Enable(), ARM_MPU_Enable_NS() (+13 more)
 
 ### Community 64 - "Community 64"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.05
+Nodes (18): HAL_StatusTypeDef, HAL_EXTI_ClearConfigLine(), HAL_EXTI_ClearPending(), HAL_EXTI_GenerateSWI(), HAL_EXTI_GetConfigLine(), HAL_EXTI_GetHandle(), HAL_EXTI_GetPending(), HAL_EXTI_IRQHandler() (+10 more)
 
 ### Community 65 - "Community 65"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.09
+Nodes (16): crCOROUTINE_CODE, BaseType_t, List_t, TickType_t, UBaseType_t, prvCheckDelayedList(), prvCheckPendingReadyList(), prvInitialiseCoRoutineLists() (+8 more)
 
 ### Community 66 - "Community 66"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.46
+Nodes (13): StartDefaultTask(), Car_ArcLeft(), Car_ArcRight(), Car_Backward(), Car_Brake(), Car_Forward(), Car_PivotLeft(), Car_PivotRight() (+5 more)
 
 ### Community 67 - "Community 67"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.17
+Nodes (13): HAL_StatusTypeDef, RCC_OscInitTypeDef, HAL_RCC_GetOscConfig(), HAL_RCC_OscConfig(), HAL_RCCEx_DisablePLLI2S(), HAL_RCCEx_DisablePLLSAI(), HAL_RCCEx_EnablePLLI2S(), HAL_RCCEx_EnablePLLSAI() (+5 more)
 
 ### Community 68 - "Community 68"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.25
+Nodes (17): IRQn_Type, __STATIC_INLINE, __NVIC_ClearPendingIRQ(), NVIC_DecodePriority(), __NVIC_DisableIRQ(), __NVIC_EnableIRQ(), NVIC_EncodePriority(), __NVIC_GetEnableIRQ() (+9 more)
 
 ### Community 69 - "Community 69"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.13
+Nodes (28): TIM_TypeDef, HAL_TIM_ConfigClockSource(), HAL_TIM_ConfigOCrefClear(), HAL_TIM_IC_ConfigChannel(), HAL_TIM_OC_ConfigChannel(), HAL_TIM_OnePulse_ConfigChannel(), HAL_TIM_PWM_ConfigChannel(), HAL_TIM_SlaveConfigSynchro() (+20 more)
 
 ### Community 70 - "Community 70"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.18
+Nodes (9): void(), HAL_StatusTypeDef, I2C_HandleTypeDef, HAL_I2CEx_ConfigAnalogFilter(), HAL_I2CEx_ConfigDigitalFilter(), HAL_FLASHEx_DisableFlashSleepMode, HAL_FLASHEx_EnableFlashSleepMode, HAL_FLASHEx_StartFlashInterfaceClk (+1 more)
 
 ### Community 71 - "Community 71"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.57
+Nodes (7): HAL_HalfDuplex_Init(), HAL_LIN_Init(), HAL_MultiProcessor_Init(), HAL_UART_Init(), HAL_UART_MspInit(), UART_InitCallbacksToDefault(), UART_SetConfig()
 
 ### Community 72 - "Community 72"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.67
+Nodes (4): HAL_UART_DMAStop(), UART_DMAError(), UART_EndRxTransfer(), UART_EndTxTransfer()
 
 ### Community 73 - "Community 73"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.25
+Nodes (17): IRQn_Type, __STATIC_INLINE, __NVIC_ClearPendingIRQ(), NVIC_DecodePriority(), __NVIC_DisableIRQ(), __NVIC_EnableIRQ(), NVIC_EncodePriority(), __NVIC_GetEnableIRQ() (+9 more)
 
 ### Community 74 - "Community 74"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.28
+Nodes (12): Atomic_Add_u32(), Atomic_AND_u32(), Atomic_CompareAndSwap_u32(), Atomic_CompareAndSwapPointers_p32(), Atomic_Decrement_u32(), Atomic_Increment_u32(), Atomic_NAND_u32(), Atomic_OR_u32() (+4 more)
 
 ### Community 75 - "Community 75"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.50
+Nodes (7): DMA_HandleTypeDef, HAL_StatusTypeDef, DMA_MultiBufferSetConfig(), HAL_DMAEx_ChangeMemory(), HAL_DMAEx_MultiBufferStart(), HAL_DMAEx_MultiBufferStart_IT(), HAL_DMA_MemoryTypeDef
 
 ### Community 76 - "Community 76"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.23
+Nodes (12): HAL_I2C_EV_IRQHandler(), HAL_I2C_MasterTxCpltCallback(), HAL_I2C_MemTxCpltCallback(), I2C_ConvertOtherXferOptions(), I2C_Master_ADD10(), I2C_Master_ADDR(), I2C_Master_SB(), I2C_MasterTransmit_BTF() (+4 more)
 
 ### Community 77 - "Community 77"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.26
+Nodes (15): IRQn_Type, __STATIC_INLINE, __NVIC_ClearPendingIRQ(), __NVIC_DisableIRQ(), __NVIC_EnableIRQ(), __NVIC_GetEnableIRQ(), __NVIC_GetPendingIRQ(), __NVIC_GetPriority() (+7 more)
 
 ### Community 78 - "Community 78"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.36
+Nodes (9): ARM_MPU_ClrRegion(), ARM_MPU_Disable(), ARM_MPU_Enable(), ARM_MPU_Load(), ARM_MPU_OrderedMemcpy(), ARM_MPU_SetRegion(), ARM_MPU_SetRegionEx(), ARM_MPU_Region_t (+1 more)
 
 ### Community 79 - "Community 79"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.29
+Nodes (5): portFORCE_INLINE, ulPortRaiseBASEPRI(), vPortRaiseBASEPRI(), vPortSetBASEPRI(), xPortIsInsideInterrupt()
 
 ### Community 80 - "Community 80"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.12
+Nodes (16): 0. 새 세션에서 먼저 볼 것, 10. 디버깅 포인트, 11. 최근 주행 이력 요약, 1. 프로젝트 목표, 2. 하드웨어와 센서, 3. 런타임 구조, 4. 코스 정보, 5. IMG_2985 관찰과 수정 결과 (+8 more)
 
 ### Community 81 - "Community 81"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 82 - "Community 82"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 83 - "Community 83"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.14
+Nodes (11): BNO055_Euler, BNO055_HardReset(), BNO055_Init(), BNO055_ReadCalibStatus(), BNO055_ReadEuler(), bno_bus_recover(), bno_rd(), bno_wr8() (+3 more)
 
 ### Community 84 - "Community 84"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.40
+Nodes (4): Auto-Clarity, Boundaries, Intensity, Rules
 
 ### Community 85 - "Community 85"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.40
+Nodes (5): __PACKED_STRUCT, T_UINT16_READ(), T_UINT16_WRITE(), T_UINT32_READ(), T_UINT32_WRITE()
 
 ### Community 86 - "Community 86"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.40
+Nodes (5): __PACKED_STRUCT, T_UINT16_READ(), T_UINT16_WRITE(), T_UINT32_READ(), T_UINT32_WRITE()
 
 ### Community 87 - "Community 87"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 88 - "Community 88"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 89 - "Community 89"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 90 - "Community 90"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 91 - "Community 91"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 92 - "Community 92"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 93 - "Community 93"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.40
+Nodes (5): __ROR(), __SXTAB16(), __SXTAB16_RORn(), __SXTB16(), __SXTB16_RORn()
 
 ### Community 94 - "Community 94"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 95 - "Community 95"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 96 - "Community 96"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 97 - "Community 97"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 98 - "Community 98"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 99 - "Community 99"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 100 - "Community 100"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 101 - "Community 101"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 102 - "Community 102"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 103 - "Community 103"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 104 - "Community 104"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 105 - "Community 105"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 106 - "Community 106"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 107 - "Community 107"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 108 - "Community 108"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 109 - "Community 109"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 110 - "Community 110"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 111 - "Community 111"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 112 - "Community 112"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 113 - "Community 113"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 114 - "Community 114"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 115 - "Community 115"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 116 - "Community 116"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 117 - "Community 117"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 118 - "Community 118"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 119 - "Community 119"
-Cohesion: 1.0
-Nodes (0): 
-
-### Community 120 - "Community 120"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.36
+Nodes (7): packed, __PACKED_STRUCT, T_UINT16_READ(), T_UINT16_WRITE(), T_UINT32(), T_UINT32_READ(), T_UINT32_WRITE()
 
 ## Knowledge Gaps
-- **Thin community `Community 56`** (2 nodes): `sysmem.c`, `_sbrk()`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 57`** (2 nodes): `stm32f4xx_hal_flash_ramfunc.c`, `void()`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 58`** (1 nodes): `bno055.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 59`** (1 nodes): `debug.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 60`** (1 nodes): `delay.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 61`** (1 nodes): `drive.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 62`** (1 nodes): `FreeRTOSConfig.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 63`** (1 nodes): `gpio.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 64`** (1 nodes): `i2c.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 65`** (1 nodes): `iwdg.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 66`** (1 nodes): `main.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 67`** (1 nodes): `motor.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 68`** (1 nodes): `stm32f4xx_hal_conf.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 69`** (1 nodes): `stm32f4xx_it.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 70`** (1 nodes): `tim.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 71`** (1 nodes): `ultra.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 72`** (1 nodes): `usart.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 73`** (1 nodes): `stm32f411xe.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 74`** (1 nodes): `stm32f4xx.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 75`** (1 nodes): `system_stm32f4xx.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 76`** (1 nodes): `cmsis_version.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 77`** (1 nodes): `tz_context.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 78`** (1 nodes): `stm32f4xx_hal.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 79`** (1 nodes): `stm32f4xx_hal_cortex.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 80`** (1 nodes): `stm32f4xx_hal_def.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 81`** (1 nodes): `stm32f4xx_hal_dma.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 82`** (1 nodes): `stm32f4xx_hal_dma_ex.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 83`** (1 nodes): `stm32f4xx_hal_exti.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 84`** (1 nodes): `stm32f4xx_hal_flash.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 85`** (1 nodes): `stm32f4xx_hal_flash_ex.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 86`** (1 nodes): `stm32f4xx_hal_flash_ramfunc.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 87`** (1 nodes): `stm32f4xx_hal_gpio.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 88`** (1 nodes): `stm32f4xx_hal_gpio_ex.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 89`** (1 nodes): `stm32f4xx_hal_i2c.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 90`** (1 nodes): `stm32f4xx_hal_i2c_ex.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 91`** (1 nodes): `stm32f4xx_hal_iwdg.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 92`** (1 nodes): `stm32f4xx_hal_pwr.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 93`** (1 nodes): `stm32f4xx_hal_pwr_ex.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 94`** (1 nodes): `stm32f4xx_hal_rcc.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 95`** (1 nodes): `stm32f4xx_hal_rcc_ex.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 96`** (1 nodes): `stm32f4xx_hal_tim.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 97`** (1 nodes): `stm32f4xx_hal_tim_ex.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 98`** (1 nodes): `stm32f4xx_hal_uart.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 99`** (1 nodes): `stm32_hal_legacy.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 100`** (1 nodes): `cmsis_os.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 101`** (1 nodes): `cmsis_os2.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 102`** (1 nodes): `freertos_mpool.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 103`** (1 nodes): `freertos_os2.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 104`** (1 nodes): `croutine.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 105`** (1 nodes): `deprecated_definitions.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 106`** (1 nodes): `event_groups.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 107`** (1 nodes): `FreeRTOS.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 108`** (1 nodes): `list.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 109`** (1 nodes): `message_buffer.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 110`** (1 nodes): `mpu_prototypes.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 111`** (1 nodes): `mpu_wrappers.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 112`** (1 nodes): `portable.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 113`** (1 nodes): `projdefs.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 114`** (1 nodes): `queue.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 115`** (1 nodes): `semphr.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 116`** (1 nodes): `StackMacros.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 117`** (1 nodes): `stack_macros.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 118`** (1 nodes): `stream_buffer.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 119`** (1 nodes): `task.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 120`** (1 nodes): `timers.h`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **23 isolated node(s):** `v`, `v`, `v`, `Rules`, `Intensity` (+18 more)
+  These have ≤1 connection - possible missing edges or undocumented components.
+- **4 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `main()` connect `Community 8` to `Community 0`, `Community 1`, `Community 5`, `Community 11`, `Community 13`?**
-  _High betweenness centrality (0.063) - this node is a cross-community bridge._
-- **Why does `HAL_GetTick()` connect `Community 5` to `Community 8`, `Community 11`, `Community 13`, `Community 23`?**
-  _High betweenness centrality (0.042) - this node is a cross-community bridge._
-- **Why does `HAL_NVIC_SetPriority()` connect `Community 8` to `Community 11`?**
-  _High betweenness centrality (0.018) - this node is a cross-community bridge._
-- **Are the 40 inferred relationships involving `HAL_GetTick()` (e.g. with `StartTask02()` and `HAL_DMA_Init()`) actually correct?**
-  _`HAL_GetTick()` has 40 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 10 inferred relationships involving `TIM_CCxChannelCmd()` (e.g. with `HAL_TIMEx_HallSensor_Start()` and `HAL_TIMEx_HallSensor_Stop()`) actually correct?**
-  _`TIM_CCxChannelCmd()` has 10 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 32 inferred relationships involving `main()` (e.g. with `HAL_Init()` and `MX_GPIO_Init()`) actually correct?**
-  _`main()` has 32 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 25 inferred relationships involving `uxListRemove()` (e.g. with `vCoRoutineAddToDelayedList()` and `prvCheckPendingReadyList()`) actually correct?**
-  _`uxListRemove()` has 25 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `__ISB()` connect `Community 36` to `Community 2`, `Community 3`, `Community 11`, `Community 13`, `Community 15`, `Community 21`, `Community 22`, `Community 23`, `Community 24`, `Community 25`, `Community 26`, `Community 30`, `Community 32`, `Community 41`, `Community 43`, `Community 44`, `Community 47`, `Community 48`, `Community 54`, `Community 58`, `Community 63`, `Community 68`, `Community 73`, `Community 77`, `Community 78`?**
+  _High betweenness centrality (0.079) - this node is a cross-community bridge._
+- **Why does `HAL_MPU_Enable()` connect `Community 36` to `Community 45`?**
+  _High betweenness centrality (0.055) - this node is a cross-community bridge._
+- **Why does `__DSB()` connect `Community 36` to `Community 2`, `Community 13`, `Community 15`, `Community 22`, `Community 23`, `Community 24`, `Community 25`, `Community 26`, `Community 30`, `Community 32`, `Community 41`, `Community 43`, `Community 44`, `Community 47`, `Community 48`, `Community 58`, `Community 63`, `Community 68`, `Community 73`, `Community 77`, `Community 78`?**
+  _High betweenness centrality (0.043) - this node is a cross-community bridge._
+- **What connects `v`, `v`, `v` to the rest of the system?**
+  _23 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `Community 0` be split into smaller, more focused modules?**
+  _Cohesion score 0.032780847145488026 - nodes in this community are weakly interconnected._
+- **Should `Community 1` be split into smaller, more focused modules?**
+  _Cohesion score 0.043151567196221555 - nodes in this community are weakly interconnected._
+- **Should `Community 2` be split into smaller, more focused modules?**
+  _Cohesion score 0.02984734563681932 - nodes in this community are weakly interconnected._
