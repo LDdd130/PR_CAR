@@ -54,24 +54,26 @@ void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
 
+/* 측면 ToF(VL53L0X) 공개 미러 — 정의는 freertos.c (SensorTask 단일 writer).
+ * mm 단위, 1000mm 상한 캡. 16-bit 정렬 접근 = Cortex-M4 원자적 → 락 없이 읽기 안전 */
+extern volatile uint16_t dist_left;
+extern volatile uint16_t dist_right;
+extern volatile int16_t  wall_error;   /* dist_left - dist_right [mm]: +면 좌측이 더 트임 */
+
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
 #define IMU_INT_Pin GPIO_PIN_0
 #define IMU_INT_GPIO_Port GPIOA
 #define IMU_INT_EXTI_IRQn EXTI0_IRQn
-#define TRIG_RIGHT_Pin GPIO_PIN_3
-#define TRIG_RIGHT_GPIO_Port GPIOA
-#define TRIG_LEFT_Pin GPIO_PIN_4
-#define TRIG_LEFT_GPIO_Port GPIOA
+#define TOF_LEFT_XSHUT_Pin GPIO_PIN_1
+#define TOF_LEFT_XSHUT_GPIO_Port GPIOA
+#define TOF_RIGHT_XSHUT_Pin GPIO_PIN_2
+#define TOF_RIGHT_XSHUT_GPIO_Port GPIOA
 #define TRIG_FRONT_Pin GPIO_PIN_5
 #define TRIG_FRONT_GPIO_Port GPIOA
 #define ECHO_TIM3_CH1_Pin GPIO_PIN_6
 #define ECHO_TIM3_CH1_GPIO_Port GPIOA
-#define ECHO_TIM3_CH2_Pin GPIO_PIN_7
-#define ECHO_TIM3_CH2_GPIO_Port GPIOA
-#define ECHO_TIM3_CH3_Pin GPIO_PIN_0
-#define ECHO_TIM3_CH3_GPIO_Port GPIOB
 #define IMU_RST_Pin GPIO_PIN_1
 #define IMU_RST_GPIO_Port GPIOB
 #define Input1_Pin GPIO_PIN_12
