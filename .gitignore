@@ -1,3 +1,14 @@
-build
-mx.scratch
-!.settings
+# 가상 환경 및 대용량 빌드 파일
+.venv/
+build/
+
+# IDE 및 에디터 설정
+.vscode/
+.settings/
+.claude/
+.codex/
+.codex-plugins/
+
+# 미디어 파일 (대용량)
+*.mov
+*.mp4

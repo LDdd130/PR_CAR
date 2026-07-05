@@ -33,7 +33,11 @@
 #include "ultra.h"
 #include "vl53l0x.h" /* 좌/우 측면 ToF (I2C1 공유 — BNO055와 동일 태스크 문맥 직렬화) */
 #include "i2c.h"     /* hi2c1 */
-#include "usart.h"   /* huart1 — 블루투스 1바이트 IT 수신 */
+#include "usart.h"   /* huart1 — 블루투스 1바이트 IT 수신 + 텔레메트리 IT 송신 */
+#include "encoder.h" /* SG-207 휠 엔코더 ×2 (TIM2 CH1=PA15 / CH2=PB3) — 속도 측정 */
+#include <stdio.h>   /* snprintf — 텔레메트리 프레임 조립 (정수 전용, float printf 금지) */
+#include <string.h>  /* strchr/strcmp — '#KEY=VAL' 파서 */
+#include <stdlib.h>  /* atoi */
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -57,6 +61,18 @@
                                       20ms(ST 고속 프로파일)로 루프당 새 샘플 1개 확보 (IMG_2977 대응) */
 #define TOF_STALE_MS        150U   /* 새 샘플 무갱신 상한. 버짓 20ms의 ~7배 초과 = 센서 정체 → 트임 만료 */
 #define TOF_LOOP_DELAY_MS   5U     /* SensorTask 루프 양보. 측면이 논블로킹化돼 사라진 대기 보상(CPU 독점 방지) */
+
+/* ---- 텔레메트리 (아키텍처 §4 / dash_board.html 프로토콜) ----
+ * TX 프레임: "T,<t_ms>,<f cm>,<L mm>,<R mm>,<h×10>,<vL>,<vR>,<st>,<fl>\n"  (정수만, 최악 ~46B)
+ *   st: 0~6 = DriveState, 7 = MANUAL(수동 또는 전원 OFF) — dash_board STATE_NAMES와 1:1 고정
+ *   fl: b0 f_valid, b1 side_valid, b2 imu_live, b3 sys_power, b4 sys_mode
+ * RX 명령: 레거시 1바이트('1','0','A','M','U','D','L','R','S') +
+ *          '#KEY=VAL'+LF 라인 (VT/TEL/HZ/ML/MR — 라인버퍼 24B, 500ms 타임아웃 리셋)
+ * 9600bps에서 46B ≈ 48ms — 10Hz(주기 100ms)면 점유 ~48%: 동작하나 여유 없음 → TX는 반드시
+ * IT(논블로킹) + 직전 송신 미완료 시 프레임 스킵(dbg.tel_skip). 보레이트 승격은 R3 옵션 */
+#define BT_LINE_TIMEOUT_MS  500U   /* '#' 라인 모드 미완성 버퍼 만료 */
+#define TEL_HZ_DEFAULT      10U    /* 기본 프레임 레이트 [Hz] (dash_board/앱 처리 상한) */
+#define TEL_HZ_MAX          20U
 
 /* USER CODE END PD */
 
@@ -88,6 +104,16 @@ volatile uint16_t dist_left  = TOF_CAP_MM;
 volatile uint16_t dist_right = TOF_CAP_MM;
 volatile int16_t  wall_error = 0;   /* dist_left - dist_right [mm]: +면 좌측이 더 트임 */
 
+/* ---- 텔레메트리 미러 (아키텍처 §2.4 D3/D4 — 필드별 단일 작성자 volatile, 뮤텍스 0 유지) ----
+ * 16-bit 정렬 store = M4 원자. 표시용이라 필드 간 ≤1사이클 시차 허용 → 락프리 */
+static volatile uint16_t tel_h_x10  = 0;    /* SensorTask: heading×10 [0.1° 단위, 0~3599] */
+static volatile uint8_t  tel_sflags = 0;    /* SensorTask: b0 f_valid, b1 side_valid(ToF 양측 기동 성공), b2 imu_live */
+static volatile int16_t  tel_vl     = 0;    /* MotorTask: 좌 휠 속도 [cm/s, 부호 = 최근 명령 방향] */
+static volatile int16_t  tel_vr     = 0;    /* MotorTask: 우 휠 속도 */
+static volatile uint8_t  tel_st     = 7U;   /* MotorTask: 0~6 DriveState / 7 = MANUAL(수동·OFF) */
+static volatile uint8_t  tel_on     = 1U;   /* BluetoothTask: #TEL=0/1 (기본 ON — 연결 즉시 프레임 흐름) */
+static volatile uint8_t  tel_hz     = TEL_HZ_DEFAULT; /* BluetoothTask: #HZ=1..20 */
+
 /* USER CODE END Variables */
 /* Definitions for MotorTask */
 osThreadId_t MotorTaskHandle;
@@ -107,7 +133,7 @@ const osThreadAttr_t SensorTask_attributes = {
 osThreadId_t BluetoothTaskHandle;
 const osThreadAttr_t BluetoothTask_attributes = {
   .name = "BluetoothTask",
-  .stack_size = 256 * 4,
+  .stack_size = 384 * 4,   /* 256→384: 텔레메트리 snprintf 여유(§2.2). ⚠CubeMX 재생성이 되돌림 — .ioc에도 384 반영할 것 */
   .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for uartQ */
@@ -267,6 +293,138 @@ static void sensor_put_front_early(uint16_t f,
 }
 #endif
 
+/* ---- 블루투스 텔레메트리/파서 헬퍼 (BluetoothTask 단독 소유) ----
+ * ⚠ 반드시 이 USER CODE 블록 안에 둘 것 — CubeMX 재생성 시 블록 밖 코드는 삭제된다 */
+
+static char     bt_line[24];      /* 아키텍처 §4.3: '#KEY=VAL' 라인버퍼 ≤24B */
+static uint8_t  bt_llen  = 0;
+static uint8_t  bt_lmode = 0;     /* 1 = '#' 수신 후 라인 조립 중 */
+static uint32_t bt_t_line = 0;    /* 라인 시작 시각 — BT_LINE_TIMEOUT_MS 만료용 */
+
+/* '#KEY=VAL' 파싱 → 원자 반영. 모터 직접 호출 금지 원칙 유지(변수 경유만).
+ * VT는 속도 PI(R4) 전까지 저장만(dbg.v_target) — 대시보드 #VT 버튼이 에러 없이 동작. */
+static void BT_ParseLine(char *s)
+{
+    char *eq = strchr(s, '=');
+    if (eq == NULL) return;
+    *eq = '\0';
+    int v = atoi(eq + 1);
+
+    if      (strcmp(s, "VT") == 0)  { dbg.v_target = (int16_t)v; }
+    else if (strcmp(s, "TEL") == 0) { tel_on = (v != 0) ? 1U : 0U; }
+    else if (strcmp(s, "HZ") == 0)  { if (v < 1) v = 1; if (v > (int)TEL_HZ_MAX) v = (int)TEL_HZ_MAX;
+                                      tel_hz = (uint8_t)v; }
+    else if (strcmp(s, "ML") == 0)  { if (sys_mode) { if (v > 100) v = 100; if (v < -100) v = -100;
+                                      manual_left  = (int8_t)v; } }   /* R2 duty 스윕 캘리브용 */
+    else if (strcmp(s, "MR") == 0)  { if (sys_mode) { if (v > 100) v = 100; if (v < -100) v = -100;
+                                      manual_right = (int8_t)v; } }
+    /* 미정의 KEY 무시 — 프로토콜 전방 호환 */
+}
+
+/* 수신 1바이트 처리: 라인 모드 우선, 아니면 레거시 1바이트 명령 */
+static void BT_HandleByte(uint8_t b)
+{
+    if (bt_lmode)
+    {
+        if (b == '\n' || b == '\r')
+        {
+            bt_line[bt_llen] = '\0';
+            BT_ParseLine(bt_line);
+            bt_lmode = 0U;
+        }
+        else if (bt_llen < (uint8_t)(sizeof(bt_line) - 1U))
+        {
+            bt_line[bt_llen++] = (char)b;
+        }
+        else
+        {
+            bt_lmode = 0U;   /* 오버플로 → 라인 폐기 (프레이밍 재동기) */
+        }
+        return;
+    }
+
+    if (b == '#')
+    {
+        bt_lmode  = 1U;
+        bt_llen   = 0U;
+        bt_t_line = HAL_GetTick();
+        return;
+    }
+
+    switch (b)
+    {
+      /* ---- 시스템 전원 ---- */
+      case '1':                                  /* ON */
+        sys_power = 1;
+        break;
+      case '0':                                  /* OFF: 수동값 리셋 + 정지(어느 모드든) */
+        sys_power = 0;
+        manual_left = 0;
+        manual_right = 0;
+        break;
+
+      /* ---- 모터 모드 (모드 선택 = 전원 ON 커플링) ----
+       * 앱에 '1'(전원 ON) 버튼이 없어 sys_power가 0에 묶여 모터가 강제정지하던 문제 수정.
+       * 모드를 고르는 것 = 주행 의사 → sys_power=1. 부팅은 여전히 OFF(안전). 정지는 '0'. */
+      case 'A':                                  /* 자율주행 */
+        sys_mode = 0;
+        sys_power = 1;
+        break;
+      case 'M':                                  /* 수동: 진입 시 정지값으로 시작(돌발 구동 방지) */
+        sys_mode = 1;
+        sys_power = 1;
+        manual_left = 0;
+        manual_right = 0;
+        break;
+
+      /* ---- 수동 조작 (Manual 모드 전용) ---- */
+      case 'U': if (sys_mode) { manual_left =  80; manual_right =  80; } break;  /* 전진 */
+      case 'D': if (sys_mode) { manual_left = -80; manual_right = -80; } break;  /* 후진 */
+      case 'L': if (sys_mode) { manual_left = -60; manual_right =  60; } break;  /* 좌회전 */
+      case 'R': if (sys_mode) { manual_left =  60; manual_right = -60; } break;  /* 우회전 */
+      case 'S': if (sys_mode) { manual_left =   0; manual_right =   0; } break;  /* 정지 */
+
+      default:                                   /* 미정의 바이트 무시 */
+        break;
+    }
+}
+
+/* 텔레메트리 프레임 조립 + IT 송신. 버퍼는 IT 송신 완료까지 유지 필요 → static.
+ * 직전 프레임 송신 미완료(gState != READY)면 이번 프레임 스킵 — 9600bps 병목의 우아한 강등 */
+static void BT_SendFrame(void)
+{
+    static char fb[64];
+
+    if (huart1.gState != HAL_UART_STATE_READY)
+    {
+        dbg.tel_skip++;
+        return;
+    }
+
+    uint8_t fl = (uint8_t)(tel_sflags
+                         | (sys_power ? 0x08U : 0U)
+                         | (sys_mode  ? 0x10U : 0U));
+    int n = snprintf(fb, sizeof fb, "T,%lu,%u,%u,%u,%u,%d,%d,%u,%u\n",
+                     (unsigned long)HAL_GetTick(),
+                     (unsigned)dbg.front,          /* 전방 [cm, 80 캡] */
+                     (unsigned)dist_left,          /* 좌 ToF [mm, 1000 캡] */
+                     (unsigned)dist_right,         /* 우 ToF [mm] */
+                     (unsigned)tel_h_x10,          /* heading×10 [0.1°] */
+                     (int)tel_vl, (int)tel_vr,     /* 휠 속도 [cm/s, 부호=명령방향] */
+                     (unsigned)tel_st,             /* 0~6 DriveState / 7 MANUAL */
+                     (unsigned)fl);
+    if (n <= 0 || n >= (int)sizeof fb) return;
+
+    /* USART1 ISR(RxCplt 재무장 Receive_IT)과 HAL 락 충돌 방지: 짧은 임계구역으로 배타.
+     * 미보호 시 드물게 (a) TX가 HAL_BUSY 오탐, (b) RX 재무장 유실(수신 영구정지) 가능 */
+    taskENTER_CRITICAL();
+    HAL_StatusTypeDef st = HAL_UART_Transmit_IT(&huart1, (uint8_t *)fb, (uint16_t)n);
+    taskEXIT_CRITICAL();
+
+    if (st == HAL_OK) dbg.tel_tx++;
+    else              dbg.tel_skip++;
+}
+
 /* USER CODE END FunctionPrototypes */
 
 void StartDefaultTask(void *argument);
@@ -398,6 +556,23 @@ void StartDefaultTask(void *argument)
       dbg.q_timeout++;
       Car_Stop();           /* 센서 침묵 동안 안전 정지. refresh 생략 → 지속 시 IWDG 리셋 */
     }
+
+    /* --- 엔코더 속도 미러 (아키텍처 D2→D3: ISR 기록 → 본 태스크 환산 → 텔레메트리) ---
+     * din 신선도 무관 매 루프 갱신: 전원 OFF 상태로 손으로 바퀴를 굴려도 dbg/대시보드에
+     * 속도가 보여 R0 배선검증·R2 캘리브레이션이 재플래시 없이 가능하다.
+     * 부호 = 단채널 한계로 '최근 구동 명령 방향'(motor_dir_*) 채택 (§3.2 명문화) */
+    {
+      uint32_t enc_now = HAL_GetTick();
+      float vl = Encoder_SpeedCmps(ENC_LEFT,  enc_now);
+      float vr = Encoder_SpeedCmps(ENC_RIGHT, enc_now);
+      dbg.v_l   = vl;
+      dbg.v_r   = vr;
+      dbg.enc_l = Encoder_Edges(ENC_LEFT);
+      dbg.enc_r = Encoder_Edges(ENC_RIGHT);
+      tel_vl = (int16_t)((motor_dir_left  < 0) ? -(vl + 0.5f) : (vl + 0.5f));
+      tel_vr = (int16_t)((motor_dir_right < 0) ? -(vr + 0.5f) : (vr + 0.5f));
+      tel_st = (sys_power == 0U || sys_mode == 1U) ? 7U : dbg.state;   /* 7 = MANUAL/IDLE */
+    }
     dbg.hw_motor = (uint32_t)uxTaskGetStackHighWaterMark(NULL);
   }
 #endif
@@ -447,6 +622,7 @@ void StartTask02(void *argument)
   uint8_t  v_front;
 
   Ultra_Init(osThreadGetId());      /* TIM3 IC start(전방 CH1) + 측정 완료 flag 수신자 등록 */
+  Encoder_Init();                   /* SG-207 휠 엔코더: TIM2 전체 런타임 구성 (CubeMX 미사용, 독립 타이머) */
   imu_live = dbg.imu_ok;            /* Init 성공했을 때만 생존 시작 (실패 시 거리-only 고정) */
   Init_ToF_Sensors();               /* XSHUT 순차 기동 + 좌측 주소 0x60 재배치 + 연속측정 시작 */
   tof_fresh[0] = HAL_GetTick();     /* 정체 만료 타이머 기준점 — 기동 직후 오탐 방지 */
@@ -527,6 +703,18 @@ void StartTask02(void *argument)
       }
       dbg.imu_live = imu_ctrl_live;
 
+      /* 3.5) 텔레메트리 센서 미러 (아키텍처 D4 — 본 태스크 단일 작성자).
+       *      heading은 ×10 정수화(float printf 회피). side_valid는 ToF 양측 기동 성공 여부 —
+       *      실패 센서는 값이 MAX 캡으로 고정되므로 대시보드에 '측면 무효'로 알린다 */
+      {
+          uint16_t hx = (uint16_t)((imu.heading * 10.0f) + 0.5f);
+          if (hx >= 3600U) hx = (uint16_t)(hx - 3600U);
+          tel_h_x10  = hx;
+          tel_sflags = (uint8_t)((front_cycle_valid ? 0x01U : 0U)
+                               | ((tof_left_ok && tof_right_ok) ? 0x02U : 0U)
+                               | (imu_ctrl_live ? 0x04U : 0U));
+      }
+
       /* 4) 제어 입력 스냅샷 → 큐 (값 복사 — MotorTask가 IWDG refresh + Drive_Update) */
       DriveInputs din;
       din.f          = f;
@@ -553,6 +741,8 @@ void StartTask02(void *argument)
 /* USER CODE BEGIN Header_StartTask03 */
 /**
 * @brief Function implementing the BluetoothTask thread.
+*        RX: 레거시 1바이트 + '#KEY=VAL' 라인 / TX: 텔레메트리 프레임 tel_hz Hz (IT 논블로킹).
+*        dash_board.html(HM-10 BLE 콘솔)과 프로토콜 1:1 — 아키텍처 §4.
 * @param argument: Not used
 * @retval None
 */
@@ -561,49 +751,36 @@ void StartTask03(void *argument)
 {
   /* USER CODE BEGIN StartTask03 */
   (void)argument;
-  uint8_t cmd;
+  uint8_t  cmd;
+  uint32_t t_tx = HAL_GetTick();
 
   for(;;)
   {
-    /* uartQ에서 1바이트 블로킹 수신 — 명령 올 때까지 CPU 양보(busy-wait 없음) */
-    if (osMessageQueueGet(uartQHandle, &cmd, NULL, osWaitForever) != osOK)
-        continue;
-
-    switch (cmd)
+    /* 큐 대기시간 = 다음 프레임 마감까지 (상한 100ms) — 명령은 즉시 처리, TX 스케줄은 지킴 */
+    uint32_t now    = HAL_GetTick();
+    uint32_t per_ms = 1000U / ((tel_hz == 0U) ? 1U : (uint32_t)tel_hz);
+    uint32_t wait   = 100U;
+    if (tel_on)
     {
-      /* ---- 시스템 전원 ---- */
-      case '1':                                  /* ON */
-        sys_power = 1;
-        break;
-      case '0':                                  /* OFF: 수동값 리셋 + 정지(어느 모드든) */
-        sys_power = 0;
-        manual_left = 0;
-        manual_right = 0;
-        break;
+        uint32_t elapsed = now - t_tx;
+        wait = (elapsed >= per_ms) ? 0U : (per_ms - elapsed);
+        if (wait > 100U) wait = 100U;
+    }
 
-      /* ---- 모터 모드 (모드 선택 = 전원 ON 커플링) ----
-       * 앱에 '1'(전원 ON) 버튼이 없어 sys_power가 0에 묶여 모터가 강제정지하던 문제 수정.
-       * 모드를 고르는 것 = 주행 의사 → sys_power=1. 부팅은 여전히 OFF(안전). 정지는 '0'. */
-      case 'A':                                  /* 자율주행 */
-        sys_mode = 0;
-        sys_power = 1;
-        break;
-      case 'M':                                  /* 수동: 진입 시 정지값으로 시작(돌발 구동 방지) */
-        sys_mode = 1;
-        sys_power = 1;
-        manual_left = 0;
-        manual_right = 0;
-        break;
+    if (osMessageQueueGet(uartQHandle, &cmd, NULL, wait) == osOK)
+    {
+        do { BT_HandleByte(cmd); }
+        while (osMessageQueueGet(uartQHandle, &cmd, NULL, 0U) == osOK);   /* 백로그 소진 */
+    }
 
-      /* ---- 수동 조작 (Manual 모드 전용) ---- */
-      case 'U': if (sys_mode) { manual_left =  80; manual_right =  80; } break;  /* 전진 */
-      case 'D': if (sys_mode) { manual_left = -80; manual_right = -80; } break;  /* 후진 */
-      case 'L': if (sys_mode) { manual_left = -60; manual_right =  60; } break;  /* 좌회전 */
-      case 'R': if (sys_mode) { manual_left =  60; manual_right = -60; } break;  /* 우회전 */
-      case 'S': if (sys_mode) { manual_left =   0; manual_right =   0; } break;  /* 정지 */
+    now = HAL_GetTick();
+    if (bt_lmode && (now - bt_t_line) > BT_LINE_TIMEOUT_MS)
+        bt_lmode = 0U;   /* 미완성 '#' 라인 만료 → 버퍼 리셋 (§4.3) */
 
-      default:                                   /* 미정의 바이트 무시 */
-        break;
+    if (tel_on && (now - t_tx) >= per_ms)
+    {
+        t_tx = now;
+        BT_SendFrame();
     }
   }
   /* USER CODE END StartTask03 */

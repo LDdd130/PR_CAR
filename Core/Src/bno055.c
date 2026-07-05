@@ -34,6 +34,19 @@
 #define BNO_I2C_TIMEOUT  10U     /* ms. 버스 stall 시 모터 장시간 정지 방지 */
 #define BNO_FAIL_RECOVER 10U     /* 읽기 연속 실패 N회 → I2C 버스 복구 시도 */
 
+/* ---- 클럭 소스 선택 (heading 드리프트에 직접 영향) ----
+ * 0 = 내부 오실레이터 (모든 보드에서 안전. 융합 드리프트 ~1-3°/min).
+ * 1 = 외부 32.768kHz 크리스탈 (GY-BNO055/Adafruit류는 크리스탈 탑재 → 융합 정확도↑, heading 드리프트↓).
+ *     ⚠ 크리스탈 미탑재 순정/저가 모듈에서 1로 두면 융합이 죽어 heading 상실 → 반드시 보드 확인 후 켤 것.
+ * heading이 곧 진행각이라(z축 yaw) 이 값 하나가 heading-hold 품질을 좌우한다. 기본은 무조건 동작하는 0. */
+#define BNO_USE_EXT_CRYSTAL  0
+
+/* ---- 축 정렬(AXIS_MAP) 전제 ----
+ * 이 드라이버는 AXIS_MAP_CONFIG(0x41)/SIGN(0x42)을 건드리지 않음 = 디폴트 P1 매핑 사용.
+ * 전제: 보드를 차체에 '평평하게'(칩 Z축이 지면 수직 위) 장착. 그래야 Euler heading(=Z축 yaw)이
+ * 곧 차량 xy평면 진행각이 된다. 보드를 세워/뒤집어 달면 heading이 roll/pitch 축에서 나와 조향이 무너짐.
+ * 장착 방향이 다르면 여기서 AXIS_MAP을 재설정해야 함(현재는 평면 장착 가정). */
+
 /* 1° = 16 LSB (UNIT_SEL 기본 degree) */
 #define EUL_LSB_PER_DEG  16.0f
 
@@ -123,9 +136,9 @@ bool BNO055_Init(void)
     if (bno_wr8(REG_PWR_MODE, BNO_PWR_NORMAL) != HAL_OK) return false;
     HAL_Delay(10);
 
-    /* CLK_SEL=0 → 내부 오실레이터(모든 보드 안전).
-     * 보드에 32.768kHz 크리스탈 있으면 0x80(외부)로 두면 융합 정확도↑ */
-    bno_wr8(REG_SYS_TRIGGER, 0x00);
+    /* SYS_TRIGGER.CLK_SEL: 0x00=내부 osc(안전), 0x80=외부 32.768kHz 크리스탈.
+     * BNO_USE_EXT_CRYSTAL로 선택 — 외부 크리스탈은 heading 드리프트를 줄인다(보드에 크리스탈 있을 때만). */
+    bno_wr8(REG_SYS_TRIGGER, BNO_USE_EXT_CRYSTAL ? 0x80U : 0x00U);
     HAL_Delay(10);
 
     bno_wr8(REG_UNIT_SEL, 0x00);   /* deg, m/s^2, dps, ℃, Windows orientation */

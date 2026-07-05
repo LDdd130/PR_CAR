@@ -53,6 +53,17 @@ typedef struct
     uint8_t  imu_calib;    /* CALIB_STAT [7:6]sys [5:4]gyr [3:2]acc [1:0]mag */
     uint32_t imu_evt;      /* INT(PA0/EXTI0) 발생 카운터 */
 
+    /* --- 휠 엔코더 / 속도 (SG-207 ×2, encoder.c T법 — R0/R2 검증: 손 회전 시 변화 관측) --- */
+    float    v_l;          /* 좌 휠 속도 [cm/s, EMA 필터, 크기] — MotorTask 기록 */
+    float    v_r;          /* 우 휠 속도 [cm/s] */
+    uint32_t enc_l;        /* 좌 엔코더 유효 에지 누적 (배선 검증용) */
+    uint32_t enc_r;        /* 우 엔코더 유효 에지 누적 */
+    int16_t  v_target;     /* #VT 수신값 [cm/s] — R4 속도 PI 전까지 저장만 (BluetoothTask 기록) */
+
+    /* --- 텔레메트리 TX (BluetoothTask) --- */
+    uint32_t tel_tx;       /* 프레임 송신 성공 누적 */
+    uint32_t tel_skip;     /* 송신 스킵(직전 IT 진행 중/HAL busy) 누적 — 가끔은 정상, 지속 증가는 보레이트 병목 */
+
     /* --- RTOS / UART 가시성 --- */
     uint32_t q_drop;       /* 큐 put 실패(가득참) 누적 — 0이 정상 */
     uint32_t q_timeout;    /* MotorTask 큐 수신 timeout 누적 */

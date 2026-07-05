@@ -51,6 +51,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/motor.c
     Core/Src/ultra.c
     Core/Src/vl53l0x.c
+    Core/Src/encoder.c
 )
 
 # Add include paths
