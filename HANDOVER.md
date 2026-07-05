@@ -296,3 +296,101 @@ SWD/Live Expressions에서 보면 좋은 값:
 | `IMG_2986.mov` | 30.895s | 지그재그/45°코너 과회전 잔존 → 원인이 h_ref 오염으로 진단됨. 45° 그리드 스냅 적용 |
 
 현재 문서는 `IMG_2986.mov` 분석 이후 수정된 코드 기준이다. 다음 세션은 새 영상을 먼저 분석하고, 위 튜닝 가이드에서 한 항목만 골라 조정한다. 그리드 스냅 관련 이상 거동(코너를 45°에서 끊거나, 직선에서 h_ref가 엉뚱한 축으로 재스냅)이 보이면 §6의 GRID/RESNAP 값을 먼저 본다.
+
+## 12. 아키텍처 설계서 대조 + BNO055 heading 점검 (2026-07-05)
+
+`PR_CAR_Phase1_Architecture.md`(v1.0) 대조 검증과, "BNO055 z축 heading이 xy 진행각으로 맞게 쓰이는지 / 전방 초음파+ToF로 직진·좌우회전 판단 후 heading으로 방향전환 하는지"를 코드에서 확인한 결과.
+
+### 12.1 설계서 대조 (as-built)
+
+| 설계서 항목 | 코드 실상 | 판정 |
+|---|---|---|
+| ToF×2 + XSHUT 주소분리 (§1.5 S0~S6) | `Init_ToF_Sensors()`가 S0~S6과 일치. 좌 0x60 재배치 성공 시에만 핸들 갱신 | ✅ 일치 |
+| BNO055 0x28 / 우 ToF 0x52 버스 공존 (§1.5) | `BNO055_I2C_ADDR_8BIT=(0x28<<1)`, 우 ToF 디폴트 0x52 | ✅ 일치 |
+| 7상태 머신 (§0.1) | `DS_CRUISE/BRAKE/SPIN/REVERSE/HOLD/SIDE_AVOID/CORNER` | ✅ 일치 |
+| 뮤텍스 0개 / driveQ depth2 / 단일작성자 volatile (§2.4) | `driveQ=osMessageQueueNew(2,...)`, `dist_left/right`·`sys_*` volatile, 뮤텍스 없음 | ✅ 일치 |
+| IWDG는 신선 큐 수신 때만 refresh (§2.1) | MotorTask `osMessageQueueGet` 성공 시에만 `HAL_IWDG_Refresh` | ✅ 일치 |
+| 45° 그리드 스냅 heading (§3.1) | `course_grid_snap` + `course_zero` 래치 | ✅ 일치 |
+| ② 휠 엔코더 + 속도 PID (R4) | **미구현** — 개루프 %duty 그대로 | ⏳ 로드맵대로 미착수 |
+| ③ 텔레메트리 TX (R3) | **미구현** — BluetoothTask는 RX 파서만 (`StartTask03`) | ⏳ 로드맵대로 미착수 |
+
+결론: 설계서가 "as-built"로 표기한 부분은 코드와 일치. ②/③은 설계서 자신이 R3/R4 신규 설계로 명시 → 아직 없는 게 정상. 지금 코드 = Phase1 R0 이전 베이스라인.
+
+### 12.2 BNO055 z축 → xy 진행각 heading
+
+- `BNO055_ReadEuler()`가 EUL 레지스터(0x1A~)의 **heading = Z축 yaw**를 읽음 → 보드 평면 장착(칩 Z 수직) 전제에서 곧 차량 xy평면 진행각. **정상.**
+- 모드는 `OPR_MODE_IMU`(gyro+accel, 지자기 제외). 모터/L298N 자기간섭 회피용 상대각. 드리프트 ~1-3°/min이나 제어는 수 초 상대각만 사용 → 설계 의도대로.
+- 부호 규약: heading CW+. `turn_progress_deg`·yaw-rate 댐핑·grid-snap 전부 이 부호로 일관. (차가 정상 주행/회전 → 실측상 부호 맞음.)
+- ⚠ 전제 2가지 (하드웨어 확인 필요, 코드로는 검증 불가):
+  1. **보드 평면 장착.** 세워/뒤집어 달면 heading이 roll/pitch 축에서 나와 조향 붕괴. `AXIS_MAP`은 디폴트 P1(미변경) — bno055.c 상단에 전제 명시.
+  2. **크리스탈.** GY-BNO055류는 32.768kHz 크리스탈 탑재 → 외부 클럭이 heading 드리프트를 줄임.
+
+### 12.3 전방 초음파 + 측면 ToF → 방향전환 (확인됨)
+
+경로: `cruise_run()` → 전방 HC-SR04 `f`가 `FRONT_ARC_CM(52)` 미만 + 측면 ToF `l/r`로 트인 쪽 판정 → `graze` 필터 통과 + `CORNER_CONFIRM_N`회 확정 → `corner_enter()`(트인 쪽으로 `turn_dir` 래치) → `DS_CORNER` 아크 → `corner_run()`이 **BNO055 heading의 `turn_progress_deg`**로 `TURN_TARGET_DEG(88°)` 또는 45° grid-exit 도달 시 탈출.
+- **직진/좌/우 판단 = 전방(언제 돌지) + 측면 ToF(어느 쪽) 결합.** ✅
+- **방향전환 완료 게이트 = BNO055 heading 회전각.** ✅
+- 전방 근접이 측벽 빔 그레이징(`front_graze_suspected`)이면 코너·제동 억제 → 직선 오코너 차단. 정상.
+
+### 12.4 이번 변경 (기능 무변경, heading 서브시스템 안전 개선 + 문서 정정)
+
+`Core/Src/bno055.c`
+- `BNO_USE_EXT_CRYSTAL`(기본 0=내부 osc, 현 거동 그대로) 추가. 1로 두면 외부 크리스탈 사용 → heading 드리프트↓. **보드에 크리스탈 있을 때만 켤 것**(없으면 융합 사망 → heading 상실).
+- `AXIS_MAP` 평면 장착 전제를 상단 주석으로 명문화.
+
+`Core/Inc/bno055.h`
+- 파일 헤더·`BNO055_Euler` 구조체·`Init`/`CalibStatus` 주석의 "NDOF/지자기" 표기를 실제 동작(IMU 모드, mag 미사용, heading=Z축 yaw=xy 진행각)으로 정정. 코드 동작 변경 없음, heading 오진단 방지용.
+
+빌드: `make -j4` 성공. RAM 22056B/128KB, FLASH 42884B/512KB.
+
+권장 후속(하드웨어 확인 후): ① BNO055 평면 장착·ADR=0x28 하네스 확인, ② 보드에 32.768kHz 크리스탈 있으면 `BNO_USE_EXT_CRYSTAL 1`로 heading 안정화 시도.
+
+## 13. SG-207 휠 엔코더 ×2 + 텔레메트리 + dash_board.html 연결 (2026-07-05)
+
+아키텍처 설계서 R0~R3 구현. 주행 상태머신/튜닝값은 무변경 — 측정·관측 계층만 추가.
+
+### 13.1 휠 엔코더 (신규 `Core/Src/encoder.c` + `Core/Inc/encoder.h`) — 2026-07-05 TIM2로 확정
+
+- 배선(실배선 기준, CubeMX .ioc 재생성 반영): **PA15 = TIM2_CH1**, **PB3 = TIM2_CH2**. VCC 3.3/5V, GND 공통. 모터 전원선과 신호선 분리 배선.
+  - 좌/우 가정: **좌=PA15(CH1), 우=PB3(CH2)** — 손 회전으로 확인해 반대면 `encoder.h`의 `ENC_LEFT`/`ENC_RIGHT` 두 값만 교환.
+  - PA15=JTDI, PB3=JTDO(JTAG 핀) — AF1 재구성으로 JTAG 상실, **SWD(PA13/14) 디버깅은 무관**.
+- 역할 분담: TIM2 베이스(1µs, **32-bit**)/GPIO/NVIC(prio5)/IRQ핸들러 = **CubeMX 생성**(tim.c/it.c). encoder.c는 캡처 IT 기동+ISR 기록+환산만. 32-bit라 구 TIM3안의 오버플로 확장 로직은 폐기(불필요).
+- T법(에지 간 주기) + 상승 단일 에지 + ICFilter 8(CubeMX) + **0속 타임아웃 100ms** + 최소주기 2ms 글리치 컷 + EMA(α 0.35).
+- 방향: 단채널이라 부호 없음 → `motor_dir_left/right`(최근 구동 명령 부호, motor.c) 채택. §3.2 명문화 한계.
+- 환산: `v = 1.021cm × 10⁶ / 주기[µs]` — **휠 Ø65mm/20슬롯 가정. 실측 후 `encoder.h`의 `ENC_WHEEL_DIAM_CM`/`ENC_SLOTS` 갱신 필수(§6.2).**
+- MotorTask가 매 루프 환산 → `dbg.v_l/v_r`(SWD) + `tel_vl/vr`(텔레메트리). 전원 OFF에서 손으로 굴려도 속도가 보임 → R0 배선검증/R2 캘리브 재플래시 불요.
+- R2 캘리브 절차: `M`(수동) → `#ML=25`+`#MR=25`…`80` duty 스윕 → 대시보드 vL/vR 기록 → FF 표 작성. 2m 스톱워치 실측 대비 오차 <5% 목표.
+- **delay_us 타임베이스 변경**: CubeMX 재생성에서 TIM11이 제거됨 → `delay.c`가 TIM2 free-run 차분 방식으로 승계(main.c가 부팅 시 `HAL_TIM_Base_Start(&htim2)`). ⚠ **TIM2 카운터 리셋 금지** — 엔코더 캡처와 delay_us가 같은 CNT 공유.
+
+### 13.1.1 CubeMX 재생성 시 주의 (이번에 실제 겪은 것)
+
+1. USER CODE 블록 밖 코드는 삭제된다 — BT 텔레메트리 헬퍼가 날아가서 `USER CODE FunctionPrototypes` 블록 안으로 이전해 복구함. 앞으로 추가 코드는 반드시 USER CODE 안에.
+2. BluetoothTask 스택이 256으로 되돌아간다 — freertos.c에서 384 재적용함. **.ioc의 태스크 스택도 384로 바꿔두면 근본 해결.**
+3. TIM11을 .ioc에서 지우면 delay.c/main.c가 깨진다 — 현재는 TIM2 승계로 해결됨(TIM11 재추가 불필요).
+
+### 13.2 텔레메트리 TX + '#' 명령 (freertos.c BluetoothTask 재작성)
+
+- TX 프레임(10Hz 기본, `#HZ=1..20`): `T,<t_ms>,<f cm>,<L mm>,<R mm>,<h×10>,<vL>,<vR>,<st>,<fl>\n`
+  - st: 0~6 = DriveState enum 1:1 (**순서 변경 금지**), 7 = MANUAL(수동 또는 전원 OFF)
+  - fl: b0 f_valid, b1 side_valid(ToF 양측 기동 성공), b2 imu_live, b3 sys_power, b4 sys_mode
+- 정수만(heading ×10) — float printf 없음. IT 송신, 직전 송신 미완료 시 스킵(`dbg.tel_skip`).
+- 9600bps에서 46B×10Hz ≈ 점유 48% — 동작하나 여유 없음. 밀리면 `#HZ=5`. 보레이트 승격은 모듈 AT 명령 + usart.c 동기 변경 필요(미실시).
+- RX: 레거시 1바이트 그대로 + `#KEY=VAL`: `VT`(저장만—R4 대비), `TEL`(0/1), `HZ`, `ML`/`MR`(수동 모드 duty 직접 지정, R2 캘리브용).
+- `HAL_UART_Transmit_IT`는 taskENTER_CRITICAL로 감쌈 — RxCplt ISR의 `Receive_IT` 재무장과 HAL 락 충돌(수신 영구정지 위험) 차단.
+- BluetoothTask 스택 256→384 word(§2.2 권고). 텔레메트리 미러는 필드별 단일 작성자 volatile(§2.4 D3/D4) — 뮤텍스 여전히 0개.
+
+### 13.3 dash_board.html
+
+- **HM-10류 BLE(FFE0/FFE1) Web Bluetooth 콘솔** — 안드로이드 Chrome + HTTPS(GitHub Pages 등) 필요. 프로토콜은 위 프레임/명령과 1:1 (HTML 쪽이 원래 정의했고 펌웨어가 이번에 맞춤).
+- ⚠ 모듈 주의: Web Bluetooth는 **BLE 전용**. HC-06(클래식 SPP)은 연결 불가 — HM-10/AT-09/MLT-BT05류 필요. 펌웨어는 UART 9600 8N1이라 어느 모듈이든 동일 동작.
+- 이번 추가: RAW 명령 입력(`#ML=35`, `#HZ=5` 등 전송) — R2 duty 스윕용. 나머지(나침반/복도/속도/상태/플래그/D-pad hold-to-drive)는 기존 그대로.
+
+### 13.4 검증 상태 / 다음 작업
+
+- `make -j4` clean 재빌드 경고 0. FLASH 47432B, RAM(bss) 22120B.
+- 실차 미검증. 벤치 체크 순서:
+  1. 플래시 → 대시보드 연결 → 프레임 수신 확인(나침반/거리 움직임).
+  2. 바퀴 손 회전 → `dbg.enc_l/enc_r` 증가 + vL/vR 표시 (R0/R1 DoD).
+  3. `M` → `#ML=35` → 좌바퀴 회전+속도 표시 (R2 진입).
+  4. 자율 주행 중 st/fl 상태 전이 확인.
+- 미구현(로드맵 유지): 속도 PI(R4), 조향 캐스케이드(R5). `#VT`는 수신·저장만 됨(`dbg.v_target`).

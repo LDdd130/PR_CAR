@@ -108,14 +108,16 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_TIM3_Init();
-  MX_TIM11_Init();
   MX_TIM4_Init();
   MX_I2C1_Init();
   MX_IWDG_Init();
   MX_USART1_UART_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
-  HAL_TIM_Base_Start(&htim11);   /* delay_us 타임베이스 — TIM3 IC start는 ultra.c Ultra_Init(SensorTask) */
+  HAL_TIM_Base_Start(&htim2);    /* delay_us 타임베이스(TIM2 free-run 1µs 32-bit — 구 TIM11 승계).
+                                    휠 엔코더 캡처(encoder.c)와 공유 → 카운터 리셋 금지.
+                                    TIM3 IC start는 ultra.c Ultra_Init(SensorTask) */
 
   Motor_Init();   /* TIM4 PWM start + 모터 정지 상태로 초기화 */
   Drive_Init();   /* 주행 상태머신 리셋 (CRUISE 시작) */

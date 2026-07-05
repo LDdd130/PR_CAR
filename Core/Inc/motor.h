@@ -37,6 +37,11 @@ void Car_Brake(void);              /* 능동 제동 (L298N short-brake): 제동�
 void Motor_Left(int8_t speed);
 void Motor_Right(int8_t speed);
 
+/* 최근 0이 아닌 구동 명령의 부호 (+1/-1). 단채널 엔코더(SG-207) 속도 부호 채택용 — §3.2.
+ * 정지(0) 명령은 부호를 바꾸지 않는다(관성 감속 중 부호 유지) */
+extern volatile int8_t motor_dir_left;
+extern volatile int8_t motor_dir_right;
+
 #ifdef __cplusplus
 }
 #endif

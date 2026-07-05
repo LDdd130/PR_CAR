@@ -14,6 +14,12 @@
 /* TIM4 ARR = 999 → 한 주기 = 1000 카운트. 듀티 0~100% → CCR 0~1000 */
 #define MOTOR_CCR_FULL   1000U
 
+/* 단채널 엔코더(SG-207) 방향 보완: 최근 0이 아닌 구동 명령의 부호 (+1 전진 / -1 후진).
+ * 포토인터럽터는 방향 정보가 없어(쿼드러처 아님) 속도 부호는 명령 방향을 채택 — 아키텍처 §3.2.
+ * 작성자: Motor_Left/Right 호출 문맥(MotorTask + 폴트 핸들러 Stop뿐) — 사실상 단일 작성자 */
+volatile int8_t motor_dir_left  = 1;
+volatile int8_t motor_dir_right = 1;
+
 /* 퍼센트(0~100) → CCR(0~1000) 변환 (범위 초과 시 클램프) */
 static uint16_t pct_to_ccr(uint8_t pct)
 {
@@ -48,6 +54,7 @@ void Motor_Left(int8_t speed)
     }
     uint8_t forward = (speed > 0);
     uint8_t mag = forward ? (uint8_t)speed : (uint8_t)(-speed);
+    motor_dir_left = forward ? 1 : -1;   /* 엔코더 속도 부호용 최근 방향 래치 */
 
     HAL_GPIO_WritePin(Input4_GPIO_Port, Input4_Pin, forward ? GPIO_PIN_SET : GPIO_PIN_RESET);
     HAL_GPIO_WritePin(Input3_GPIO_Port, Input3_Pin, forward ? GPIO_PIN_RESET : GPIO_PIN_SET);
@@ -67,6 +74,7 @@ void Motor_Right(int8_t speed)
     }
     uint8_t forward = (speed > 0);
     uint8_t mag = forward ? (uint8_t)speed : (uint8_t)(-speed);
+    motor_dir_right = forward ? 1 : -1;   /* 엔코더 속도 부호용 최근 방향 래치 */
 
     HAL_GPIO_WritePin(Input1_GPIO_Port, Input1_Pin, forward ? GPIO_PIN_SET : GPIO_PIN_RESET);
     HAL_GPIO_WritePin(Input2_GPIO_Port, Input2_Pin, forward ? GPIO_PIN_RESET : GPIO_PIN_SET);

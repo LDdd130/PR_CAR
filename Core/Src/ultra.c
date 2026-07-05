@@ -14,6 +14,7 @@
 #include "tim.h"    /* htim3 */
 #include "delay.h"  /* delay_us — TRIG 10µs 펄스 (TIM11, main에서 start됨) */
 #include "drive.h"  /* ULTRA_MAX_CM */
+#include "encoder.h" /* TIM2 CH1/CH2 휠 엔코더 분기 (SG-207, PA15/PB3) */
 #include "FreeRTOS.h"
 #include "task.h"   /* taskENTER/EXIT_CRITICAL */
 
@@ -32,6 +33,11 @@ static osThreadId_t s_waiter = NULL;
 
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 {
+    if (htim->Instance == TIM2)           /* SG-207 휠 엔코더 CH1(PA15)/CH2(PB3) — encoder.c 기록만 */
+    {
+        Encoder_OnCapture(htim);
+        return;
+    }
     if (htim->Instance != TIM3) return;   /* IC 콜백은 전 타이머 공용 — 추후 타이머 추가 대비 */
     if (htim->Channel != HAL_TIM_ACTIVE_CHANNEL_1) return;
 
