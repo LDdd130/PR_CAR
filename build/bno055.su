@@ -1,7 +1,0 @@
-Core/Src/bno055.c:46:13:bno_bus_recover	40	static
-Core/Src/bno055.c:74:26:bno_rd	24	static
-Core/Src/bno055.c:90:26:bno_wr8	32	static
-Core/Src/bno055.c:96:6:BNO055_HardReset	8	static
-Core/Src/bno055.c:104:6:BNO055_Init	16	static
-Core/Src/bno055.c:140:6:BNO055_ReadEuler	16	static
-Core/Src/bno055.c:155:9:BNO055_ReadCalibStatus	16	static

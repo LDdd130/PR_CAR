@@ -1,5 +1,0 @@
-Core/Src/ultra.c:33:6:HAL_TIM_IC_CaptureCallback	8	static
-Core/Src/ultra.c:66:6:Ultra_Init	8	static
-Core/Src/ultra.c:74:9:Ultra_Measure	24	static
-Core/Src/ultra.c:119:10:median_n	40	static
-Core/Src/ultra.c:135:10:min_n	0	static
