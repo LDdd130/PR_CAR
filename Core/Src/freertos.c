@@ -35,6 +35,7 @@
 #include "i2c.h"     /* hi2c1 */
 #include "usart.h"   /* huart1 — 블루투스 1바이트 IT 수신 + 텔레메트리 IT 송신 */
 #include "encoder.h" /* SG-207 휠 엔코더 ×2 (TIM2 CH1=PA15 / CH2=PB3) — 속도 측정 */
+#include "tim.h"     /* htim2 — 엔코더 진단 미러(dbg.tim2_cnt) 판독 */
 #include <stdio.h>   /* snprintf — 텔레메트리 프레임 조립 (정수 전용, float printf 금지) */
 #include <string.h>  /* strchr/strcmp — '#KEY=VAL' 파서 */
 #include <stdlib.h>  /* atoi */
@@ -133,7 +134,7 @@ const osThreadAttr_t SensorTask_attributes = {
 osThreadId_t BluetoothTaskHandle;
 const osThreadAttr_t BluetoothTask_attributes = {
   .name = "BluetoothTask",
-  .stack_size = 384 * 4,   /* 256→384: 텔레메트리 snprintf 여유(§2.2). ⚠CubeMX 재생성이 되돌림 — .ioc에도 384 반영할 것 */
+  .stack_size = 384 * 4,   /* 256→384: 텔레메트리 snprintf 여유(§2.2). .ioc Tasks01에도 384 반영됨 */
   .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for uartQ */
@@ -290,6 +291,35 @@ static void sensor_put_front_early(uint16_t f,
         early.now        = HAL_GetTick();
         if (osMessageQueuePut(driveQ, &early, 0U, 0U) != osOK) { dbg.q_drop++; }
     }
+}
+
+/* ---- BNO055 heading 180° 재영점 (SensorTask 단독 소유 — 뮤텍스 불요) ----
+ * 부팅 후 첫 유효 Yaw를 180°로 영점 보정: 시작 자세 근처에서 0/360 경계를 밟지 않아
+ * 직진 중 값이 170~190° 범위에서 연속으로 움직인다 (359↔0 점프 제거).
+ * 주의 1: drive.c 제어는 wrap180() 차분만 사용 → 오프셋 유무와 제어 거동 무관.
+ * 주의 2: BNO055_Init()을 런타임에 재호출하는 코드를 추가하면 칩 내부 heading이
+ *         0으로 리셋되므로 yaw_offset_latched도 함께 0으로 클리어할 것.
+ * 부수 효과: 보정 후 heading이 항상 [0,360) 보장 → tel_h_x10 음수 캐스팅 위험 제거 */
+static float   initial_yaw_offset = 0.0f;   /* 부팅 후 첫 유효 Raw Yaw [deg] */
+static uint8_t yaw_offset_latched = 0U;     /* 1 = 영점 래치 완료 */
+
+static bool Sensor_ReadHeading(BNO055_Euler *e)
+{
+    if (!BNO055_ReadEuler(e)) return false;   /* 실패 시 *e 미변경 — 직전값 유지 규약 그대로 */
+
+    if (!yaw_offset_latched)
+    {
+        initial_yaw_offset = e->heading;      /* 첫 유효 샘플 = 새 영점 */
+        yaw_offset_latched = 1U;
+    }
+
+    /* raw − offset + 180 → [0, 360) 정규화.
+     * raw−offset ∈ (−360, 360) → +180 후 범위 (−180, 540) = 방어 분기 각 1회로 충분 */
+    float h = (e->heading - initial_yaw_offset) + 180.0f;
+    if      (h >= 360.0f) h -= 360.0f;
+    else if (h <    0.0f) h += 360.0f;
+    e->heading = h;
+    return true;
 }
 #endif
 
@@ -569,6 +599,11 @@ void StartDefaultTask(void *argument)
       dbg.v_r   = vr;
       dbg.enc_l = Encoder_Edges(ENC_LEFT);
       dbg.enc_r = Encoder_Edges(ENC_RIGHT);
+      /* 엔코더 계층 진단: 핀 원시 레벨(전기 생존) + TIM2 CNT(타임베이스 생존).
+       * 판독 트리: tim2_cnt 증가 → enc_gpio 토글 → enc_isr 증가 → enc_l/r 증가 */
+      dbg.enc_gpio = (uint8_t)(((HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_15) == GPIO_PIN_SET) ? 1U : 0U)
+                             | ((HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_3)  == GPIO_PIN_SET) ? 2U : 0U));
+      dbg.tim2_cnt = __HAL_TIM_GET_COUNTER(&htim2);
       tel_vl = (int16_t)((motor_dir_left  < 0) ? -(vl + 0.5f) : (vl + 0.5f));
       tel_vr = (int16_t)((motor_dir_right < 0) ? -(vr + 0.5f) : (vr + 0.5f));
       tel_st = (sys_power == 0U || sys_mode == 1U) ? 7U : dbg.state;   /* 7 = MANUAL/IDLE */
@@ -667,7 +702,7 @@ void StartTask02(void *argument)
       uint8_t imu_ctrl_live = 0U;   /* 이번 제어 프레임에서 새 heading을 읽었을 때만 1 */
       if (imu_live)
       {
-          if (BNO055_ReadEuler(&imu))
+          if (Sensor_ReadHeading(&imu))   /* 180° 재영점 적용 read (raw는 BNO055_ReadEuler) */
           {
               imu_fail = 0;
               imu_ctrl_live = 1U;
@@ -691,7 +726,7 @@ void StartTask02(void *argument)
           /* Init 성공 이력 있을 때만 재시도 — Init 실패 상태의 garbage 읽기로 살아있다고
            * 오판하는 것 방지. 버스 wedge는 bno_rd 내부 복구(10회 실패→9클럭)와 협력 */
           t_imu_retry = now;
-          if (BNO055_ReadEuler(&imu))
+          if (Sensor_ReadHeading(&imu))   /* 재기동 read도 동일 영점 유지 (오프셋은 부팅 1회 래치) */
           {
               imu_live = 1;
               imu_fail = 0;

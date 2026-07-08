@@ -54,7 +54,7 @@
   .corr-lbl{display:flex;justify-content:space-between;margin-top:6px;font-size:12px;color:var(--dim)}
 
   /* metrics */
-  .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+  .metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:12px}
   .metric{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center}
   .metric .v{font-size:26px;margin-top:3px}
   .metric .u{font-size:11px;color:var(--mute)}
@@ -106,27 +106,29 @@
 
   <div class="hint" id="hint"></div>
 
-  <!-- 헤딩 나침반 (시그니처) -->
-  <div class="card hero">
+  <!-- 헤딩 나침반 (시그니처) — IMU 플래그 꺼지면 카드 흐림(값이 stale임을 표시) -->
+  <div class="card hero" id="heroCard">
     <svg viewBox="0 0 200 200" width="180" height="180" role="img" aria-label="heading">
       <circle cx="100" cy="100" r="88" fill="none" stroke="var(--line)" stroke-width="2"/>
       <g id="ticks"></g>
-      <text x="100" y="26" text-anchor="middle" font-size="12" fill="var(--mute)" font-family="var(--mono)">N</text>
-      <text x="180" y="105" text-anchor="middle" font-size="12" fill="var(--mute)" font-family="var(--mono)">E</text>
-      <text x="100" y="184" text-anchor="middle" font-size="12" fill="var(--mute)" font-family="var(--mono)">S</text>
-      <text x="20" y="105" text-anchor="middle" font-size="12" fill="var(--mute)" font-family="var(--mono)">W</text>
+      <!-- 펌웨어가 시작 자세를 180°로 재영점 → UI는 '시작축 대비 편차'로 표시 (0=시작 방향, +우/−좌) -->
+      <text x="100" y="26" text-anchor="middle" font-size="12" fill="var(--mute)" font-family="var(--mono)">0</text>
+      <text x="180" y="105" text-anchor="middle" font-size="12" fill="var(--mute)" font-family="var(--mono)">+90</text>
+      <text x="100" y="184" text-anchor="middle" font-size="12" fill="var(--mute)" font-family="var(--mono)">±180</text>
+      <text x="20" y="105" text-anchor="middle" font-size="12" fill="var(--mute)" font-family="var(--mono)">-90</text>
       <g class="needle" id="needle">
         <line x1="100" y1="100" x2="100" y2="26" stroke="var(--live)" stroke-width="3" stroke-linecap="round"/>
         <line x1="100" y1="100" x2="100" y2="140" stroke="var(--mute)" stroke-width="3" stroke-linecap="round"/>
       </g>
       <circle cx="100" cy="100" r="6" fill="var(--live)"/>
       <text x="100" y="92" text-anchor="middle" font-size="34" font-weight="500" fill="var(--text)" font-family="var(--mono)" id="hdgTxt">--</text>
-      <text x="100" y="118" text-anchor="middle" font-size="11" fill="var(--mute)" letter-spacing="2" font-family="var(--mono)">HEADING °</text>
+      <text x="100" y="118" text-anchor="middle" font-size="11" fill="var(--mute)" letter-spacing="2" font-family="var(--mono)">Δ HEADING °</text>
+      <text x="100" y="134" text-anchor="middle" font-size="10" fill="var(--mute)" font-family="var(--mono)" id="hdgRaw">RAW --°</text>
     </svg>
   </div>
 
-  <!-- 복도 중앙유지 (시그니처 2) -->
-  <div class="card" style="margin-top:12px">
+  <!-- 복도 중앙유지 (시그니처 2) — SIDE 플래그 꺼지면 카드 흐림 -->
+  <div class="card" style="margin-top:12px" id="corrCard">
     <div class="lbl" style="margin-bottom:8px">중앙 유지 (측면 ToF)</div>
     <div class="corr">
       <span class="wall"></span>
@@ -136,11 +138,10 @@
     <div class="corr-lbl"><span>좌 <b class="num" id="lTxt">--</b> mm</span><span>우 <b class="num" id="rTxt">--</b> mm</span></div>
   </div>
 
-  <!-- 전방 / 속도 -->
+  <!-- 전방 / 속도 (차체 속도 = (vL+vR)/2, 좌우 개별값은 캘리브용 보조 표기) -->
   <div class="metrics">
     <div class="metric"><div class="lbl">전방</div><div class="v num" id="fVal">--</div><div class="u">cm</div></div>
-    <div class="metric"><div class="lbl">속도 L</div><div class="v num" id="vlVal">--</div><div class="u">cm/s</div></div>
-    <div class="metric"><div class="lbl">속도 R</div><div class="v num" id="vrVal">--</div><div class="u">cm/s</div></div>
+    <div class="metric"><div class="lbl">속도</div><div class="v num" id="vVal">--</div><div class="u">cm/s · <span class="num" id="vlrTxt">L -- R --</span></div></div>
   </div>
 
   <!-- 상태 + 플래그 -->
@@ -178,13 +179,10 @@
       <span class="sp"></span>
     </div>
 
-    <div class="tune">
-      <label>목표속도</label>
-      <input type="number" id="vtIn" placeholder="예: 45" inputmode="numeric">
-      <button id="vtSend">#VT 전송</button>
-    </div>
-
-    <!-- 원시 명령: R2 duty 스윕 캘리브(#ML=35 / #MR=35), 텔레메트리 제어(#TEL=0, #HZ=5) 등 -->
+    <!-- RAW 명령 = 펌웨어 '#KEY=VAL' 파서(BT_ParseLine) 직통 채널. 재플래시 없이:
+         #ML=35/#MR=35 (수동모드 좌/우 duty 개별 인가 — R2 속도 캘리브레이션),
+         #HZ=5 (텔레메트리 프레임레이트 1..20Hz), #TEL=0/1 (텔레메트리 정지/재개),
+         #VT=45 (목표속도 저장 — R4 속도 PI 예정, 현재 저장만) -->
     <div class="tune">
       <label>RAW 명령</label>
       <input type="text" id="rawIn" placeholder="#ML=35  ·  #HZ=5  ·  #TEL=0" autocapitalize="off" autocomplete="off">
@@ -192,12 +190,17 @@
     </div>
   </div>
 
+  <!-- 수신 진단: 패킷이 오는데 값이 정지 = 펌웨어/센서 문제, 패킷 자체가 없음 = BLE/링크 문제 -->
+  <div class="raw" id="rxstat">RX -- (미연결)</div>
   <div class="raw" id="raw">최근 패킷: (없음)</div>
 
 <script>
 /* ============================================================
    PR_CAR Web Bluetooth Console  —  HM-10 (BLE, GATT FFE0/FFE1)
    프레임: T,t_ms,front,L,R,heading×10,vL,vR,state,flags\n
+   heading: 펌웨어가 부팅 첫 Yaw를 180°로 재영점 → 180 = 시작 방향.
+            UI는 Δ = heading−180 (0=시작축, +우/−좌, ±180 랩)로 표시.
+   속도:   차체 속도 = (vL+vR)/2 [cm/s] 메인 표시, L/R 개별값은 보조(캘리브용).
    명령:  전원 1/0 · 모드 A/M · 수동 U/D/L/R/S · 튜닝 #VT=..\n
    ============================================================ */
 
@@ -254,19 +257,41 @@ function onNotify(e){
   if(rxBuf.length > 200) rxBuf = '';   // 폭주 방지
 }
 
+let pktN = 0, parseErrN = 0, lastPktT = 0;   // 수신 진단 카운터
+
 function parseFrame(line){
   const p = line.split(',');
-  if(p[0] !== 'T' || p.length < 10) return;   // 헤더/필드수 검증
-  const f=+p[2], L=+p[3], R=+p[4], hdg=(+p[5])/10, vL=+p[6], vR=+p[7], st=+p[8], fl=+p[9];
-  updateUI({f,L,R,hdg,vL,vR,st,fl});
+  if(p[0] !== 'T' || p.length < 10){ parseErrN++; return; }   // 헤더/필드수 검증
+  const d = { f:+p[2], L:+p[3], R:+p[4], hdg:(+p[5])/10,
+              vL:+p[6], vR:+p[7], st:+p[8], fl:+p[9] };
+  if(Object.values(d).some(Number.isNaN)){ parseErrN++; return; }  // 20B 분할 재조립 실패/깨진 프레임 방어
+  pktN++; lastPktT = performance.now();
+  updateUI(d);
   $('raw').textContent = '최근 패킷: ' + line;
 }
 
+/* 수신 상태 표시: 패킷 흐름 자체를 가시화 — "값이 안 움직임"의 원인 분리용
+   (패킷 옴 + 값 정지 = 펌웨어/센서 · 패킷 없음 = BLE 링크/텔레메트리 OFF) */
+setInterval(()=>{
+  const el = $('rxstat');
+  if(!bleChar){ el.textContent = 'RX -- (미연결)'; el.style.color = ''; return; }
+  const age = lastPktT ? (performance.now() - lastPktT) / 1000 : Infinity;
+  el.textContent = `RX ${pktN} pkt · 마지막 ${age === Infinity ? '수신 없음' : age.toFixed(1) + 's 전'}`
+                 + (parseErrN ? ` · 파싱실패 ${parseErrN}` : '');
+  el.style.color = (age > 2) ? 'var(--danger)' : '';
+}, 500);
+
 /* ---------- UI 갱신 ---------- */
 function updateUI(d){
-  // 헤딩
-  $('needle').style.transform = `rotate(${d.hdg}deg)`;
-  $('hdgTxt').textContent = d.hdg.toFixed(1);
+  const imuOk  = !!(d.fl & 4), sideOk = !!(d.fl & 2);
+  // 헤딩: 펌웨어 180° 영점 → 시작축 대비 편차로 환산 (hdg∈[0,360) → rel∈[-180,180))
+  // IMU 플래그 꺼짐 = 이 값은 stale(마지막 성공 샘플) → 카드 흐림으로 표시
+  const rel = d.hdg - 180;
+  $('needle').style.transform = `rotate(${rel}deg)`;
+  $('hdgTxt').textContent = (rel >= 0 ? '+' : '') + rel.toFixed(1);
+  $('hdgRaw').textContent = 'RAW ' + d.hdg.toFixed(1) + '°';
+  $('heroCard').style.opacity = imuOk ? 1 : .4;
+  $('corrCard').style.opacity = sideOk ? 1 : .4;
   // 복도 중앙
   $('lTxt').textContent = d.L; $('rTxt').textContent = d.R;
   const tot = d.L + d.R;
@@ -276,8 +301,9 @@ function updateUI(d){
   // 전방 (근접=위험색)
   const fEl = $('fVal'); fEl.textContent = d.f;
   fEl.style.color = d.f<20 ? 'var(--danger)' : d.f<35 ? 'var(--warn)' : 'var(--text)';
-  // 속도
-  $('vlVal').textContent = d.vL; $('vrVal').textContent = d.vR;
+  // 속도: 차체 속도 = 좌우 평균 (부호 = 최근 구동 명령 방향)
+  $('vVal').textContent = Math.round((d.vL + d.vR) / 2);
+  $('vlrTxt').textContent = `L ${d.vL} R ${d.vR}`;
   // 상태
   $('stBadge').textContent = STATE_NAMES[d.st] || '?';
   // 플래그  (b0 front, b1 side, b2 imu, b3 power, b4 mode)
@@ -305,7 +331,6 @@ $('pwOn').onclick  = () => send('1');
 $('pwOff').onclick = () => send('0');
 $('mdAuto').onclick= () => send('A');
 $('mdMan').onclick = () => send('M');
-$('vtSend').onclick= () => { const v=$('vtIn').value.trim(); if(v!=='') send('#VT='+v+'\n'); };
 $('rawSend').onclick= () => { const v=$('rawIn').value.trim(); if(v!=='') send(v+'\n'); };
 $('rawIn').addEventListener('keydown', e => { if(e.key==='Enter') $('rawSend').click(); });
 

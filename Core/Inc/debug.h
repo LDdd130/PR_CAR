@@ -58,6 +58,12 @@ typedef struct
     float    v_r;          /* 우 휠 속도 [cm/s] */
     uint32_t enc_l;        /* 좌 엔코더 유효 에지 누적 (배선 검증용) */
     uint32_t enc_r;        /* 우 엔코더 유효 에지 누적 */
+    /* --- 엔코더 계층별 진단 (에지 0일 때 단절 지점 특정용) ---
+     * 판독 순서: tim2_cnt 증가? → enc_gpio 토글? → enc_isr 증가? → enc_l/enc_r 증가?
+     * 앞 단계가 죽은 지점이 곧 고장 계층 (타임베이스 → 전기 → 캡처IRQ → 필터) */
+    uint32_t enc_isr;      /* TIM2 캡처 ISR 진입 누적(필터 무관) — 0이면 캡처/IRQ 자체가 안 옴 */
+    uint8_t  enc_gpio;     /* b0=PA15(좌) b1=PB3(우) 현재 핀 레벨 — 손 회전 시 값이 바뀌어야 전기 정상 */
+    uint32_t tim2_cnt;     /* TIM2 CNT 스냅샷 — 새로고침마다 증가해야 1µs 타임베이스 생존 */
     int16_t  v_target;     /* #VT 수신값 [cm/s] — R4 속도 PI 전까지 저장만 (BluetoothTask 기록) */
 
     /* --- 텔레메트리 TX (BluetoothTask) --- */
