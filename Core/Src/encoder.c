@@ -24,6 +24,7 @@
 
 #include "encoder.h"
 #include "tim.h"      /* htim2 (CubeMX 생성) */
+#include "debug.h"    /* dbg.enc_isr — 캡처 ISR 진입 카운터 (계층 진단) */
 #include "FreeRTOS.h"
 #include "task.h"     /* taskENTER/EXIT_CRITICAL — 3워드 스냅샷 정합 (TIM2 IRQ prio5 마스킹) */
 
@@ -52,6 +53,20 @@ static EncFilter flt[2];
  * 이미 수행 — 여기서는 CC1/CC2 활성만. 호출 시점 자유(SensorTask 초기화부) */
 void Encoder_Init(void)
 {
+    /* SG-207 계열이 베어 포토인터럽터/오픈컬렉터 출력이면 외부 풀업 없이는 라인이
+     * 플로팅 → 에지 0 (배선이 맞아도 속도 항상 0). 내부 풀업을 켜서 방어 —
+     * 모듈에 자체 풀업이 있어도 병렬 풀업은 무해. CubeMX MspInit은 NOPULL로
+     * 생성하고 재생성 시 되돌리므로, USER 소유인 여기서 재설정한다. */
+    GPIO_InitTypeDef g = {0};
+    g.Mode      = GPIO_MODE_AF_PP;
+    g.Pull      = GPIO_PULLUP;
+    g.Speed     = GPIO_SPEED_FREQ_LOW;
+    g.Alternate = GPIO_AF1_TIM2;
+    g.Pin = GPIO_PIN_15;                 /* PA15 = TIM2_CH1 (좌) */
+    HAL_GPIO_Init(GPIOA, &g);
+    g.Pin = GPIO_PIN_3;                  /* PB3  = TIM2_CH2 (우) */
+    HAL_GPIO_Init(GPIOB, &g);
+
     __HAL_TIM_CLEAR_FLAG(&htim2, TIM_FLAG_CC1 | TIM_FLAG_CC1OF | TIM_FLAG_CC2 | TIM_FLAG_CC2OF);
     (void)HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);
     (void)HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_2);
@@ -63,6 +78,8 @@ void Encoder_OnCapture(TIM_HandleTypeDef *htim)
 {
     uint8_t  idx;
     uint32_t cap;
+
+    dbg.enc_isr++;   /* 필터 이전 원시 캡처 진입 — enc_gpio 토글되는데 이게 0이면 IC/IRQ 설정 문제 */
 
     if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
     {
