@@ -1,7 +1,7 @@
-# Graph Report - C:\Users\user\STM\PR_CAR  (2026-07-06)
+# Graph Report - C:\Users\user\STM\PR_CAR  (2026-07-08)
 
 ## Corpus Check
-- 156 files · ~1,069,090 words
+- 156 files · ~1,072,528 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -828,9 +828,11 @@ Nodes (0):
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `HAL_GetTick()` connect `Community 9` to `Community 0`, `Community 10`, `Community 12`, `Community 13`, `Community 24`, `Community 25`?**
-  _High betweenness centrality (0.038) - this node is a cross-community bridge._
+  _High betweenness centrality (0.042) - this node is a cross-community bridge._
 - **Why does `main()` connect `Community 10` to `Community 0`, `Community 1`, `Community 13`?**
-  _High betweenness centrality (0.023) - this node is a cross-community bridge._
+  _High betweenness centrality (0.019) - this node is a cross-community bridge._
+- **Why does `StartTask02()` connect `Community 24` to `Community 0`, `Community 9`, `Community 10`, `Community 13`?**
+  _High betweenness centrality (0.014) - this node is a cross-community bridge._
 - **Are the 47 inferred relationships involving `HAL_GetTick()` (e.g. with `Encoder_OnCapture()` and `sensor_put_front_early()`) actually correct?**
   _`HAL_GetTick()` has 47 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 10 inferred relationships involving `TIM_CCxChannelCmd()` (e.g. with `HAL_TIMEx_HallSensor_Start()` and `HAL_TIMEx_HallSensor_Stop()`) actually correct?**
@@ -839,5 +841,3 @@ _Questions this graph is uniquely positioned to answer:_
   _`uxListRemove()` has 25 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 16 inferred relationships involving `xTaskResumeAll()` (e.g. with `xEventGroupSync()` and `xEventGroupWaitBits()`) actually correct?**
   _`xTaskResumeAll()` has 16 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 22 inferred relationships involving `HAL_DMA_Start_IT()` (e.g. with `HAL_I2C_Master_Transmit_DMA()` and `HAL_I2C_Master_Receive_DMA()`) actually correct?**
-  _`HAL_DMA_Start_IT()` has 22 INFERRED edges - model-reasoned connections that need verification._

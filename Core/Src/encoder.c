@@ -24,7 +24,6 @@
 
 #include "encoder.h"
 #include "tim.h"      /* htim2 (CubeMX 생성) */
-#include "debug.h"    /* dbg.enc_isr — 캡처 ISR 진입 카운터 (계층 진단) */
 #include "FreeRTOS.h"
 #include "task.h"     /* taskENTER/EXIT_CRITICAL — 3워드 스냅샷 정합 (TIM2 IRQ prio5 마스킹) */
 
@@ -78,8 +77,6 @@ void Encoder_OnCapture(TIM_HandleTypeDef *htim)
 {
     uint8_t  idx;
     uint32_t cap;
-
-    dbg.enc_isr++;   /* 필터 이전 원시 캡처 진입 — enc_gpio 토글되는데 이게 0이면 IC/IRQ 설정 문제 */
 
     if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
     {

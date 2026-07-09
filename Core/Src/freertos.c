@@ -35,7 +35,6 @@
 #include "i2c.h"     /* hi2c1 */
 #include "usart.h"   /* huart1 — 블루투스 1바이트 IT 수신 + 텔레메트리 IT 송신 */
 #include "encoder.h" /* SG-207 휠 엔코더 ×2 (TIM2 CH1=PA15 / CH2=PB3) — 속도 측정 */
-#include "tim.h"     /* htim2 — 엔코더 진단 미러(dbg.tim2_cnt) 판독 */
 #include <stdio.h>   /* snprintf — 텔레메트리 프레임 조립 (정수 전용, float printf 금지) */
 #include <string.h>  /* strchr/strcmp — '#KEY=VAL' 파서 */
 #include <stdlib.h>  /* atoi */
@@ -599,11 +598,6 @@ void StartDefaultTask(void *argument)
       dbg.v_r   = vr;
       dbg.enc_l = Encoder_Edges(ENC_LEFT);
       dbg.enc_r = Encoder_Edges(ENC_RIGHT);
-      /* 엔코더 계층 진단: 핀 원시 레벨(전기 생존) + TIM2 CNT(타임베이스 생존).
-       * 판독 트리: tim2_cnt 증가 → enc_gpio 토글 → enc_isr 증가 → enc_l/r 증가 */
-      dbg.enc_gpio = (uint8_t)(((HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_15) == GPIO_PIN_SET) ? 1U : 0U)
-                             | ((HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_3)  == GPIO_PIN_SET) ? 2U : 0U));
-      dbg.tim2_cnt = __HAL_TIM_GET_COUNTER(&htim2);
       tel_vl = (int16_t)((motor_dir_left  < 0) ? -(vl + 0.5f) : (vl + 0.5f));
       tel_vr = (int16_t)((motor_dir_right < 0) ? -(vr + 0.5f) : (vr + 0.5f));
       tel_st = (sys_power == 0U || sys_mode == 1U) ? 7U : dbg.state;   /* 7 = MANUAL/IDLE */

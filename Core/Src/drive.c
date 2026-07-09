@@ -43,10 +43,11 @@ volatile DebugMonitor_t dbg;
 #define CENTER_KD                  0.004f  /* 측면거리 D gain. ToF/median 계단 변화가 duty 킥으로 커지지 않게 제한 */
 #define CENTER_STEER_MAX_PCT       24.0f   /* 직선 조향 상한. straight-lock에서 빠르게 중앙 복귀할 여유 확보 */
 #define CENTER_STEER_SLEW_PCT      5.0f    /* 조향 변화율 상한 [%duty/loop]. 직진 복귀 지연을 줄이되 급반전은 제한 */
-#define CENTER_BASE_SPEED_PCT      66.0f   /* 일반 직선 기본 속도. IMG_2985는 제어가 느려 속도도 못 나는 상태라 heading-lock 기반으로 상향 */
-#define CENTER_STRAIGHT_FAST_SPEED_PCT 70.0f /* front가 트이고 heading/좌우균형이 맞을 때 쓰는 직선 최고속 */
-#define CENTER_NARROW_FAST_SPEED_PCT 66.0f /* 37/43/45cm 레그도 straight-lock이면 base까지는 허용 */
-#define CENTER_WIDE_FAST_SPEED_PCT 70.0f /* 60/67cm 레그는 여유가 크므로 자세가 맞으면 더 빠르게 통과 */
+#define CENTER_BASE_SPEED_PCT      74.0f   /* 일반 직선 기본 속도. [IMG_2999] 66→74: 34s→20s 목표라 직선 관성 확보.
+                                              fast_speed는 정렬(heading·좌우균형 OK)일 때만 발동하는 게이트라 상향 안전 */
+#define CENTER_STRAIGHT_FAST_SPEED_PCT 84.0f /* front 트임+heading/좌우균형 OK일 때 직선 최고속. [IMG_2999] 70→84 */
+#define CENTER_NARROW_FAST_SPEED_PCT 74.0f /* 37/43/45cm 레그도 straight-lock이면 허용. [IMG_2999] 66→74 (센터링 감쇠 개선분) */
+#define CENTER_WIDE_FAST_SPEED_PCT 88.0f /* 60/67cm 레그는 여유 커 자세 맞으면 최고속. [IMG_2999] 70→88 */
 #define CENTER_STRAIGHT_FAST_ERR_CM 8.0f   /* 좌우 거리차가 이 안이면 빠른 직선으로 본다 */
 #define CENTER_STRAIGHT_FAST_HDG_DEG 8.0f  /* heading 오차가 이 안일 때만 최고속 허용 */
 #define CENTER_MIN_SPEED_PCT       36.0f   /* 큰 조향 시 속도 하한 */
@@ -79,7 +80,30 @@ volatile DebugMonitor_t dbg;
 #define CENTER_STRAIGHT_HDG_GATE_CM 4.0f   /* 좌우 거리차가 이 안일 때만 직선 heading boost 적용 */
 #define CENTER_BOTH_HDG_MIN_SCALE  0.20f   /* 좌우 거리 오차가 클 때도 heading 보조를 완전히 끄지는 않고 이 비율만 남긴다 */
 #define CENTER_BOTH_HDG_GATE_CM    8.0f    /* |l-r|가 DEADZONE→이 값으로 커질수록 heading 보조를 줄여 벽 균형이 우선한다 */
-#define CENTER_HDG_DEADBAND_DEG    2.0f    /* 이 이하 heading 오차는 조향하지 않는다. 직선 복귀를 조금 앞당기되 gyro 미세진동은 차단 */
+#define CENTER_HDG_DEADBAND_DEG    0.8f    /* 이 이하 heading 오차는 조향하지 않는다. [헤딩 단독] 2.0→0.8: 데드밴드가 크면
+                                              모터 비대칭 정상상태 오차와 합쳐져 Δ헤딩이 수 도(°)에 눌러앉는다. gyro 융합
+                                              노이즈(~0.3°)만 거르는 최소값으로 축소 */
+/* --- [헤딩 단독] heading-hold I항: P-only는 모터 좌우 비대칭만큼 오차가 남는 구조적 한계 →
+ *     느린 적분으로 비대칭을 상쇄해 직진 Δ헤딩을 0에 되돌린다 (웹앱 '직진인데 헤딩 안 붙음' 대응) --- */
+#define CENTER_HDG_KI              0.8f    /* I게인 [%duty/(deg·s)]. 3% duty 비대칭 기준 1° 잔차에서 ~4s 내 상쇄 */
+#define CENTER_HDG_I_MAX_PCT       6.0f    /* I항 출력 클램프 [%duty] — 좌우 duty 비대칭 보상 예산 상한 */
+#define CENTER_HDG_I_FREEZE_DEG    15.0f   /* 이 이상 큰 오차(코너 직후 과도)에서는 적분 동결 — windup 방지 */
+
+/* --- [헤딩 단독] 벽 센터링 바이어스: 헤딩 유지하며 '달리면서' 좌우 보정 (멈추고 틀기 금지) ---
+ * 폭 인지형 — 좁은 레그는 센터링이 主(중앙여유 10.5cm뿐이라 헤딩만으론 못 막음), 넓은 레그는 헤딩이 主.
+ * 헤딩 PI 위에 얹되 D항으로 감쇠 → slew(5%/loop)+LPF+yaw댐핑과 합쳐 급조향/헌팅 없이 부드럽게. */
+/* 넓은/중간 레그: 여유 크므로 관대한 deadband + 약한 P (헤딩 주도, 왔다갔다 무시) */
+#define CENTER_STRAIGHT_BIAS_DB_CM  5.0f   /* 좌우 거리차 이 이내는 무시(직진 유지) */
+#define CENTER_STRAIGHT_BIAS_KP     0.20f  /* deadband 밖 벽편차 P [%duty/cm] */
+#define CENTER_STRAIGHT_BIAS_MAX_PCT 7.0f  /* 센터링 바이어스 상한 [%duty] */
+/* 좁은 레그(37/43/45cm): 벽박기 방어 우선 → 작은 deadband + 강한 P + 넉넉한 상한으로 꽉 잡는다 */
+#define CENTER_NARROW_BIAS_DB_CM    2.0f   /* 좁은 길 데드밴드. [IMG_2999] 1.5→2.0: 긴 직선(43cm) 좌우 weaving 억제 —
+                                              작은 오프셋마다 조향하던 것을 줄여 헌팅 감소 (여전히 박기 방어권 안) */
+#define CENTER_NARROW_BIAS_KP       0.30f  /* 좁은 레그 센터링 P. [IMG_2999] 0.42→0.30: 0.42는 과보정→느린 리밋사이클(weaving).
+                                              D항 강화와 함께 낮춰 오버슈트 제거. 여전히 넓은레그(0.20)보다 강해 좁은길 센터링 主 유지 */
+#define CENTER_NARROW_BIAS_MAX_PCT  12.0f  /* 좁은 레그 센터링 상한 [%duty] */
+#define CENTER_BIAS_KD              0.028f  /* 벽편차 D [%duty/(cm/s)]. [IMG_2999] 0.010→0.028: 벽 접근 속도를 예측 감쇠 →
+                                              오버슈트 전에 미리 조향을 접어 weaving을 끊는다 (median3+LPF로 D 노이즈는 억제됨) */
 #define CENTER_HREF_BLEND          0.006f  /* 양벽 안정 시 heading 기준을 실제 복도축으로 보정하는 속도.
                                               그리드 스냅 기준이 실제 leg축과 미세하게 어긋나면(트랙 비직각/자이로 드리프트)
                                               phantom hdg_err가 heading 속도캡을 물고 늘어질 때만 천천히 보정한다. 흔들리는
@@ -97,19 +121,21 @@ volatile DebugMonitor_t dbg;
 #define CENTER_SINGLE_MAX_CM       32.0f   /* 한쪽 벽 추종에 사용할 최대 거리. 그 이상은 heading-hold로 처리 */
 #define CENTER_BODY_HALF_LEN_CM    13.5f   /* 차량 길이 27cm의 절반. 복도축 대비 yaw가 있으면 앞/뒤 모서리가
                                               측면센서 위치보다 벽으로 더 튀어나온다 */
-#define CENTER_NEAR_GUARD_CM       10.1f   /* 정적 근접벽 보호선. 최협 중앙 여유 10.5cm보다 살짝 낮아 직선 중앙은 살리고,
-                                              10cm 안쪽으로 붙으면 SIDE_AVOID 전 CRUISE에서 먼저 밀어낸다 */
-#define CENTER_NEAR_GUARD_KP       3.0f    /* 근접벽 보호 조향 [%duty/cm]. IMG_2982의 벽 평행접촉을 줄이기 위해 상향 */
+#define CENTER_NEAR_GUARD_CM       8.0f    /* 정적 근접벽 보호선. [헤딩 단독] 10.1→8.0: 최협 중앙여유 10.5보다 2.5cm 낮춰
+                                              중앙 부근 ±2.5cm 흔들림은 가드가 안 물게 한다(멈칫/급감속 방지). 8cm 안쪽으로
+                                              뚜렷이 붙을 때만 부드럽게 밀어냄. 진짜 위급(스침)은 SIDE_AVOID_CM이 담당 */
+#define CENTER_NEAR_GUARD_KP       1.4f    /* 근접벽 보호 조향 [%duty/cm]. 3.0→1.4: '멈추고 틀기'의 급조향 원인 완화 —
+                                              달리면서 완만히 밀어내는 세기로 */
 #define CENTER_YAW_SWEEP_MAX_DEG   14.0f   /* corner sweep 계산에 쓸 heading 오차 상한. 이 이상은 이미 감속캡 영역 */
 #define CENTER_YAW_SWEEP_GAIN      0.85f   /* half_len*sin(|hdg_err|) 중 보호선에 반영할 비율. 센서 위치/차폭 여유 보수 */
 #define CENTER_GUARD_FULL_DEPTH_CM 2.0f    /* 보호선 안쪽으로 이만큼 들어오면 근접벽 속도 하한까지 낮춘다 */
 #define CENTER_GUARD_MIN_SPEED_PCT 30.0f   /* 벽 접촉 임박 시 CRUISE 최저 속도. TT모터 스톨 하한과 같은 안전 크롤 */
 #define CENTER_YAW_RATE_DEADBAND_DPS 4.0f  /* 자이로 미세 흔들림은 damping 입력으로 쓰지 않는다 */
 #define CENTER_YAW_DAMP_MAX_PCT    9.0f    /* yaw-rate damping 상한. IMU 순간 변화가 CRUISE 조향을 포화시키지 못하게 함 */
-#define CENTER_SETTLE_MS           220U    /* 코너/회피 직후 직선 복귀 안정화 시간. 코너를 늦춘 만큼 직선 복귀는 조금 당긴다 */
-#define CENTER_SETTLE_SPEED_PCT    44.0f   /* 복귀 안정화 중 속도 상한 */
-#define CENTER_MID_SETTLE_SPEED_PCT 48.0f  /* 50/55cm 레그 복귀 속도 상한 */
-#define CENTER_WIDE_SETTLE_SPEED_PCT 52.0f /* 60/67cm 레그 복귀 속도 상한 */
+#define CENTER_SETTLE_MS           150U    /* 코너/회피 직후 직선 복귀 안정화 시간. [IMG_2999] 220→150: 코너 출구 크롤 시간 단축 */
+#define CENTER_SETTLE_SPEED_PCT    54.0f   /* 복귀 안정화 중 속도 상한. [IMG_2999] 44→54: 코너 직후 재가속 앞당김 */
+#define CENTER_MID_SETTLE_SPEED_PCT 58.0f  /* 50/55cm 레그 복귀 속도 상한. [IMG_2999] 48→58 */
+#define CENTER_WIDE_SETTLE_SPEED_PCT 64.0f /* 60/67cm 레그 복귀 속도 상한. [IMG_2999] 52→64 */
 #define CENTER_HDG_FAST_DEG        4.0f    /* 이 heading 오차 안에서는 최고속 허용 */
 #define CENTER_HDG_SLOW_DEG        14.0f   /* 이 heading 오차 이상이면 직진축 복구를 위해 감속.
                                               기하 근거: 14° 편차의 횡접근 = 전진 10cm당 2.5cm → 최협 중앙여유 10.5cm 소진까지 전진 42cm
@@ -152,6 +178,7 @@ typedef struct {
     uint8_t  lp_valid;    /* median 후 LPF 초기화 여부 */
     uint8_t  error_valid; /* 양벽 센터링 D항 이력이 유효한지 */
     uint8_t  axis_resnap_cnt; /* 레그축 재스냅 연속 확인 카운트 */
+    float    hdg_int;     /* [헤딩 단독] heading-hold I항 누적 [%duty] */
     float    prev_error;  /* 초음파 D항 직전 오차 */
     uint32_t prev_ms;     /* 미분 dt 기준 시각 */
     float    steer_prev;  /* slew 연속성용 직전 조향량 */
@@ -268,6 +295,7 @@ static void Centering_Reset(CenteringContext *c)
     c->lp_valid   = 0U;
     c->error_valid = 0U;
     c->axis_resnap_cnt = 0U;
+    c->hdg_int    = 0.0f;   /* [헤딩 단독] 코너/회피 탈출마다 I항 리셋 — 이전 레그 비대칭 보상 이월 방지 */
     c->l_lp       = 0.0f;
     c->r_lp       = 0.0f;
     c->imu_prev_live = 0U;
@@ -413,6 +441,27 @@ static void Drive_CenteringPD_Run(const DriveInputs *in)
     uint8_t mode;
     float   hdg_err = in->imu_live ? wrap180(in->heading - h_ref) : 0.0f;
     float   hdg_ctrl_err = in->imu_live ? deadbandf(hdg_err, CENTER_HDG_DEADBAND_DEG) : 0.0f;
+    /* [헤딩 단독 조향] drive.h DRIVE_HEADING_PRIMARY=1 && IMU 신선 프레임에서만 활성.
+       IMU 사망/실패 프레임은 이 플래그가 0 → 아래 레거시 벽 센터링으로 자동 강등(주행 무중단) */
+    uint8_t hdg_primary = (uint8_t)(DRIVE_HEADING_PRIMARY && in->imu_live);
+
+    /* [헤딩 단독] heading I항 갱신: 모터 비대칭이 만드는 P-only 정상상태 오차 상쇄.
+       큰 오차(코너 직후 과도)는 동결, 비활성 프레임은 리셋 — windup/레그 간 이월 방지 */
+    float hdg_i_term = 0.0f;
+    if (hdg_primary)
+    {
+        if (fabsf(hdg_err) <= CENTER_HDG_I_FREEZE_DEG)
+        {
+            ctx_center.hdg_int += CENTER_HDG_KI * hdg_ctrl_err * dt;
+            ctx_center.hdg_int = clampf(ctx_center.hdg_int,
+                                        -CENTER_HDG_I_MAX_PCT, CENTER_HDG_I_MAX_PCT);
+        }
+        hdg_i_term = ctx_center.hdg_int;
+    }
+    else
+    {
+        ctx_center.hdg_int = 0.0f;
+    }
     float   left_guard_cm = CENTER_NEAR_GUARD_CM;
     float   right_guard_cm = CENTER_NEAR_GUARD_CM;
     float   guard_risk_cm = 0.0f;
@@ -530,7 +579,25 @@ static void Drive_CenteringPD_Run(const DriveInputs *in)
             steer += KP_HDG * hdg_blend * hdg_ctrl_err;
         }
 
-        if (!front_straight_open
+        if (hdg_primary)
+        {
+            /* [헤딩 단독] 조향 = heading-hold PI + 폭 인지형 벽 센터링 바이어스(P+D).
+               좁은 레그: 센터링이 主(1.5cm 데드밴드/강 P) — 중앙여유 10.5cm에서 벽박기 방어.
+               넓은/중간 레그: 헤딩이 主(5cm 데드밴드/약 P) — 왔다갔다 무시하고 헤딩대로 직진.
+               D항(공통)으로 감쇠 → 멈추고 틀기/헌팅 없이 달리면서 부드럽게 복귀.
+               부호: error=l−r, 좌가 가까우면 error<0 → steer 감소(우로) → 중앙 복귀 (CENTER_KP와 동일 규약) */
+            float bias_db  = (corridor_class == CW_NARROW) ? CENTER_NARROW_BIAS_DB_CM   : CENTER_STRAIGHT_BIAS_DB_CM;
+            float bias_kp  = (corridor_class == CW_NARROW) ? CENTER_NARROW_BIAS_KP      : CENTER_STRAIGHT_BIAS_KP;
+            float bias_max = (corridor_class == CW_NARROW) ? CENTER_NARROW_BIAS_MAX_PCT : CENTER_STRAIGHT_BIAS_MAX_PCT;
+            float bias = (bias_kp * deadbandf(error, bias_db)) + (CENTER_BIAS_KD * d_error);
+            bias = clampf(bias, -bias_max, bias_max);
+            steer = (KP_HDG * hdg_ctrl_err) + hdg_i_term + bias;
+        }
+
+        /* [헤딩 단독] h_ref 자동학습(align) 차단: 기준은 런치/코너탈출 그리드 스냅만 변경.
+           벽 균형 기반 미세보정을 허용하면 대각 자세가 기준으로 서서히 굳는다(웹앱 '직진 헤딩 흐름' 원인 일부) */
+        if (!hdg_primary
+            && !front_straight_open
             && in->imu_live
             && fabsf(error) <= href_align_err_cm
             && fabsf(hdg_err) <= CENTER_HREF_ALIGN_HDG_DEG
@@ -546,7 +613,10 @@ static void Drive_CenteringPD_Run(const DriveInputs *in)
            DS_CORNER 이벤트 없이 통과한 45° 굽이(경사벽 specular로 front 미감지)나 과회전 잔재가 원인.
            이때 현재 heading(≈실제 레그축)의 그리드 스냅으로 h_ref/course_heading을 교체해 회복한다.
            구 코드는 CENTER_HREF_ALIGN_HDG_DEG(8°) 게이트 탓에 45° 오염 기준을 영구 유지했다 */
-        if (in->imu_live
+        if (!hdg_primary          /* [헤딩 단독] 재스냅도 차단 — 조향이 hdg_err를 직접 0으로 끌므로
+                                     25° 지속 오차 = 조향 불능 상황뿐이고, 그때 기준을 차체각으로
+                                     바꾸면 미완 코너를 '완료'로 착각해 대각 주행이 고착된다 */
+            && in->imu_live
             && fabsf(error) <= (CENTER_HREF_ALIGN_ERR_CM + 1.0f)
             && fabsf(d_error) <= CENTER_HREF_ALIGN_DERR_CMS
             && fabsf(yaw_rate) <= CENTER_AXIS_RESNAP_YAW_DPS
@@ -580,13 +650,19 @@ static void Drive_CenteringPD_Run(const DriveInputs *in)
                         : 0.0f;
         mode  = SM_SINGLE;
         steer = wall_steer + hdg_steer;
+        if (hdg_primary)
+        {
+            /* [헤딩 단독] 추종 blend(0.42) 대신 heading PI 권한 100%.
+               반발 성분만 남긴 wall_steer는 벽 스침 안전망이라 유지 */
+            steer = wall_steer + (KP_HDG * hdg_ctrl_err) + hdg_i_term;
+        }
     }
     else if (in->imu_live)
     {
         /* 무벽 + IMU → heading-hold.
            부호: steer>0=좌(CCW), heading=CW+ → heading>h_ref(우로 밀림)면 steer>0(좌로 복귀) = +KP_HDG*(heading-h_ref) */
         mode  = SM_HDG;
-        steer = KP_HDG * hdg_ctrl_err;
+        steer = (KP_HDG * hdg_ctrl_err) + hdg_i_term;   /* hdg_i_term은 헤딩 단독 모드에서만 비0 */
     }
     else
     {
