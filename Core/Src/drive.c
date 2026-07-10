@@ -132,10 +132,10 @@ volatile DebugMonitor_t dbg;
 #define CENTER_GUARD_MIN_SPEED_PCT 30.0f   /* 벽 접촉 임박 시 CRUISE 최저 속도. TT모터 스톨 하한과 같은 안전 크롤 */
 #define CENTER_YAW_RATE_DEADBAND_DPS 4.0f  /* 자이로 미세 흔들림은 damping 입력으로 쓰지 않는다 */
 #define CENTER_YAW_DAMP_MAX_PCT    9.0f    /* yaw-rate damping 상한. IMU 순간 변화가 CRUISE 조향을 포화시키지 못하게 함 */
-#define CENTER_SETTLE_MS           150U    /* 코너/회피 직후 직선 복귀 안정화 시간. [IMG_2999] 220→150: 코너 출구 크롤 시간 단축 */
-#define CENTER_SETTLE_SPEED_PCT    54.0f   /* 복귀 안정화 중 속도 상한. [IMG_2999] 44→54: 코너 직후 재가속 앞당김 */
-#define CENTER_MID_SETTLE_SPEED_PCT 58.0f  /* 50/55cm 레그 복귀 속도 상한. [IMG_2999] 48→58 */
-#define CENTER_WIDE_SETTLE_SPEED_PCT 64.0f /* 60/67cm 레그 복귀 속도 상한. [IMG_2999] 52→64 */
+#define CENTER_SETTLE_MS           90U    /* 코너/회피 직후 직선 복귀 안정화 시간. [IMG_3002] 150→90 needs-tuning: 출구 재가속(출발) 지연 추가 단축. [IMG_2999] 220→150 */
+#define CENTER_SETTLE_SPEED_PCT    62.0f   /* 복귀 안정화 중 속도 상한. [IMG_3002] 54→62 needs-tuning: 코너 직후 재가속 더 앞당김(출발 굼뜸 제거). [IMG_2999] 44→54 */
+#define CENTER_MID_SETTLE_SPEED_PCT 66.0f  /* 50/55cm 레그 복귀 속도 상한. [IMG_3002] 58→66 needs-tuning. [IMG_2999] 48→58 */
+#define CENTER_WIDE_SETTLE_SPEED_PCT 72.0f /* 60/67cm 레그 복귀 속도 상한. [IMG_3002] 64→72 needs-tuning. [IMG_2999] 52→64 */
 #define CENTER_HDG_FAST_DEG        4.0f    /* 이 heading 오차 안에서는 최고속 허용 */
 #define CENTER_HDG_SLOW_DEG        14.0f   /* 이 heading 오차 이상이면 직진축 복구를 위해 감속.
                                               기하 근거: 14° 편차의 횡접근 = 전진 10cm당 2.5cm → 최협 중앙여유 10.5cm 소진까지 전진 42cm

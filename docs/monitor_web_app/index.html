@@ -197,7 +197,8 @@
 <script>
 /* ============================================================
    PR_CAR Web Bluetooth Console  —  HM-10 (BLE, GATT FFE0/FFE1)
-   프레임: T,t_ms,front,L,R,heading×10,vL,vR,state,flags\n
+   프레임: T,t_ms,front,L,R,heading×10,vL,vR,state,flags,steer\n
+          (steer[idx10]=조향출력%duty, 프레임 末 append — 구 10필드 펌웨어도 하위호환)
    heading: 펌웨어가 부팅 첫 Yaw를 180°로 재영점 → 180 = 시작 방향.
             UI는 Δ = heading−180 (0=시작축, +우/−좌, ±180 랩)로 표시.
    속도:   차체 속도 = (vL+vR)/2 [cm/s] 메인 표시, L/R 개별값은 보조(캘리브용).
@@ -265,6 +266,7 @@ function parseFrame(line){
   const d = { f:+p[2], L:+p[3], R:+p[4], hdg:(+p[5])/10,
               vL:+p[6], vR:+p[7], st:+p[8], fl:+p[9] };
   if(Object.values(d).some(Number.isNaN)){ parseErrN++; return; }  // 20B 분할 재조립 실패/깨진 프레임 방어
+  d.steer = p.length > 10 ? +p[10] : 0;   // [추가] 조향출력 %duty — NaN검증 뒤 best-effort(구 펌웨어 10필드=0 폴백)
   pktN++; lastPktT = performance.now();
   updateUI(d);
   $('raw').textContent = '최근 패킷: ' + line;
@@ -303,7 +305,7 @@ function updateUI(d){
   fEl.style.color = d.f<20 ? 'var(--danger)' : d.f<35 ? 'var(--warn)' : 'var(--text)';
   // 속도: 차체 속도 = 좌우 평균 (부호 = 최근 구동 명령 방향)
   $('vVal').textContent = Math.round((d.vL + d.vR) / 2);
-  $('vlrTxt').textContent = `L ${d.vL} R ${d.vR}`;
+  $('vlrTxt').textContent = `L ${d.vL} R ${d.vR} · steer ${d.steer}`;
   // 상태
   $('stBadge').textContent = STATE_NAMES[d.st] || '?';
   // 플래그  (b0 front, b1 side, b2 imu, b3 power, b4 mode)
