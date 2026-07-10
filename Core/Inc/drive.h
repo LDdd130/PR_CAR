@@ -27,14 +27,14 @@ extern "C" {
 /* ── 아크(Arc) 코너 부활: 전진성 곡선 주행으로 90° 코너 통과 (제자리 피벗의 대각 끼임/충돌 회피).
  *    Car_ArcLeft/Right(outer,inner) = 양바퀴 '전진', 안쪽만 감속 → 곡선 반경 R≈(T/2)·(O+I)/(O−I) (T=윤거).
  *    피벗(제자리)은 아크 실패/막다른곳 폴백 전용으로 강등. */
-#define ARC_OUTER        60   /* 코너 아크 바깥 바퀴 전진 [%duty]. [IMG_2999] 50→60: 코너를 '굴러서' 통과 —
+#define ARC_OUTER        68   /* 코너 아크 바깥 바퀴 전진 [%duty]. [IMG_3002] 60→68 needs-tuning: 코너 평속↑/속도감 회복(inner 동반상향으로 R≈17cm 유지). 벽 스침 나면 ↓. [IMG_2999] 50→60: 코너를 '굴러서' 통과 —
                                  안쪽바퀴 동반 상향으로 반경은 유지(R≈17cm)하고 평균속도만 +20% → 멈추는 느낌 제거.
                                  (testtrack 코너 8개 × ~1s → 20s 목표의 코너 몫. 아크 중단선은 CORNER_ABORT_CM이 별도 방어) */
-#define ARC_INNER        25   /* 코너 아크 안쪽 바퀴 전진 [%duty]. [IMG_2999] 21→25: outer와 비례 상향 →
+#define ARC_INNER        28   /* 코너 아크 안쪽 바퀴 전진 [%duty]. [IMG_3002] 25→28 needs-tuning: outer 68과 비례(R 유지, 평속↑, 제자리회전 인상 제거). [IMG_2999] 21→25: outer와 비례 상향 →
                                  반경 유지한 채 안쪽바퀴가 안 멈춰 '제자리 회전' 인상 제거(부드러운 롤) */
-#define ARC_APPROACH_OUTER 48 /* 목표각 근접 시 감속 아크 바깥 바퀴. [IMG_2999] 36→48: 출구 크롤 완화 */
-#define ARC_APPROACH_INNER 20 /* 목표각 근접 시 감속 아크 안쪽 바퀴. [IMG_2999] 16→20 */
-#define ARC_APPROACH_DEG 26.0f /* 목표각까지 이 각도 이내부터 선형 감속 램프. [IMG_2999] 34→26: 감속 구간 축소 → 코너 속도 유지 */
+#define ARC_APPROACH_OUTER 56 /* 목표각 근접 시 감속 아크 바깥 바퀴. [IMG_3002] 48→56 needs-tuning: 출구 크롤(천천히턴) 추가 완화. [IMG_2999] 36→48 */
+#define ARC_APPROACH_INNER 24 /* 목표각 근접 시 감속 아크 안쪽 바퀴. [IMG_3002] 20→24 needs-tuning. [IMG_2999] 16→20 */
+#define ARC_APPROACH_DEG 18.0f /* 목표각까지 이 각도 이내부터 선형 감속 램프. [IMG_3002] 26→18 needs-tuning: 감속창 더 축소 → 끝까지 굴러나감(출구 멈칫 제거). [IMG_2999] 34→26 */
 #define ARC_MAX_MS       850  /* 아크 타임아웃 백스톱 → BRAKE(피벗 폴백). 저속 아크에 맞춰 여유 복원 */
 #define MOTOR_MIN_PCT   30   /* TT모터 스톨 하한(개념 기준). CRUISE 전진 PWM은 이 값 아래로 떨어지면 바닥값을 적용 */
 #define MOTOR_TRIM_PCT  0    /* ★직진 편향 보정 [%duty, CRUISE 직진 전용]: 차가 좌로 쏠리면 +(좌바퀴↑/우바퀴↓), 우로 쏠리면 −. 0=보정없음. 바닥서 직진 쏠림 관찰 후 ±1~3 조정 */
@@ -50,7 +50,8 @@ extern "C" {
                                 박으면 ↑(36), 측벽 끼면 ↓ */
 #define FRONT_CLEAR_CM  44   /* 이상이 CLEAR_CONFIRM회 연속이면 회전/아크 종료→직진 복귀. 진입(TURN)보다 +8cm 히스테리시스 유지.
                                 짧은 복도서 여기까지 안 트이면 회전각(TURN_TARGET/CUTOFF) 탈출이 백업이라 데드락 없음. 미로 넓으면 ↑ */
-#define FRONT_ARC_CM    56   /* 정면 이 거리 미만 + 한쪽 측면 트임/비대칭 = 전진성 아크 코너 진입.
+#define FRONT_ARC_CM    58   /* [IMG_3002] 56→58 needs-tuning: 코너 조금 더 일찍 인식 → 정면이 STOP(28)에 닿아 BRAKE→SPIN(제자리)로 강등되기 전에 아크 커밋(=멈추고 제자리턴 방지). 60=GRID_EXIT 미만 유지라 45° 조기탈출 오발 무관. 직선서 가짜코너 나면 되돌려라.
+                                정면 이 거리 미만 + 한쪽 측면 트임/비대칭 = 전진성 아크 코너 진입.
                                 [IMG_2999] 52→56: 직선 속도를 올린 만큼 코너 진입을 조금 앞당겨 급턴/벽 밀기 대신 부드럽게 들어간다.
                                 CORNER_GRID_EXIT_CM(60)보다 낮아 90° 조기탈출 오발과는 무관 */
 #define FRONT_DANGER_CM 12   /* 코앞 경계(막다른곳 후진 판정) */
@@ -66,7 +67,13 @@ extern "C" {
 #define CORNER_ENTRY_HDG_MAX_DEG 10.0f /* 코너 후보라도 복도축 대비 이 각도 이상 틀어져 있으면 그레이징/대각 주행으로 본다 */
 
 /* --- 조향 아키텍처 선택 --- */
-#define DRIVE_HEADING_PRIMARY 1 /* 1 = 헤딩 단독 조향: CRUISE 조향은 BNO055 heading-hold만 사용.
+#define DRIVE_HEADING_PRIMARY 0 /* 1→0 (2026-07-09): 헤딩 단독 은퇴 → 센터링+heading 퓨전(레거시 모드0)을 CRUISE
+                                     정식 조향으로 승격. 근거: 헤딩 단독은 차체 '각도'만 잡고 복도 '횡위치'는 캡(7/12%)
+                                     걸린 바이어스로만 보조 → h_ref가 복도축과 조금만 어긋나거나 시작이 비뚤면 그 헤딩 유지한 채
+                                     벽으로 사선 드리프트, 가까워지면 SIDE_AVOID(6cm)가 불연속 발동해 확 틀기. 튜닝으로 못 없애는
+                                     구조적 한계라 은퇴. 모드0은 위치=(l−r) P/D가 주도, 감쇠=heading blend+yaw-rate가 담당.
+                                     헤딩 단독(=1)은 IMU 사망 프레임 자동 강등 폴백 용도로만 코드 보존. A/B 하드웨어 실측 대상.
+                                   1 = 헤딩 단독 조향: CRUISE 조향은 BNO055 heading-hold만 사용.
                                      센서(전방 초음파/측면 ToF)는 ①코너(좌/우회전) 판별 ②근접 가드·
                                      비상회피(안전) ③속도캡 에만 쓰인다. 직진 = h_ref(시작 180° → 그리드축)
                                      추적, 코너 = 판별 순간 아크로 돌고 탈출 시 h_ref가 다음 45°/90° 축으로

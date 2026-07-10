@@ -111,6 +111,7 @@ static volatile uint8_t  tel_sflags = 0;    /* SensorTask: b0 f_valid, b1 side_v
 static volatile int16_t  tel_vl     = 0;    /* MotorTask: 좌 휠 속도 [cm/s, 부호 = 최근 명령 방향] */
 static volatile int16_t  tel_vr     = 0;    /* MotorTask: 우 휠 속도 */
 static volatile uint8_t  tel_st     = 7U;   /* MotorTask: 0~6 DriveState / 7 = MANUAL(수동·OFF) */
+static volatile int16_t  tel_steer  = 0;    /* MotorTask: 조향 출력 dbg.steer 반올림 [%duty, ±CENTER_STEER_MAX]. 튜닝: 리밋사이클(weaving) 주파수/진폭 관찰용 */
 static volatile uint8_t  tel_on     = 1U;   /* BluetoothTask: #TEL=0/1 (기본 ON — 연결 즉시 프레임 흐름) */
 static volatile uint8_t  tel_hz     = TEL_HZ_DEFAULT; /* BluetoothTask: #HZ=1..20 */
 
@@ -433,7 +434,7 @@ static void BT_SendFrame(void)
     uint8_t fl = (uint8_t)(tel_sflags
                          | (sys_power ? 0x08U : 0U)
                          | (sys_mode  ? 0x10U : 0U));
-    int n = snprintf(fb, sizeof fb, "T,%lu,%u,%u,%u,%u,%d,%d,%u,%u\n",
+    int n = snprintf(fb, sizeof fb, "T,%lu,%u,%u,%u,%u,%d,%d,%u,%u,%d\n",
                      (unsigned long)HAL_GetTick(),
                      (unsigned)dbg.front,          /* 전방 [cm, 80 캡] */
                      (unsigned)dist_left,          /* 좌 ToF [mm, 1000 캡] */
@@ -441,7 +442,8 @@ static void BT_SendFrame(void)
                      (unsigned)tel_h_x10,          /* heading×10 [0.1°] */
                      (int)tel_vl, (int)tel_vr,     /* 휠 속도 [cm/s, 부호=명령방향] */
                      (unsigned)tel_st,             /* 0~6 DriveState / 7 MANUAL */
-                     (unsigned)fl);
+                     (unsigned)fl,                 /* 플래그: b0 f_valid b1 side_valid b2 imu_live b3 power b4 mode */
+                     (int)tel_steer);              /* [추가] 조향 출력 [%duty] — 프레임 末 append (기존 idx0~9 불변, 앱 파서 하위호환) */
     if (n <= 0 || n >= (int)sizeof fb) return;
 
     /* USART1 ISR(RxCplt 재무장 Receive_IT)과 HAL 락 충돌 방지: 짧은 임계구역으로 배타.
@@ -601,6 +603,7 @@ void StartDefaultTask(void *argument)
       tel_vl = (int16_t)((motor_dir_left  < 0) ? -(vl + 0.5f) : (vl + 0.5f));
       tel_vr = (int16_t)((motor_dir_right < 0) ? -(vr + 0.5f) : (vr + 0.5f));
       tel_st = (sys_power == 0U || sys_mode == 1U) ? 7U : dbg.state;   /* 7 = MANUAL/IDLE */
+      tel_steer = (int16_t)((dbg.steer >= 0.0f) ? (dbg.steer + 0.5f) : (dbg.steer - 0.5f));  /* st와 같은 프레임 스냅샷(테어링 방지) */
     }
     dbg.hw_motor = (uint32_t)uxTaskGetStackHighWaterMark(NULL);
   }
