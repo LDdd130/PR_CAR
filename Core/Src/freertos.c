@@ -84,8 +84,7 @@
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
 
-/* SensorTask → MotorTask 단방향 메일박스 (DriveInputs 값 복사 — 공유변수/뮤텍스 불요).
- * depth 2: full 메시지 + 선제제동 early 메시지 공존용 */
+/* SensorTask → MotorTask value queue. Depth 2 allows a full frame and one danger event. */
 static osMessageQueueId_t driveQ = NULL;
 
 /* ---- 디버그 미러: debug.h의 DebugMonitor_t dbg로 통합 (정의는 drive.c 1곳). 접근 dbg.<member> ---- */
@@ -98,11 +97,9 @@ volatile int8_t  manual_left  = 0;  /* 수동 좌 듀티 [-100..100] (+전진 / 
 volatile int8_t  manual_right = 0;  /* 수동 우 듀티 */
 volatile uint8_t bt_rx_byte   = 0;  /* USART1 1바이트 IT 수신 버퍼 (RxCpltCallback → uartQ) */
 
-/* ---- 측면 ToF 공개 미러 (SensorTask 단일 writer, 16-bit 정렬 쓰기 = M4 원자적 → 뮤텍스 불요).
- * mm 단위, TOF_CAP_MM 상한. MotorTask 등 타 모듈은 main.h extern으로 읽기 전용 사용 */
-volatile uint16_t dist_left  = TOF_CAP_MM;
-volatile uint16_t dist_right = TOF_CAP_MM;
-volatile int16_t  wall_error = 0;   /* dist_left - dist_right [mm]: +면 좌측이 더 트임 */
+/* SensorTask writes; BluetoothTask reads for telemetry. */
+static volatile uint16_t dist_left  = TOF_CAP_MM;
+static volatile uint16_t dist_right = TOF_CAP_MM;
 
 /* ---- 텔레메트리 미러 (아키텍처 §2.4 D3/D4 — 필드별 단일 작성자 volatile, 뮤텍스 0 유지) ----
  * 16-bit 정렬 store = M4 원자. 표시용이라 필드 간 ≤1사이클 시차 허용 → 락프리 */
@@ -202,6 +199,7 @@ static void tof_record_side(VL53L0X *dev,
                             uint8_t alive,
                             uint16_t hist[SIDE_MED_WIN],
                             uint8_t *miss,
+                            uint8_t *has_sample,
                             uint32_t *t_fresh,
                             volatile uint16_t *out_mm,
                             uint32_t now)
@@ -209,7 +207,7 @@ static void tof_record_side(VL53L0X *dev,
     if (!alive)
     {
         *out_mm = TOF_CAP_MM;
-        for (int i = 0; i < SIDE_MED_WIN; i++) hist[i] = ULTRA_MAX_CM;
+        for (uint8_t i = 0U; i < SIDE_MED_WIN; i++) hist[i] = ULTRA_MAX_CM;
         return;
     }
 
@@ -218,6 +216,7 @@ static void tof_record_side(VL53L0X *dev,
     if (st > 0)
     {
         *miss = 0U;
+        *has_sample = 1U;
         *t_fresh = now;
         if (mm > TOF_CAP_MM) mm = TOF_CAP_MM;           /* ceiling: out-of-range(8190) 지터 캡 */
         *out_mm = mm;
@@ -232,26 +231,26 @@ static void tof_record_side(VL53L0X *dev,
         if (*miss < 255U && ++(*miss) >= SIDE_FAIL_LIMIT)
         {
             *out_mm = TOF_CAP_MM;
-            for (int i = 0; i < SIDE_MED_WIN; i++) hist[i] = ULTRA_MAX_CM;
+            for (uint8_t i = 0U; i < SIDE_MED_WIN; i++) hist[i] = ULTRA_MAX_CM;
         }
     }
     else if ((now - *t_fresh) > TOF_STALE_MS)
     {
         *out_mm = TOF_CAP_MM;
-        for (int i = 0; i < SIDE_MED_WIN; i++) hist[i] = ULTRA_MAX_CM;
+        for (uint8_t i = 0U; i < SIDE_MED_WIN; i++) hist[i] = ULTRA_MAX_CM;
     }
 }
 
 static void sensor_record_front(uint8_t valid,
                                 uint16_t cm,
-                                uint16_t hist[SIDE_MED_WIN],
+                                uint16_t hist[FRONT_MED_WIN],
                                 uint8_t *front_miss,
                                 uint16_t *front_filtered)
 {
     if (valid)
     {
         *front_miss = 0U;
-        for (int i = SIDE_MED_WIN - 1; i > 0; i--) hist[i] = hist[i - 1];
+        for (int i = FRONT_MED_WIN - 1; i > 0; i--) hist[i] = hist[i - 1];
         hist[0] = cm;
     }
     else if (*front_miss < 255U)
@@ -259,7 +258,7 @@ static void sensor_record_front(uint8_t valid,
         (*front_miss)++;
         if (*front_miss >= FRONT_FAIL_LIMIT)
         {
-            for (int i = 0; i < SIDE_MED_WIN; i++) hist[i] = ULTRA_MAX_CM;
+            for (uint8_t i = 0U; i < FRONT_MED_WIN; i++) hist[i] = ULTRA_MAX_CM;
         }
     }
 
@@ -267,30 +266,30 @@ static void sensor_record_front(uint8_t valid,
     dbg.front_miss = *front_miss;
 }
 
-static void sensor_put_front_early(uint16_t f,
-                                   uint16_t l,
-                                   uint16_t r,
-                                   uint16_t raw_cm,
-                                   uint8_t f_valid,
-                                   uint8_t front_miss,
-                                   float heading)
+/* Front-only frames are urgent brake events, not normal FSM samples. */
+static uint8_t sensor_put_front_danger_event(uint16_t f,
+                                             uint8_t f_valid,
+                                             uint8_t front_miss,
+                                             float heading)
 {
-    uint16_t f_early = (f_valid && raw_cm < FRONT_STOP_CM) ? raw_cm : f;
-
-    if (f_early < FRONT_TURN_CM)
+    if (f_valid && f < FRONT_DANGER_CM)
     {
         DriveInputs early;
-        early.f          = f_early;
-        early.l          = l;            /* 직전 사이클 필터값 — side_valid=0이므로 측면 판단에는 사용 금지 */
-        early.r          = r;
+        early.f          = f;
+        early.l          = ULTRA_MAX_CM;
+        early.r          = ULTRA_MAX_CM;
         early.f_valid    = f_valid;
         early.side_valid = 0U;
+        early.left_valid = 0U;
+        early.right_valid = 0U;
         early.front_miss = front_miss;
         early.heading    = heading;
-        early.imu_live   = 0U;           /* 이번 루프 IMU 샘플 전이므로 stale heading 사용 금지 */
+        early.imu_live   = 0U;
         early.now        = HAL_GetTick();
-        if (osMessageQueuePut(driveQ, &early, 0U, 0U) != osOK) { dbg.q_drop++; }
+        if (osMessageQueuePut(driveQ, &early, 0U, 0U) == osOK) return 1U;
+        dbg.q_drop++;
     }
+    return 0U;
 }
 
 /* ---- BNO055 heading 180° 재영점 (SensorTask 단독 소유 — 뮤텍스 불요) ----
@@ -568,8 +567,7 @@ void StartDefaultTask(void *argument)
       }
       else if (sys_mode == 1)
       {
-        Motor_Left(manual_left);       /* 수동: 앱 듀티 직접 인가 (음수=후진) */
-        Motor_Right(manual_right);
+        Motor_SetWheels(manual_left, manual_right);  /* 수동: 앱 듀티 직접 인가 (음수=후진) */
         prev_auto = 0;
       }
       else                             /* sys_power==1 && sys_mode==0 → 자율주행 */
@@ -628,19 +626,20 @@ void StartTask02(void *argument)
   for(;;) osDelay(1000);
 #else
   /* 측정/필터 상태 (구 main.c 슈퍼루프에서 이동) — 제어 상태머신은 drive.c(MotorTask 문맥).
-   * hist 윈도 = SIDE_MED_WIN(drive.h): median 샘플수 = '한번씩 튀는 값' 제거 강도 노브.
-   * 측면은 ToF로 이관됐지만 median3 필터 계층은 유지 — 유리/저반사 표면의 단발 outlier 방어 */
-  static uint16_t hist_f[SIDE_MED_WIN];
+   * 정면/측면 median 윈도는 독립 노브다. 측면 ToF에도 단발 outlier 방어 계층을 유지한다. */
+  static uint16_t hist_f[FRONT_MED_WIN];
   static uint16_t hist_l[SIDE_MED_WIN];
   static uint16_t hist_r[SIDE_MED_WIN];
-  for (int i = 0; i < SIDE_MED_WIN; i++)
-  {
+  for (uint8_t i = 0U; i < FRONT_MED_WIN; i++)
       hist_f[i] = ULTRA_MAX_CM;
+  for (uint8_t i = 0U; i < SIDE_MED_WIN; i++)
+  {
       hist_l[i] = ULTRA_MAX_CM;
       hist_r[i] = ULTRA_MAX_CM;
   }
   static uint8_t  front_miss = 0;   /* 정면 에코 연속 미회신 (stale front 제거 및 전 센서 상실 판정 입력) */
   static uint8_t  tof_miss[2]  = {0, 0};   /* 좌/우 ToF I2C 에러 연속 카운트 (SIDE_FAIL_LIMIT 만료) */
+  static uint8_t  tof_has_sample[2] = {0U, 0U};  /* 좌/우 PollRangeMM 성공 샘플 수신 여부 */
   static uint32_t tof_fresh[2] = {0, 0};   /* 좌/우 마지막 새 샘플 시각 (TOF_STALE_MS 정체 만료) */
   static uint8_t  imu_live = 0;     /* IMU 생존 게이트 */
   static uint8_t  imu_fail = 0;     /* 읽기 연속 실패 카운트 */
@@ -667,30 +666,27 @@ void StartTask02(void *argument)
       t_loop = now;
 
       uint8_t front_cycle_valid = 0U;
+      uint8_t danger_event_sent = 0U;
 
-      /* 1) 정면 측정 → 필터 → 근접 시 'early' 메시지로 선제 반응(전방 제동 반응 앞당김).
-       *    [req1] 관심사 분리: 센서는 제어기 상태(DS_*)를 모름 — f<FRONT_TURN_CM이면 상태 무관 우선 메시지 전송.
-       *    side_valid=0으로 표시해 drive.c가 stale l/r로 코너/측면 판단을 하지 않게 한다. MotorTask 고prio라 put 즉시 선점.
-       *    모터 명령 발행자는 MotorTask 하나로 유지 */
+      /* Front is sampled twice around the left ToF poll for low brake latency. */
       v_front = Ultra_Measure(MEAS_WAIT_MS, &d_front);           /* front (TRIG PA5, ECHO TIM3_CH1) */
       front_cycle_valid |= v_front;
       sensor_record_front(v_front, d_front, hist_f, &front_miss, &f);
-      sensor_put_front_early(f, l, r, d_front, v_front, front_miss, imu.heading);
-
-      /* 2) 측면 ToF 폴링(논블로킹) — front-left-front-right 순서 유지: 정면을 중간에 재확인해서
-       *    고속 코너/장애물 반응을 앞당긴다. ToF는 연속측정 자율 진행이라 폴링 비용 = I2C 2~3 트랜잭션뿐 */
-      tof_record_side(&tof_left, tof_left_ok, hist_l, &tof_miss[0], &tof_fresh[0], &dist_left, now);
-
-      v_front = Ultra_Measure(MEAS_WAIT_MS, &d_front);           /* front 재확인 */
+      danger_event_sent = sensor_put_front_danger_event(f, v_front, front_miss, imu.heading);
+      /* Poll each continuously ranging ToF around the second front sample. */
+      tof_record_side(&tof_left, tof_left_ok, hist_l, &tof_miss[0], &tof_has_sample[0],
+                      &tof_fresh[0], &dist_left, now);
+      v_front = Ultra_Measure(MEAS_WAIT_MS, &d_front);
       front_cycle_valid |= v_front;
       sensor_record_front(v_front, d_front, hist_f, &front_miss, &f);
-      sensor_put_front_early(f, l, r, d_front, v_front, front_miss, imu.heading);
+      if (!danger_event_sent)
+          (void)sensor_put_front_danger_event(f, v_front, front_miss, imu.heading);
 
-      tof_record_side(&tof_right, tof_right_ok, hist_r, &tof_miss[1], &tof_fresh[1], &dist_right, now);
+      tof_record_side(&tof_right, tof_right_ok, hist_r, &tof_miss[1], &tof_has_sample[1],
+                      &tof_fresh[1], &dist_right, now);
 
       l = median_n(hist_l, SIDE_MED_WIN);   /* 측면 median 필터 계층 유지 (단발 outlier 방어) */
       r = median_n(hist_r, SIDE_MED_WIN);
-      wall_error = (int16_t)((int32_t)dist_left - (int32_t)dist_right);   /* [mm] +=좌측이 더 트임 */
       dbg.front = f; dbg.left = l; dbg.right = r;
 
       /* 3) IMU 샘플 (생존 게이트): 정상 시 매 사이클 heading 갱신. 연속 IMU_FAIL_LIMIT회 실패 →
@@ -735,15 +731,25 @@ void StartTask02(void *argument)
       }
       dbg.imu_live = imu_ctrl_live;
 
+      uint32_t frame_now = HAL_GetTick();
+      uint8_t left_valid = (uint8_t)(tof_left_ok
+                                  && tof_has_sample[0]
+                                  && tof_miss[0] < SIDE_FAIL_LIMIT
+                                  && (frame_now - tof_fresh[0]) <= TOF_STALE_MS);
+      uint8_t right_valid = (uint8_t)(tof_right_ok
+                                   && tof_has_sample[1]
+                                   && tof_miss[1] < SIDE_FAIL_LIMIT
+                                   && (frame_now - tof_fresh[1]) <= TOF_STALE_MS);
+
       /* 3.5) 텔레메트리 센서 미러 (아키텍처 D4 — 본 태스크 단일 작성자).
-       *      heading은 ×10 정수화(float printf 회피). side_valid는 ToF 양측 기동 성공 여부 —
-       *      실패 센서는 값이 MAX 캡으로 고정되므로 대시보드에 '측면 무효'로 알린다 */
+       *      heading은 ×10 정수화(float printf 회피). side_valid는 양쪽 ToF가 실제 샘플을
+       *      수신했고 오류 한도와 stale 기한 안에 있을 때만 표시한다. */
       {
           uint16_t hx = (uint16_t)((imu.heading * 10.0f) + 0.5f);
           if (hx >= 3600U) hx = (uint16_t)(hx - 3600U);
           tel_h_x10  = hx;
           tel_sflags = (uint8_t)((front_cycle_valid ? 0x01U : 0U)
-                               | ((tof_left_ok && tof_right_ok) ? 0x02U : 0U)
+                               | ((left_valid && right_valid) ? 0x02U : 0U)
                                | (imu_ctrl_live ? 0x04U : 0U));
       }
 
@@ -753,11 +759,13 @@ void StartTask02(void *argument)
       din.l          = l;
       din.r          = r;
       din.f_valid    = front_cycle_valid;
-      din.side_valid = 1U;
+      din.side_valid = 1U;           /* full-frame marker; per-channel validity is below */
+      din.left_valid = left_valid;
+      din.right_valid = right_valid;
       din.front_miss = front_miss;
       din.heading    = imu.heading;   /* imu_ctrl_live=0이면 drive.c가 무시(거리-only 강등) */
       din.imu_live   = imu_ctrl_live;
-      din.now        = HAL_GetTick();
+      din.now        = frame_now;
       if (osMessageQueuePut(driveQ, &din, 0U, 0U) != osOK) { dbg.q_drop++; }
 
       dbg.hw_sensor = (uint32_t)uxTaskGetStackHighWaterMark(NULL);

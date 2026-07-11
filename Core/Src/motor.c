@@ -2,156 +2,218 @@
 /**
   ******************************************************************************
   * @file    motor.c
-  * @brief   L298N 모터 드라이버 제어 구현
+  * @brief   L298N differential-drive motor implementation
   ******************************************************************************
   */
 /* USER CODE END Header */
 
-/* Includes ------------------------------------------------------------------*/
 #include "motor.h"
-#include "tim.h"   /* htim4 */
+#include "tim.h"   /* HAL GPIO definitions, htim4, and PWM channels */
 
-/* TIM4 ARR = 999 → 한 주기 = 1000 카운트. 듀티 0~100% → CCR 0~1000 */
-#define MOTOR_CCR_FULL   1000U
+#define MOTOR_MAX_PCT 100
 
-/* 단채널 엔코더(SG-207) 방향 보완: 최근 0이 아닌 구동 명령의 부호 (+1 전진 / -1 후진).
- * 포토인터럽터는 방향 정보가 없어(쿼드러처 아님) 속도 부호는 명령 방향을 채택 — 아키텍처 §3.2.
- * 작성자: Motor_Left/Right 호출 문맥(MotorTask + 폴트 핸들러 Stop뿐) — 사실상 단일 작성자 */
+enum
+{
+    MOTOR_LEFT = 0,
+    MOTOR_RIGHT,
+    MOTOR_COUNT
+};
+
 volatile int8_t motor_dir_left  = 1;
 volatile int8_t motor_dir_right = 1;
 
-/* 퍼센트(0~100) → CCR(0~1000) 변환 (범위 초과 시 클램프) */
-static uint16_t pct_to_ccr(uint8_t pct)
+typedef struct
 {
-    if (pct > 100U)
-    {
-        pct = 100U;
+    GPIO_TypeDef *forward_port;
+    uint16_t forward_pin;
+    GPIO_TypeDef *reverse_port;
+    uint16_t reverse_pin;
+    uint32_t pwm_channel;
+    volatile int8_t *encoder_dir;
+    int16_t target_pct;
+    int8_t applied_dir;
+    uint8_t neutral_pending;
+    uint8_t neutral_started;
+    uint32_t neutral_since_ms;
+} MotorChannel;
+
+/* Right: ENA=TIM4_CH1, IN1/IN2. Left: ENB=TIM4_CH2, IN4/IN3. */
+static MotorChannel channels[MOTOR_COUNT] =
+{
+    [MOTOR_LEFT] = {
+        Input4_GPIO_Port, Input4_Pin,
+        Input3_GPIO_Port, Input3_Pin,
+        TIM_CHANNEL_2, &motor_dir_left, 0, 0, 0U, 0U, 0U
+    },
+    [MOTOR_RIGHT] = {
+        Input1_GPIO_Port, Input1_Pin,
+        Input2_GPIO_Port, Input2_Pin,
+        TIM_CHANNEL_1, &motor_dir_right, 0, 0, 0U, 0U, 0U
     }
-    return (uint16_t)pct * 10U;
+};
+
+static int16_t clamp_pct(int16_t pct)
+{
+    if (pct > MOTOR_MAX_PCT) return MOTOR_MAX_PCT;
+    if (pct < -MOTOR_MAX_PCT) return -MOTOR_MAX_PCT;
+    return pct;
 }
 
-/* 속도 %(0~100) 클램프 후 부호 있는 크기로. uint8_t→int8_t 직접 캐스팅 시
- * 100 초과 값(예: 200)이 음수로 뒤집혀 방향이 반대로 가는 버그 방지. */
-static int8_t clamp_speed(uint8_t pct)
+static uint32_t pct_to_ccr(uint16_t pct)
 {
-    if (pct > 100U)
-    {
-        pct = 100U;
-    }
-    return (int8_t)pct;
+    uint32_t period = __HAL_TIM_GET_AUTORELOAD(&htim4) + 1U;
+    return (period * (uint32_t)pct) / 100U;
 }
 
-/* 좌측 모터: 전진 IN4=1/IN3=0, 후진 IN4=0/IN3=1, 속도 = ENB = TIM4_CH2.
- * speed=0 → 양 IN low + PWM 0 으로 완전 정지(궤도식 회전 시 안쪽 바퀴 정지용) */
+static void channel_neutral(MotorChannel *channel)
+{
+    __HAL_TIM_SET_COMPARE(&htim4, channel->pwm_channel, 0U);
+    HAL_GPIO_WritePin(channel->forward_port, channel->forward_pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(channel->reverse_port, channel->reverse_pin, GPIO_PIN_RESET);
+    channel->applied_dir = 0;
+}
+
+static void channel_apply(MotorChannel *channel)
+{
+    int16_t command = channel->target_pct;
+    int8_t requested_dir = (command > 0) ? 1 : ((command < 0) ? -1 : 0);
+    uint32_t now = HAL_GetTick();
+
+    if (requested_dir == 0)
+    {
+        channel_neutral(channel);
+        if (channel->neutral_pending && !channel->neutral_started)
+        {
+            channel->neutral_started = 1U;
+            channel->neutral_since_ms = now;
+        }
+        return;
+    }
+
+    if (channel->neutral_pending)
+    {
+        if (!channel->neutral_started)
+        {
+            channel_neutral(channel);
+            channel->neutral_started = 1U;
+            channel->neutral_since_ms = now;
+            return;
+        }
+        if ((now - channel->neutral_since_ms) < 1U)
+        {
+            channel_neutral(channel);
+            return;
+        }
+        channel->neutral_pending = 0U;
+        channel->neutral_started = 0U;
+    }
+
+    /* A sign change starts a timed neutral interval before the new direction. */
+    if (channel->applied_dir != 0 && requested_dir != channel->applied_dir)
+    {
+        channel_neutral(channel);
+        channel->neutral_pending = 1U;
+        channel->neutral_started = 1U;
+        channel->neutral_since_ms = now;
+        return;
+    }
+
+    if (channel->applied_dir != requested_dir)
+    {
+        /* Also removes a preceding brake duty before enabling a direction. */
+        channel_neutral(channel);
+        HAL_GPIO_WritePin(channel->forward_port, channel->forward_pin,
+                          (requested_dir > 0) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(channel->reverse_port, channel->reverse_pin,
+                          (requested_dir < 0) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    }
+
+    uint16_t magnitude = (uint16_t)((command > 0) ? command : -command);
+    __HAL_TIM_SET_COMPARE(&htim4, channel->pwm_channel, pct_to_ccr(magnitude));
+    channel->applied_dir = requested_dir;
+    *channel->encoder_dir = requested_dir;
+}
+
+static void channel_set(MotorChannel *channel, int16_t pct)
+{
+    channel->target_pct = clamp_pct(pct);
+    channel_apply(channel);
+}
+
+void Motor_SetWheels(int16_t left_pct, int16_t right_pct)
+{
+    channels[MOTOR_LEFT].target_pct = clamp_pct(left_pct);
+    channels[MOTOR_RIGHT].target_pct = clamp_pct(right_pct);
+    channel_apply(&channels[MOTOR_LEFT]);
+    channel_apply(&channels[MOTOR_RIGHT]);
+}
+
 void Motor_Left(int8_t speed)
 {
-    if (speed == 0)
-    {
-        HAL_GPIO_WritePin(Input3_GPIO_Port, Input3_Pin, GPIO_PIN_RESET);
-        HAL_GPIO_WritePin(Input4_GPIO_Port, Input4_Pin, GPIO_PIN_RESET);
-        __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_2, 0);
-        return;
-    }
-    uint8_t forward = (speed > 0);
-    uint8_t mag = forward ? (uint8_t)speed : (uint8_t)(-speed);
-    motor_dir_left = forward ? 1 : -1;   /* 엔코더 속도 부호용 최근 방향 래치 */
-
-    HAL_GPIO_WritePin(Input4_GPIO_Port, Input4_Pin, forward ? GPIO_PIN_SET : GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(Input3_GPIO_Port, Input3_Pin, forward ? GPIO_PIN_RESET : GPIO_PIN_SET);
-    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_2, pct_to_ccr(mag));
+    channel_set(&channels[MOTOR_LEFT], (int16_t)speed);
 }
 
-/* 우측 모터: 전진 IN1=1/IN2=0, 후진 IN1=0/IN2=1, 속도 = ENA = TIM4_CH1.
- * speed=0 → 양 IN low + PWM 0 으로 완전 정지 */
 void Motor_Right(int8_t speed)
 {
-    if (speed == 0)
-    {
-        HAL_GPIO_WritePin(Input1_GPIO_Port, Input1_Pin, GPIO_PIN_RESET);
-        HAL_GPIO_WritePin(Input2_GPIO_Port, Input2_Pin, GPIO_PIN_RESET);
-        __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, 0);
-        return;
-    }
-    uint8_t forward = (speed > 0);
-    uint8_t mag = forward ? (uint8_t)speed : (uint8_t)(-speed);
-    motor_dir_right = forward ? 1 : -1;   /* 엔코더 속도 부호용 최근 방향 래치 */
-
-    HAL_GPIO_WritePin(Input1_GPIO_Port, Input1_Pin, forward ? GPIO_PIN_SET : GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(Input2_GPIO_Port, Input2_Pin, forward ? GPIO_PIN_RESET : GPIO_PIN_SET);
-    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, pct_to_ccr(mag));
+    channel_set(&channels[MOTOR_RIGHT], (int16_t)speed);
 }
 
 void Motor_Init(void)
 {
-    HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);   /* ENA (우측) */
-    HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);   /* ENB (좌측) */
+    (void)HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
+    (void)HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
     Car_Stop();
 }
 
 void Car_Forward(uint8_t speed)
 {
-    int8_t s = clamp_speed(speed);
-    Motor_Left(s);
-    Motor_Right(s);
+    int16_t command = clamp_pct((int16_t)speed);
+    Motor_SetWheels(command, command);
 }
 
 void Car_Backward(uint8_t speed)
 {
-    int8_t s = clamp_speed(speed);
-    Motor_Left(-s);
-    Motor_Right(-s);
+    int16_t command = clamp_pct((int16_t)speed);
+    Motor_SetWheels(-command, -command);
 }
 
-/* 좌회전(궤도식, 마찰 보정): 우(바깥) 전진 outer + 좌(안쪽) 후진 inner → 제자리 선회(CCW)
- * inner=0 → 안쪽 정지(마찰로 안 돌 수 있음), inner 소량 → 깔끔한 선회, inner=outer → 풀 스핀 */
 void Car_PivotLeft(uint8_t outer, uint8_t inner)
 {
-    Motor_Left(-clamp_speed(inner));   /* 좌(안쪽) 후진 → IN3 */
-    Motor_Right(clamp_speed(outer));   /* 우(바깥) 전진 → IN1 */
+    Motor_SetWheels(-clamp_pct((int16_t)inner), clamp_pct((int16_t)outer));
 }
 
-/* 우회전(궤도식): 좌(바깥) 전진 outer + 우(안쪽) 후진 inner → 제자리 선회(CW) */
 void Car_PivotRight(uint8_t outer, uint8_t inner)
 {
-    Motor_Left(clamp_speed(outer));    /* 좌(바깥) 전진 → IN4 */
-    Motor_Right(-clamp_speed(inner));  /* 우(안쪽) 후진 → IN2 */
+    Motor_SetWheels(clamp_pct((int16_t)outer), -clamp_pct((int16_t)inner));
 }
 
-/* 부드러운 좌선회: 좌(안쪽)=inner, 우(바깥)=outer, 둘 다 전진 → 큰 반경으로 완만하게 좌회전 */
 void Car_ArcLeft(uint8_t outer, uint8_t inner)
 {
-    Motor_Left(clamp_speed(inner));
-    Motor_Right(clamp_speed(outer));
+    Motor_SetWheels(clamp_pct((int16_t)inner), clamp_pct((int16_t)outer));
 }
 
-/* 부드러운 우선회: 좌(바깥)=outer, 우(안쪽)=inner */
 void Car_ArcRight(uint8_t outer, uint8_t inner)
 {
-    Motor_Left(clamp_speed(outer));
-    Motor_Right(clamp_speed(inner));
+    Motor_SetWheels(clamp_pct((int16_t)outer), clamp_pct((int16_t)inner));
 }
 
 void Car_Stop(void)
 {
-    /* 핀별 포트 매크로 사용 (GPIOB 하드코딩 → 핀 이동 시 일부만 깨지는 문제 방지) */
-    HAL_GPIO_WritePin(Input1_GPIO_Port, Input1_Pin, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(Input2_GPIO_Port, Input2_Pin, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(Input3_GPIO_Port, Input3_Pin, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(Input4_GPIO_Port, Input4_Pin, GPIO_PIN_RESET);
-    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, 0);
-    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_2, 0);
+    Motor_SetWheels(0, 0);
 }
 
-/* 능동 제동 (L298N short-brake): EN=H + IN1==IN2 → 모터 양단 단락 → 역기전력이 제동전류로.
- * 제동토크는 속도에 비례(자기제한)라 배터리 전압과 무관하게 동일 시간으로 동작 — 역펄스 제동의
- * 과제동/기어 백래시 문제 없음. 순서 중요: IN을 먼저 전부 LOW로 내린 *뒤* PWM을 올려야
- * 순간 전진 구동이 생기지 않음. 코스트가 필요하면 Car_Stop() 사용(폴트 핸들러는 Stop 유지). */
 void Car_Brake(void)
 {
-    HAL_GPIO_WritePin(Input1_GPIO_Port, Input1_Pin, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(Input2_GPIO_Port, Input2_Pin, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(Input3_GPIO_Port, Input3_Pin, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(Input4_GPIO_Port, Input4_Pin, GPIO_PIN_RESET);
-    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, MOTOR_CCR_FULL);
-    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_2, MOTOR_CCR_FULL);
+    uint32_t full_duty = __HAL_TIM_GET_AUTORELOAD(&htim4) + 1U;
+
+    channels[MOTOR_LEFT].target_pct = 0;
+    channels[MOTOR_RIGHT].target_pct = 0;
+    channel_neutral(&channels[MOTOR_LEFT]);
+    channel_neutral(&channels[MOTOR_RIGHT]);
+    __HAL_TIM_SET_COMPARE(&htim4, channels[MOTOR_LEFT].pwm_channel, full_duty);
+    __HAL_TIM_SET_COMPARE(&htim4, channels[MOTOR_RIGHT].pwm_channel, full_duty);
+    channels[MOTOR_LEFT].neutral_pending = 1U;
+    channels[MOTOR_RIGHT].neutral_pending = 1U;
+    channels[MOTOR_LEFT].neutral_started = 0U;
+    channels[MOTOR_RIGHT].neutral_started = 0U;
 }
