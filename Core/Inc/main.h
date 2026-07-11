@@ -54,12 +54,6 @@ void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
 
-/* 측면 ToF(VL53L0X) 공개 미러 — 정의는 freertos.c (SensorTask 단일 writer).
- * mm 단위, 1000mm 상한 캡. 16-bit 정렬 접근 = Cortex-M4 원자적 → 락 없이 읽기 안전 */
-extern volatile uint16_t dist_left;
-extern volatile uint16_t dist_right;
-extern volatile int16_t  wall_error;   /* dist_left - dist_right [mm]: +면 좌측이 더 트임 */
-
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/

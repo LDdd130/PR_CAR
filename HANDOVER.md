@@ -1,432 +1,248 @@
-# PR_CAR 인수인계 문서
+# PR_CAR 인수인계 (HANDOVER)
 
-작성: 2026-07-08 (IMG_2999 분석 반영)
-기준 영상: `IMG_2999.mov` (34.10s 완주, 목표 20s)
-현재 코드 상태: **헤딩 단독 조향(DRIVE_HEADING_PRIMARY=1)** 아키텍처 + IMG_2999 튜닝 패스 적용. `make` 성공(경고 0). 이 수정본 실차 재주행 미실시.
-
-## 0-2. 2026-07-08 세션 요약 (헤딩 단독 조향 전환 + IMG_2999 분석)
-
-이 세션에서 조향 아키텍처를 **헤딩 단독(heading-primary)** 으로 전환했다. 과거의 벽 등거리 P/D 센터링을 주 조향에서 빼고, BNO055 heading-hold를 주 조향으로, 벽 센서는 ①코너 판별 ②안전(근접가드/비상회피/제동) ③속도캡 ④부드러운 센터링 보조로 강등했다.
-
-핵심 변경 (drive.h `DRIVE_HEADING_PRIMARY 1`):
-- **헤딩 = 시작 자세 180° 재영점**(freertos.c `Sensor_ReadHeading`) → h_ref는 45° 그리드축(course_grid_snap).
-- **CRUISE 조향 = heading-hold PI**(`KP_HDG 0.82` + `CENTER_HDG_KI 0.8` I항, deadband 0.8°, `KD_YAW 0.36` 댐핑).
-- **폭 인지형 부드러운 센터링 바이어스**(heading 위에 얹음): 좁은레그(37/43/45cm)는 센터링 主(`CENTER_NARROW_BIAS_KP 0.30`, DB 2.0cm, D `CENTER_BIAS_KD 0.028`), 넓은/중간레그는 헤딩 主(`CENTER_STRAIGHT_BIAS_KP 0.20`, DB 5cm). → 좁은길 벽박기 방어 + 긴직선 weaving 억제.
-- IMU 사망 프레임은 자동으로 레거시 벽 센터링으로 강등(주행 무중단).
-
-### IMG_2999.mov 관찰 (34.10s, 480x854, 29fps)
-
-- t≈6~12s **긴 직선(43cm, 1.6m를 6초 = 0.27m/s)**: 좌우 큰 weaving(왼벽 붙었다 오른쪽 흐름 반복). 헤딩은 유지되나 좁은레그 센터링 P(당시 0.42)가 과보정→느린 리밋사이클.
-- 코너 전반: '굴러서'가 아니라 느려지며 제자리 회전에 가까움 — ARC_INNER(당시 21%)가 너무 느림 + 목표각 근접 감속(approach)이 출구를 크롤로.
-- 전반적으로 느림(34s) — base 66% + 과보수 속도캡.
-
-### IMG_2999 대응 튜닝 (이번 패스)
-
-1. **긴직선 weaving 억제**: `CENTER_NARROW_BIAS_KP 0.42→0.30`, `CENTER_NARROW_BIAS_DB_CM 1.5→2.0`, `CENTER_BIAS_KD 0.010→0.028`(예측 감쇠).
-2. **부드러운 롤 코너**(멈추고 턴 → 굴러서 턴): `ARC_OUTER 50→60`, `ARC_INNER 21→25`(반경 R≈17cm 유지, 평균속 +20%), `ARC_APPROACH_OUTER 36→48`, `ARC_APPROACH_INNER 16→20`, `ARC_APPROACH_DEG 34→26`(출구 크롤 완화), `FRONT_ARC_CM 52→56`(진입 앞당김).
-3. **20초 목표 속도**: `CENTER_BASE_SPEED_PCT 66→74`, `STRAIGHT_FAST 70→84`, `NARROW_FAST 66→74`, `WIDE_FAST 70→88`(fast는 정렬 시만 발동하는 게이트라 안전), settle 속도캡 상향(44→54/48→58/52→64) + `CENTER_SETTLE_MS 220→150`.
-
-### 다음 세션 확인 포인트 (새 영상)
-
-1. 긴 직선(6~12s 구간)에서 좌우 weaving이 줄었는가? (아직 심하면 `CENTER_NARROW_BIAS_KP` 0.30→0.24 또는 `CENTER_BIAS_KD` 0.028→0.038)
-2. 코너가 멈춤 없이 굴러서 통과하는가? (아직 크롤이면 `ARC_APPROACH_DEG` 26→20, 벽 밀면 `ARC_OUTER/INNER` 하향으로 반경 축소)
-3. 완주 시간이 34s → 목표 20s에 가까워졌는가? (안정적이면 base/fast 추가 상향)
-4. 좁은길에서 벽박기 재발? (→ `CENTER_NARROW_BIAS_KP` 0.30→0.36)
+> STM32F411 + FreeRTOS 차동구동 벽추종 자율주행 RC카.
+> 최종 갱신: **2026-07-11 (7차)** — 기존 리팩터링/Claude 수정 이력 + Codex의
+> IMG_3016/IMG_3018 분석 + 기준 YouTube 영상(18.93s) 비교 + 사용자 수동주행 센서 실측 반영.
+> 작성: Claude + Codex (영상 프레임, testtrack.drawio, 실측값, git diff, 실코드 대조).
+>
+> 표기: 코드로 검증 못 한 내용은 **[추정]**. 코드/diff 사실이 세션 대화보다 우선.
 
 ---
-## (이하 과거 이력: IMG_2986 45° 그리드 스냅 세션)
 
-작성: 2026-07-04 (IMG_2986 분석 반영)  
-기준 영상: `IMG_2986.mov` (30.895s 완주)  
-당시 코드 상태: IMG_2986에서 확인된 '직진 지그재그 + 45° 코너 과회전'의 구조 원인(heading 기준 오염)을 없애기 위해 **45° 코스 그리드 스냅** 아키텍처를 적용한 상태. (현재는 위 헤딩 단독 조향으로 재구성됨)
+## 0. TL;DR — 다음 에이전트가 알아야 할 것
 
-## 0. 새 세션에서 먼저 볼 것
+1. **아키텍처**: `drive.c`(FSM) / `drive_control.c`(CRUISE 조향·속도) / `drive_config.h`(모든 튜닝 노브)
+   / `drive_math.h`(유틸) / `motor.c`(`Motor_SetWheels` 단일 경로). 2026-07-10~11 Codex가 1,609줄
+   drive.c를 이렇게 분리했고, 이후 Claude/Codex가 실주행-기반 수정을 이어갔다 (§5).
+2. **현재 상태**: IMG_3018은 28.86s이고 코너가 2~4s씩 걸리며 마지막 벽을 오래 미는 문제가 있었음.
+   이를 고친 최신 Release는 **빌드만 검증, 실차 미검증** (§5.5~5.6). 목표는 무충돌 우선,
+   가능하면 testtrack.drawio를 20s 이내 완주.
+3. 빌드: `make -j4` → `build/PR_CAR.hex`. 검증 수단 = 실차 + BLE 대시보드(`st`/`steer` 필드) + SWD `dbg`.
+4. 이 문서의 §6(재발 방지 목록)과 §8(불변식)을 코드 수정 전에 반드시 읽을 것.
+5. 튜닝 철학: 무충돌 우선. 센서 실측 범위로 코너/직선을 먼저 분리하고, 그 다음 속도를 5~10%씩 조정.
+6. 작업 트리는 원래부터 대규모 dirty/untracked 상태다. **`git reset --hard`, `git clean` 금지.**
 
-- 최신 산출물: `build/PR_CAR.bin`
-- 최신 검증: `make -j4` 성공, RAM 22056B/128KB, FLASH 43276B/512KB
-- 다음 실제 작업: 최신 bin 플래시 후 새 영상 촬영. 예상 이름은 `IMG_2987.mov`.
-- 가장 중요한 확인 포인트:
-  - 긴 직선(1.6m)에서 좌→우→좌 지그재그가 사라졌는가? (h_ref가 이제 그리드축이라 사라져야 정상)
-  - 45R 코너 2개에서 과회전 없이 ~45°만 돌고 빠져나오는가? (grid exit A′)
-  - 마지막 구간(방지턱 이후)에서 큰 제자리 회전 없이 통과하는가?
-  - 완주 시간이 `IMG_2986`의 30.895초보다 줄어드는가?
+---
 
-새 AI/세션은 코드 질문을 받으면 먼저 `graphify query "<질문>"`로 맥락을 잡는다. 코드 수정 후에는 `graphify update .`를 실행해 그래프를 최신화한다.
+## 1. 시스템 개요
 
-## 1. 프로젝트 목표
+- MCU STM32F411(Cortex-M4) + FreeRTOS(CMSIS-OS2). IWDG 2.048s(큐 수신 성공 시에만 refresh).
+- 센서: HC-SR04 전방(TIM3 CH1 입력캡처, **에코 대기 6ms = 최대 ~1m**), VL53L0X 측면 ToF ×2
+  (I2C1, XSHUT 순차 기동으로 좌측 0x60 재배치, 버짓 20ms), BNO055 IMU(heading, 부팅 시 180° 재영점),
+  SG-207 휠 엔코더 ×2(TIM2 — **delay_us와 공유, CNT 리셋 금지**; 아직 제어 미사용, 텔레메트리 전용).
+- 액추에이터: L298N + TT모터 4륜 (TIM4 PWM ch1=우/ch2=좌). **직진 스톨 하한 실측 30% duty.
+  피벗(스키드 조향)은 돌파 듀티가 그보다 훨씬 높음** — 4바퀴 횡슬립.
+- 통신: HM-10 BLE(USART1 9600). 웹앱 `docs/monitor_web_app/index.html`.
+- 태스크: SensorTask(측정→`driveQ` full frame + 12cm 미만 front-only 비상 이벤트) →
+  MotorTask(`Drive_Update` 소비, IWDG refresh) / BluetoothTask(RX 명령 + TX 텔레메트리 10Hz).
+- 차체: 길이 27cm × 폭 16cm. 트랙(testtrack.drawio): 폭 37→45→43→(45°챔퍼×2, 55)→50→
+  **67(방지턱 구간)**→50→60cm, 출발→도착 편도.
 
-- STM32F411CEU6 + FreeRTOS 자율주행차.
-- 박스 코스 `testtrack.drawio`를 충돌 없이 빠르게 완주. 목표는 20초 이내.
-- 포트폴리오 핵심: PID 제어, BNO055 heading-hold, ToF/초음파 센서 융합, median 필터링.
-- 차량 크기: 길이 27cm, 폭 16cm.
+### 상태머신 (drive.c) — 텔레메트리 `st`와 1:1
+`DS_CRUISE(0) → DS_BRAKE(1) → DS_SPIN(2) / DS_REVERSE(3) / DS_HOLD(4) / DS_SIDE_AVOID(5) / DS_CORNER(6)`
+- 정상 코너 = `0→6→0` (전진 아크). 피벗(2)은 폴백. `0→1→2` 반복이면 코너 판정 문제.
+- front-only 프레임(side_valid=0)은 12cm 비상 제동 전용 — FSM 카운터 오염 금지 (§6-9).
 
-## 2. 하드웨어와 센서
+### CRUISE 조향 (drive_control.c) — 2단 캐스케이드
+- 외루프: 횡오차(l−r) P/D → 목표 heading 오프셋 (캡 ±`CENTER_LATERAL_CMD_MAX_DEG`=8°)
+- 내루프: heading 오차 → 차동 duty (`CENTER_HDG_KP_PCT_PER_DEG` 0.65) + yaw-rate 댐핑
+- **ref 무관 보조력**: 11cm 점진 벽 반발(양벽 시 센터링 스프링으로 합성) + 9cm 근접 가드
+- 속도: 폭/전방/측면/heading 오차 기반 캡 스케줄 + `mix_substall()` (§5.5)
 
-| 부품 | 연결 | 역할 |
+---
+
+## 2. 히스토리 요약 (2026-07-10 ~ 07-11)
+
+| 단계 | 내용 | 검증 |
 |---|---|---|
-| 전방 HC-SR04 | TRIG PA5, ECHO TIM3_CH1 PA6 | 직진/코너/정면 위험 판단 |
-| 좌측 VL53L0X ToF | I2C1 PB8/PB9, XSHUT PA1, 주소 0x60 | 좌측 벽 거리 |
-| 우측 VL53L0X ToF | I2C1 PB8/PB9, XSHUT PA2, 주소 0x52 | 우측 벽 거리 |
-| BNO055 | I2C1, INT PA0, RST PB1 | 차량 진행각 heading 유지 |
-| L298N 모터 | TIM4 PWM PB6/PB7, IN1~4 PB12~15 | 좌우 모터 제어 |
-| 블루투스 | USART1 PA9/PA10 | 수동/자율 명령 |
-| IWDG | 2.048s | MotorTask 큐 수신 성공 시 refresh |
+| Codex 리팩터링 | 모듈 분리, motor.c 재작성, 센서 유효성 체계, 안전 보완 다수 | 빌드만 |
+| Claude 1차 (§5.1) | IMG_3009: 제자리 왕복 회전 → 피벗 스톨 하한 + front 타임아웃 탈출 게이트 | 실주행 개선 확인 |
+| Claude 2차 (§5.1b) | 턴 힘 부족 → 피벗 듀티 스키드 돌파값으로 상향 (56/34, PID 44/40) | 실주행 "빠릿" 확인 |
+| Claude 3차 (§5.2) | IMG_3012: 포켓 헛돌기 → turn_progress 누적화 + 코스 게이트 예외 | 실주행 개선 확인 |
+| Claude 4차 (§5.3) | IMG_3013: 벽 접착 → 벽 반발 상시화 + sub-stall 반올림 수정 | 접착 해소, 지그재그 부작용 |
+| Claude 5차 (§5.4) | IMG_3014: 직선 지그재그 → `mix_substall` 요-보존 감속 믹싱 | 후속 Codex 수정으로 대체 |
+| Codex 6차 (§5.5) | IMG_3016/3018: 직선 필터·속도 완화, graze 안전 우회 제거, `56/0` 구조 아크 제거 | 빌드 통과, IMG_3018에서 구 수정 문제 확인 |
+| Codex 7차 (§5.6) | 수동 실측값 + drawio: 구간별 코너 기준, 마지막 대칭 코너 전용 우회전 폴백 | **최신, 실차 미검증** |
 
-현재 제어에서 BNO055는 차량 평면 진행각 `heading`을 사용한다. roll/pitch는 직진 판단에 쓰지 않는다.
+Codex 세션 원본: `C:\Users\user\CODEX_SESSION_{1,2,3}.jsonl` (1=메인, 2=제어 리뷰 서브에이전트,
+3=영상분석 서브에이전트). 상세 복원은 git 히스토리의 본 문서 이전 판 참조.
 
-## 3. 런타임 구조
+---
 
-- `Core/Src/freertos.c`
-  - `StartTask02`: SensorTask. 전방 초음파, 좌/우 ToF, BNO055를 읽고 `DriveInputs`를 큐로 보낸다.
-  - 현재 센서 순서: front 초음파 -> ToF 좌 -> front 재확인 -> ToF 우 -> median3 -> IMU -> 큐 전송.
-  - `StartDefaultTask`: MotorTask. 큐 수신 -> IWDG refresh -> `Drive_Update(&din)`.
-  - 모터 명령은 MotorTask만 발행한다.
+## 3. 파일 맵 + 튜닝 노브 위치
 
-- `Core/Src/drive.c`
-  - HAL/I2C 직접 접근 없음. `DriveInputs`와 `motor.h`만 사용.
-  - 상태머신: `CRUISE`, `BRAKE`, `SPIN`, `REVERSE`, `HOLD`, `SIDE_AVOID`, `CORNER`.
-  - `Drive_Update()`가 상태별 run 함수로 분기한다.
-  - `cruise_run()`이 정면/측면 조건을 보고 코너, 제동, 측면회피, 일반 센터링을 결정한다.
-  - `Drive_CenteringPD_Run()`이 직진/복도 센터링 조향과 속도 제한을 담당한다.
-  - `corner_run()`은 제자리 피벗이 아니라 전진성 아크 코너를 우선 사용한다.
+| 파일 | 역할 | 주요 노브 |
+|---|---|---|
+| `Core/Inc/drive_config.h` | **모든 튜닝 상수** + `#error` 불변식 가드 | 전부 |
+| `Core/Src/drive.c` | FSM, 회전 진행각 누적, front_open 판정 | (로직만) |
+| `Core/Src/drive_control.c` | CRUISE 캐스케이드 조향/속도/믹싱 | (로직만) |
+| `Core/Src/motor.c` | `Motor_SetWheels`, 방향 반전 중립, `Car_Brake` | — |
+| `Core/Src/freertos.c` | 3태스크, 센서 필터/유효성, BLE 프로토콜 | 프로토콜 상수 |
+| `Core/Src/ultra.c` | HC-SR04 측정 + `median_n` | — |
 
-- `Core/Inc/drive.h`
-  - 상태 전이 임계값, 코너 속도, heading gain, side avoid 등 공개 튜닝값.
+자주 만지는 노브 (전부 drive_config.h):
+- 피벗: `TURN_SPEED 56`, `TURN_INNER 34`, `TURN_PID_MIN_PCT 44`, `TURN_PID_FINE_MIN_PCT 40`
+- 코너 아크: `ARC_OUTER 72 / ARC_INNER 30`, 접근 `56/30`, 구조 피벗 `48/-32`, `ARC_MAX_MS 850`
+- 직진 속도: 기본/직선고속/좁은/넓은 = `60/64/60/68`, `CENTER_MIN_SPEED_PCT 36`
+- 벽 보호: `CENTER_SIDE_SOFT_CM 11 / HARD 8 / REPEL_KP 1.35`, `CENTER_NEAR_GUARD_CM 9 / KP 1.2`
+- 전방 안전거리: danger/abort/stop/turn/clear/arc = `12/16/34/44/52/68cm`
+- 코너 판정: 일반 open/asym-open/asym=`26/28/10cm`, 넓은 구간=`30/30/10cm`, 확인 2회
+- 마지막 대칭 코너: 좌우차 `<=6cm`, 전방 `<=34cm`, 시작축 대비 heading `+90+/-20deg`, 3회 확인 후 우회전
+- 직진 헤딩: lateral cmd cap `8deg`, heading deadband `1.8deg`, yaw deadband `6dps`, steer cap `18%`
 
-- `Core/Src/vl53l0x.c`
-  - VL53L0X 경량 드라이버. 타이밍버짓 20ms. 반환값 1=새 샘플, 0=아직, -1=에러.
+---
 
-## 4. 코스 정보
+## 4. 빌드·실행·검증
 
-`testtrack.drawio` 기준:
-
-출발 37cm -> 90R -> 45cm -> 90L -> 43cm 최장직선 1.6m -> 45R -> 55cm -> 45R -> 50cm -> 90L -> 50cm -> 90R 67cm 광폭 -> 90L -> 50cm+방지턱 -> 90R -> 60cm 도착.
-
-- 코너 8개, 전체 약 6.3m.
-- 최협 37cm에서 중앙 측면 여유는 `(37 - 16) / 2 = 10.5cm`.
-- `SIDE_AVOID_CM 9`는 정상 중앙주행 10.5cm보다 낮게 둔 값.
-- 차체 길이 27cm 때문에 heading이 틀어지면 앞/뒤 모서리가 측면센서 위치보다 벽에 더 가까워진다. 그래서 `drive.c`에 yaw 기반 근접벽 가드가 있다.
-- 37cm 코너 정션에서는 정상 아크 중에도 전방 초음파가 약 16cm까지 떨어질 수 있다. 그래서 아크 중 중단선은 `CORNER_ABORT_CM 16`으로 분리되어 있다.
-
-## 5. IMG_2986 관찰과 수정 결과 (최신)
-
-### 영상 관찰
-
-- `IMG_2986.mov`: 30.895초 완주 (IMG_2985 대비 -4.0s).
-- t=8~11.5s 긴 직선(1.6m): 여전히 좌벽 접근 → 급교정 → 우측으로 흐름 반복. 벽에 거의 닿는 순간 2회.
-- t=14~17.5s (45R 코너 2개 구간): 코너 후 한쪽 벽으로 흐르는 대각 주행.
-- t=28~29.5s 마지막 90R 부근: 차체가 크게 돌아가는 wiggle(스핀 폴백 추정).
-
-### 구조 진단 (이번 세션 핵심)
-
-직진 지그재그는 게인 문제가 아니라 **heading 기준(h_ref) 오염**이 원인:
-
-1. 구 `turn_locked_heading() = h_entry ± 90°`는 코너 '진입 시점'의 대각 자세 δ(10~15°)를
-   다음 레그 기준에 그대로 유전 → 레그 내내 heading-hold가 δ만큼 대각으로 끌고 감
-   → 근접벽 가드가 되밀며 지그재그. 긴 직선의 좌우 흐름이 이것.
-2. testtrack에는 **45R 코너가 2개** 있는데 코너 탈출 조건(A: 88°, B: 80°+CLEAR)이 전부 90° 전제
-   → 45° 코너에서 40°+ 과회전하거나 ARC 타임아웃→SPIN 폴백, 그리고 h_ref가 45° 오염.
-3. h_ref 재학습 게이트(`CENTER_HREF_ALIGN_HDG_DEG 8°`)는 기준이 45° 틀어진 상태에서는
-   영구히 안 열림 → 오염 기준이 다음 코너까지 지속.
-
-### 적용한 방향: 45° 코스 그리드 스냅
-
-레그축은 전부 `시작방위 + 45°×k` 라는 코스 불변식을 이용:
-
-- `course_zero`: 시작 래치 heading = 그리드 원점 (`Drive_Update` 최초 imu_live 프레임).
-- `course_grid_snap(h)`: h에서 가장 가까운 그리드축 반환. 물리 heading이 실제 레그축 ±22.5° 안이면
-  정확한 레그축을 복원 — 진입 대각 δ, 45° 오스냅, 흔들리는 차체각 학습을 전부 무효화.
-- `cruise_enter`(코너/스핀 탈출): `h_ref = course_grid_snap(현재 heading)` (구 h_entry±90 폐기).
-- 런치/fresh/IMU 부활 시 h_ref 래치도 전부 그리드 스냅.
-- **코너 grid exit A′**: 아크 중 회전각 35~65° + 그리드축 ±10° 정렬 + 전방 ≥52cm(`CORNER_GRID_EXIT_CM`)
-  CLEAR_CONFIRM회 연속이면 조기 탈출 = 45° 코너를 45°만 돌고 나감. 90° 정션 중간(대각)의 전방빔은
-  외벽 빗면 ~26..47cm라 52cm 게이트를 못 넘어 오탈출하지 않음. 65° 초과는 exit A(88°)에 위임.
-- **레그축 재스냅**: CRUISE 중 양벽 균형(|l−r|≤4cm)·저변화율·저요레이트인데 hdg_err ≥25°가
-  12루프 연속이면 기준 쪽이 틀린 것(코너 이벤트 없이 지난 45° 굽이 등) → h_ref/course_heading을
-  현재 heading의 그리드 스냅으로 교체. 8° 게이트로 영구 오염되던 문제의 회복 경로.
-
-변경 파일: `Core/Src/drive.c` (course_zero/course_grid_snap/cruise_enter/centering 래치·재스냅/corner_run A′),
-`Core/Inc/drive.h` (TURN_LOCK_DEG 삭제 → CORNER_GRID_* 4개 추가).
-
-## 5-구. IMG_2985 관찰과 수정 결과
-
-### 영상 관찰
-
-- `IMG_2985.mov`: 34.895초, 480x854, 29fps.
-- 완주는 하지만 직진 구간에서 차가 계속 좌우 벽 쪽으로 기울고 중심 복귀가 늦다.
-- 속도를 올릴 기반이 안 잡혀 직진 속도도 잘 살아나지 않는다.
-- 영상상 문제는 코너 하나의 문제가 아니라, 전방이 열린 직진에서도 heading 기준과 좌우 벽 균형이 빨리 잡히지 않는 구조에 가깝다.
-
-### 적용한 방향
-
-핵심 변경은 `front-straight-lock`이다.
-
-- 전방 초음파가 코너 임계보다 충분히 열려 있으면 직진 상태로 본다.
-- 직진 상태에서는 BNO055 heading 기준을 강하게 유지한다.
-- 좌우 ToF는 코너 판단보다 먼저, 좌우 거리값을 비슷하게 맞추는 등거리 보정에 집중한다.
-- 직진 중 흔들리는 현재 heading을 `h_ref`로 다시 학습하지 않는다. 대각 주행이 새 기준으로 굳는 것을 막기 위함이다.
-- 코너 판단은 전방이 더 가까워진 뒤 front+side 조건으로만 들어간다.
-
-### 변경 위치
-
-- `Core/Src/drive.c`
-  - `CENTER_*` 튜닝값 상향/정리.
-  - `Drive_CenteringPD_Run()`에 `front_straight_open = in->f_valid && in->f >= FRONT_ARC_CM` 추가.
-  - `front_straight_open && side_pair_valid`이면 straight 전용 P/D와 heading blend 사용.
-  - straight-lock 중에는 `h_ref` 학습 금지.
-  - 직진 기본속도와 fast 조건 상향.
-
-- `Core/Inc/drive.h`
-  - `FRONT_ARC_CM 58 -> 52`
-  - `KP_HDG 0.45 -> 0.58`
-  - `KD_YAW 0.24 -> 0.30`
-
-## 6. 현재 핵심 튜닝값
-
-`Core/Src/drive.c`의 `CENTER_*`:
-
-- `CENTER_BASE_SPEED_PCT 66`
-- `CENTER_STRAIGHT_FAST_SPEED_PCT 70`
-- `CENTER_NARROW_FAST_SPEED_PCT 66`
-- `CENTER_WIDE_FAST_SPEED_PCT 70`
-- `CENTER_LPF_ALPHA 0.74`
-- `CENTER_KP 0.11`
-- `CENTER_KD 0.004`
-- `CENTER_STRAIGHT_SIDE_KP 0.18`
-- `CENTER_STRAIGHT_SIDE_KD 0.006`
-- `CENTER_STEER_MAX_PCT 24`
-- `CENTER_STEER_SLEW_PCT 5`
-- `CENTER_STRAIGHT_HDG_BLEND 0.78`
-- `CENTER_NARROW_KP 0.13`
-- `CENTER_NARROW_HDG_BLEND 0.45`
-- `CENTER_WIDE_KP 0.07`
-- `CENTER_WIDE_HDG_BLEND 0.46`
-- `CENTER_HREF_BLEND 0.006`
-- `CENTER_NEAR_GUARD_CM 10.1`
-- `CENTER_NEAR_GUARD_KP 3.0`
-- `CENTER_YAW_DAMP_MAX_PCT 9`
-- `CENTER_FRONT_FAST_CM 64`
-- `CENTER_FRONT_SLOW_CM 42`
-
-`Core/Inc/drive.h`:
-
-- `FRONT_STOP_CM 28`
-- `FRONT_TURN_CM 36`
-- `FRONT_CLEAR_CM 44`
-- `FRONT_ARC_CM 52`
-- `CORNER_ABORT_CM 16`
-- 그리드 스냅: `CORNER_GRID_EXIT_CM 52`, `CORNER_GRID_EXIT_MIN_DEG 35`, `CORNER_GRID_EXIT_MAX_DEG 65`, `CORNER_GRID_ALIGN_DEG 10`
-- 레그축 재스냅(drive.c): `CENTER_AXIS_RESNAP_DEG 25`, `CENTER_AXIS_RESNAP_YAW_DPS 12`, `CENTER_AXIS_RESNAP_N 12`
-- `KP_HDG 0.58`
-- `KD_YAW 0.30`
-- `TURN_SPEED 42`
-- `TURN_INNER 20`
-- `ARC_OUTER 50`
-- `ARC_INNER 21`
-- `ARC_APPROACH_OUTER 36`
-- `ARC_APPROACH_INNER 16`
-- `ARC_APPROACH_DEG 34`
-- `SIDE_AVOID_CM 9`
-- `SIDE_AVOID_CLEAR_CM 10`
-- `SIDE_AVOID_CLEAR_CONFIRM 3`
-- `SIDE_ESCAPE_OUTER 40`
-- `SIDE_ESCAPE_INNER 12`
-- `CORNER_CONFIRM_N 2`
-- wide 코너 오판 방지: `CORNER_WIDE_OPEN_CM 34`, `CORNER_WIDE_ASYM_OPEN_CM 36`, `CORNER_WIDE_ASYM_CM 16`
-
-## 7. 구조적으로 되돌리면 안 되는 원칙
-
-1. 양벽 모드 `SM_BOTH`에서 측벽 반발 조향을 다시 켜지 말 것. 양벽일 때는 센터링 PD가 단독으로 좌우 균형을 맡는다.
-2. `SIDE_AVOID` 탈출 시 `h_ref`를 현재 heading으로 잡지 말 것. `course_heading`으로 복귀해야 대각 주행이 기준화되지 않는다.
-3. 단일벽 모드는 벽 흡인 금지. 가까운 벽에서 밀어내기만 하고, 진행축은 IMU heading-hold가 잡는다.
-4. 코너 판단은 front AND side 구조를 유지한다. ToF 한쪽이 멀다고 바로 코너로 들어가면 넓은 직선에서 오판한다.
-5. `h_ref`를 너무 빨리 현재 heading으로 학습시키지 말 것. 흔들리는 차체각을 기준으로 삼으면 직진이 대각으로 굳는다.
-6. 코너 아크 중 `CORNER_ABORT_CM 16`을 직선용 `FRONT_STOP_CM 28`과 합치지 말 것. 정상 아크도 전방 빔이 가까운 값을 낼 수 있다.
-7. h_ref/course_heading은 **항상 45° 그리드축**(`course_grid_snap`)으로만 래치할 것. 현재 차체각이나 h_entry±90 같은 상대값 래치로 되돌리면 진입 대각 유전·45° 코너 오염이 재발한다.
-8. 코너 grid exit A′의 `CORNER_GRID_EXIT_CM 52`를 `FRONT_CLEAR_CM 44`로 낮추지 말 것. 90° 정션 중간(대각 45°)의 외벽 빔이 47cm까지 나와 90° 코너를 45°에서 끊게 된다.
-
-## 8. 다음 튜닝 가이드
-
-새 영상에서 문제를 보고 한 번에 하나만 바꾼다.
-
-- 직진에서 아직 벽 쪽으로 흐름:
-  - 우선 `CENTER_STRAIGHT_SIDE_KP 0.18 -> 0.21`
-  - 그래도 부족하면 `KP_HDG 0.58 -> 0.64`
-
-- 직진에서 좌우 급반전/와리가리:
-  - 우선 `CENTER_STRAIGHT_SIDE_KD 0.006 -> 0.0045`
-  - 그래도 과하면 `CENTER_STEER_SLEW_PCT 5 -> 4`
-
-- 코너 진입이 늦어서 정면을 민다:
-  - `FRONT_ARC_CM 52 -> 55`
-  - 그래도 늦으면 `FRONT_TURN_CM 36 -> 38`
-
-- 코너 오판이 다시 늘어난다:
-  - `FRONT_ARC_CM 52`는 유지하고 `CORNER_CONFIRM_N 2 -> 3`
-  - 넓은 직선에서만 오판이면 wide 기준을 먼저 올림: `CORNER_WIDE_OPEN_CM 34 -> 38`
-
-- 넓은 직선이 안정적인데 느림:
-  - 벽접촉 0회 확인 후 `CENTER_WIDE_FAST_SPEED_PCT 70 -> 72`
-
-## 9. 영상/빌드 작업 방법
-
-영상 정보:
-
-```bash
-gst-discoverer-1.0 IMG_XXXX.mov
 ```
-
-프레임 추출:
-
-```bash
-mkdir -p /tmp/pr_car_frames
-gst-launch-1.0 -q filesrc location=IMG_XXXX.mov ! decodebin ! videoconvert ! videoscale ! videorate \
-  ! "video/x-raw,framerate=2/1,width=240,height=427" ! jpegenc quality=82 \
-  ! multifilesink location=/tmp/pr_car_frames/f_%03d.jpg
+make -j4                # Debug → build/PR_CAR.hex
+make RELEASE=1 -j4      # Release → build/release/PR_CAR.hex
 ```
+- 툴체인: arm-none-eabi-gcc 14.3 (STM32CubeIDE 2.1.0 번들, PATH 등록됨). cmake는 PATH에 없음
+  (CubeIDE plugins 경로에 있음). 호스트 gcc/시뮬레이터 없음 → **유일한 회귀 테스트 = 실차**.
+- 모터 벤치: `drive_config.h` `MOTOR_TEST 1` → 전진/제동/피벗/후진 시퀀스.
+- 텔레메트리: `"T,<t_ms>,<f cm>,<L mm>,<R mm>,<h×10>,<vL>,<vR>,<st>,<fl>,<steer>\n"` @10Hz.
+  `fl` 비트: b0 f_valid, b1 side_valid, b2 imu_live, b3 power, b4 mode.
+  RX: `1/0/A/M/U/D/L/R/S` + `#KEY=VAL`(VT/TEL/HZ/ML/MR). **부팅 시 모터 OFF — `A` 수신으로 시작.**
+- 필드 추가는 프레임 끝 append만 (기존 인덱스 = 웹앱 계약).
+- 환경변수 없음. 외부 의존성 없음 (HAL/FreeRTOS vendored). graphify: 코드 수정 후 `graphify update .`.
 
-빌드:
+### 실주행 체크리스트 (플래시 직후 순서대로)
+1. 아래 최신 Release를 플래시하고 BLE 로그 + 전체 영상을 동시에 기록.
+2. 초기/넓은 직선: `st=0`, `steer`가 `+/-18`에 반복 포화되지 않는지 확인.
+3. 정상 코너: `st=6`, `steer` 약 `+/-21`(72/30 아크), 0.5~1.0s 안에 `st=0` 복귀.
+4. 가까운 벽/회전 부족 구조: `st=6`, `steer` 약 `+/-40`(48/-32 피벗). 벽을 밀면 안 됨.
+5. 코너 미확정: 전방 34cm 이하에서 `st=1` 제동이 먼저 나와야 함. `st=0`으로 충돌하면 센서/판정 문제.
+6. 마지막 방지턱 전 대칭 코너: 시작축 대비 heading 약 +90deg에서 3프레임 후 우회전하는지.
+7. 방지턱: 진입 각도 정면에 가까운가? 턱 위에서 FSM 오동작 없나? (§7).
 
-```bash
-make -j4
-```
+---
 
-코드 변경 후 그래프 갱신:
+## 5. 후속 수정 상세 (전부 2026-07-11)
 
-```bash
-graphify update .
-```
+### 5.1 제자리 왕복 회전 (IMG_3009)
+- `TURN_PID_*` 하한이 스톨 하한(30%) 미만이라 회전이 목표 전에 멈춤 → 34/32로 상향(이후 2차에서 44/40).
+- **전방 초음파 타임아웃(>1m 무에코) 시 `f_valid=0`인데 SPIN/CORNER 탈출 게이트가 전부
+  `f_valid &&`로 잠김** → `front_open_at(in, cm)` = `f_valid ? f≥cm : front_miss≥FRONT_FAIL_LIMIT(5)`
+  로 교체. **대시보드 f=80은 f_valid=1을 의미하지 않는다 (b0 플래그 확인).**
+- `REV_MAX_CHUNKS 1→2`, corner 진입 시 후진 예산 리셋, HOLD에 측면 복구 탈출 추가.
 
-## 10. 디버깅 포인트
+### 5.1b 피벗 = 스키드 조향 (사용자 "턴 힘 부족")
+- 4륜 제자리턴은 전 바퀴 횡슬립 → 돌파 듀티 ≫ 직진 스톨 30%.
+- `TURN_SPEED 42→56`, `TURN_INNER 20→34`(안쪽 역회전이 실제로 돌도록), PID 하한 44/40,
+  turn_pid inner에 `MOTOR_MIN_PCT` 하한 + 컴파일 가드. 결과: "턴 빠릿" (사용자 확인).
 
-SWD/Live Expressions에서 보면 좋은 값:
+### 5.2 코너 포켓 헛돌기 (IMG_3012)
+- **`wrap180(heading−entry)`는 180° 초과 회전 표현 불가** — +179→−180 점프가 "역회전" 오판 →
+  방향 반전 → 왕복 헛돌기. → `turn_progress_reset/update()` 프레임 증분 누적(`turn_accum_deg`)으로 교체.
+- `forward_ok`(코스 역주행 방지 115°)에 **반회전 예외**: progress ≥ 180°면 코스 기준이 무효.
+- 96° cutoff 탈출에 `front_open_at(FRONT_TURN_CM)` 추가 — 열린 방향 찾을 때까지 회전 탐색 유지.
 
-- `dist_left`, `dist_right` mm
-- `wall_error`
-- `dbg.state`
-- `dbg.steer_mode`
-- `dbg.steer`
-- `dbg.hdg_err`
-- `dbg.yaw_rate`
-- `dbg.duty_l`, `dbg.duty_r`
-- `dbg.graze`
-- `tof_left_ok`, `tof_right_ok`는 `freertos.c` static 스코프라 해당 파일 컨텍스트에서 확인
+### 5.3 직선 벽 접착 (IMG_3013)
+- `forward_floor`가 sub-stall 안쪽 바퀴를 30%로 올려 **명령 차동을 반토막** → 벽에서 못 나옴.
+- 11cm 점진 벽 반발이 `!pair_valid` 전용이라 양벽 직선에서 아예 안 돌았음 → 상시 적용.
+  반발항은 heading_ref와 무관한 유일한 조향력 = ref가 벽 쪽으로 틀어졌을 때의 유일한 복구 수단.
 
-상태 해석:
+### 5.4 직선 지그재그 (IMG_3014) — 과거 이력, §5.5가 대체
+- 5.3에서 sub-stall 안쪽 바퀴를 0으로 떨굴 때 바깥 바퀴를 speed+steer로 유지 → 차동이 명령의
+  2~3배로 증폭 → 요 킥 → 반대벽 오버슈트 → 지그재그 리밋사이클.
+- `mix_substall(&l,&r)`: 안쪽이 (0,30)%면 **안쪽=0, 바깥=명령 차동(2×steer, 최소 30)** —
+  요 모멘트는 컨트롤러 명령 그대로 보존, 공통 속도만 깎임 = "보정 중 감속".
+- 여전히 과하면: `CENTER_HDG_KP_PCT_PER_DEG 0.65↓` 또는 `CENTER_STEER_SLEW_PCT_PER_S 250↓`(부드럽게),
+  진동 주기가 길고 완만하면 `CENTER_YAW_KD_PCT_PER_DPS 0.36↑`.
 
-- `SM_BOTH`: 양벽 ToF 유효, 좌우 등거리 센터링
-- `SM_SINGLE`: 한쪽 벽만 추적, 흡인 금지
-- `SM_HDG`: 벽 정보 부족, BNO055 heading-hold
-- `DS_CORNER`: 전진성 아크 코너
-- `DS_SIDE_AVOID`: 측벽 비상 회피
+### 5.5 Codex IMG_3016/IMG_3018 + 기준 영상 비교
 
-## 11. 최근 주행 이력 요약
+#### 영상 관찰
+- 기준 YouTube `oMZH6d0gJ1U`: 568 frames @30fps = **18.93s**. 코너가 대략 0.5~0.8s이며
+  멈춰 벽을 밀지 않고 짧은 전진 아크로 직선에 연결됨.
+- IMG_3018: 837 frames @28.999fps = **28.86s**. 10s 이후 코너당 2~4s, 마지막은 벽 앞에서
+  장시간 회전. IMG_3016도 직선 리밋사이클과 늦은 코너 진입이 관찰됨.
 
-| 영상 | 시간 | 요약 |
+#### 원인과 수정
+- 과거 `ARC_TIGHT 56/0`: 이 4륜 스키드 차체에서는 안쪽 바퀴가 끌려 회전이 느려짐.
+  삭제하고 구조 시 `CORNER_RESCUE 48/-32` 능동 피벗으로 교체. `motor.c`의 방향반전 1ms 중립 사용.
+- 정상 코너는 `72/30` 아크. heading 누적 진행이 시간 대비 부족하거나 전방 30cm 이내면 구조 피벗.
+  진행 55deg 이상 + 전방 확보 후 정상 아크 복귀.
+- `graze`가 실제 정면 벽까지 무시하던 안전 공백 제거. 코너 미확정 상태에서 전방 34cm 이하면
+  graze와 무관하게 제동. 코너 후보 확인 프레임도 가까운 벽이면 전진하지 않고 브레이크 유지.
+- 전방 echo가 잠깐 빠질 때 `front_recent_below()`로 `FRONT_FAIL_LIMIT` 전까지 최근 낮은 median 유지.
+- front 완전 상실 시에도 강한 측면 코너(open>=30cm, wide>=46cm)를 3회 확인하면 회전 가능.
+- 직진: 측면 오차 미분/yaw-rate LPF 및 상한 추가, heading/yaw deadband 확대, steer cap/slew 완화.
+  정상 sub-stall은 양 wheel 공통 lift로 연속화하고, 실제 벽 위험일 때만 0/차동 감속 사용.
+
+### 5.6 사용자 수동주행 실측 + testtrack.drawio 전용 판정 — **최신**
+
+웹앱 값은 L/R은 mm, 코드 입력은 cm다. 아래는 코드 단위로 환산한 값:
+
+| 위치 | 실측 | 기대 판정 |
 |---|---:|---|
-| `IMG_2980.mov` | 약 30.0s | 완주 시간 개선, 긴 직선 좌우 헌팅 잔류 |
-| `IMG_2982.mov` | 약 30.9s | 헌팅 감소, 코너 탈출 후 한쪽 벽 접촉 잔류 |
-| `IMG_2983.mov` | 32.62s | 전체적으로 느림. 직선 fast/코너 감속 재조정 |
-| `IMG_2984.mov` | 34.86s | 좁은/넓은 구간별 판단 필요 확인. 폭 프로파일 추가 |
-| `IMG_2985.mov` | 34.895s | 직진이 계속 좌우로 흐름. front-straight-lock 적용 |
-| `IMG_2986.mov` | 30.895s | 지그재그/45°코너 과회전 잔존 → 원인이 h_ref 오염으로 진단됨. 45° 그리드 스냅 적용 |
+| 초기 좁은 직선 | L=20, R=15cm 전후 | none/직선 |
+| 첫 직각 코너 | F≈20, L=23, R=36cm | right |
+| 둘째 직각 코너 | L=33, R=17cm | left |
+| 넓고 긴 직선 | L=24, R=19~20cm | none/직선 |
+| 곡선 진입 | F≈26, L=19~20, R=46~50cm | right |
+| 방지턱 전 마지막 직각 | L≈R | generic none, course fallback right |
 
-현재 문서는 `IMG_2986.mov` 분석 이후 수정된 코드 기준이다. 다음 세션은 새 영상을 먼저 분석하고, 위 튜닝 가이드에서 한 항목만 골라 조정한다. 그리드 스냅 관련 이상 거동(코너를 45°에서 끊거나, 직선에서 h_ref가 엉뚱한 축으로 재스냅)이 보이면 §6의 GRID/RESNAP 값을 먼저 본다.
+- 위 값과 각 `+/-2cm` 범위를 조합 검사: 초기/넓은 직선 오검출 0, 세 코너 방향 오판 0.
+- 일반 open을 26cm로 올려 초기 `20/15` 및 넓은 직선 `24/19`를 코너로 보지 않게 함.
+- wide open/asym을 `30/30/10cm`로 내려 `33/17` 좌회전과 `23/36` 우회전을 모두 검출.
+- 실측 코너 F=20cm를 유효 코너로 받아야 하므로 `CORNER_ABORT_CM 24→16`; 구조 진입은 30cm.
+- drawio 진행축: 출발은 북향, 마지막 방지턱 전 코너는 동향(+90deg)→남향 **우회전**.
+  `symmetric_course_direction()`은 전방<=34cm, |L-R|<=6cm, heading=+90+/-20deg를 모두 만족할 때만
+  right를 반환. 3회 확인하며, 일반 코너 및 BRAKE→SPIN tie에도 적용.
+- BNO055 절대 방위가 아니라 부팅 상대축을 쓰며 주행은 약 20s이므로 이 한정된 course-axis 사용만 허용.
+  다른 절대 heading 의존 로직으로 일반화하지 말 것.
 
-## 12. 아키텍처 설계서 대조 + BNO055 heading 점검 (2026-07-05)
+#### 최신 빌드/산출물
+- Debug/Release `-Wall` 빌드 통과, `git diff --check` 통과, 실측 판정 조합 테스트 통과.
+- Release 메모리: FLASH 56,436B/512KB (10.76%), RAM 22,392B/128KB (17.08%).
+- 플래시 파일: `build/release/PR_CAR.hex` (2026-07-11 18:19 KST 생성).
+- `graphify update .` 완료: 3,192 nodes / 4,282 edges / 130 communities.
+- **이 Release는 아직 실차 미검증. 다음 작업은 코드 수정이 아니라 먼저 전체 주행+BLE 로그 확보.**
 
-`PR_CAR_Phase1_Architecture.md`(v1.0) 대조 검증과, "BNO055 z축 heading이 xy 진행각으로 맞게 쓰이는지 / 전방 초음파+ToF로 직진·좌우회전 판단 후 heading으로 방향전환 하는지"를 코드에서 확인한 결과.
+---
 
-### 12.1 설계서 대조 (as-built)
+## 6. 재발 방지 목록 (Codex+Claude가 만든/잡은 실수 — 코드 수정 전 필독)
 
-| 설계서 항목 | 코드 실상 | 판정 |
-|---|---|---|
-| ToF×2 + XSHUT 주소분리 (§1.5 S0~S6) | `Init_ToF_Sensors()`가 S0~S6과 일치. 좌 0x60 재배치 성공 시에만 핸들 갱신 | ✅ 일치 |
-| BNO055 0x28 / 우 ToF 0x52 버스 공존 (§1.5) | `BNO055_I2C_ADDR_8BIT=(0x28<<1)`, 우 ToF 디폴트 0x52 | ✅ 일치 |
-| 7상태 머신 (§0.1) | `DS_CRUISE/BRAKE/SPIN/REVERSE/HOLD/SIDE_AVOID/CORNER` | ✅ 일치 |
-| 뮤텍스 0개 / driveQ depth2 / 단일작성자 volatile (§2.4) | `driveQ=osMessageQueueNew(2,...)`, `dist_left/right`·`sys_*` volatile, 뮤텍스 없음 | ✅ 일치 |
-| IWDG는 신선 큐 수신 때만 refresh (§2.1) | MotorTask `osMessageQueueGet` 성공 시에만 `HAL_IWDG_Refresh` | ✅ 일치 |
-| 45° 그리드 스냅 heading (§3.1) | `course_grid_snap` + `course_zero` 래치 | ✅ 일치 |
-| ② 휠 엔코더 + 속도 PID (R4) | **미구현** — 개루프 %duty 그대로 | ⏳ 로드맵대로 미착수 |
-| ③ 텔레메트리 TX (R3) | **미구현** — BluetoothTask는 RX 파서만 (`StartTask03`) | ⏳ 로드맵대로 미착수 |
+1. 헤더 분리 시 매크로 참조 잔존/이중 정의 → 즉시 컴파일 확인.
+2. 새 소스는 Makefile + CMakeLists.txt **양쪽** 등록.
+3. 구조체 필드 추가 시 모든 생성 지점 초기화 (`DriveInputs` 사례: 스택 쓰레기값이 큐로).
+4. LPF와 유효성 상호작용: invalid→valid 첫 샘플은 raw 재초기화 (`left_prev_valid` 패턴).
+5. 유효성 플래그 도입 시 모든 소비자 일괄 적용 (한 곳만 고치면 80cm를 개구부로 오독).
+6. **duty 명령은 실현 가능 범위 확인**: 직진 (0,30) 불가, 피벗 돌파는 그 이상. 컴파일 가드 활용.
+   최신 `mix_substall`: 정상 센터링은 양 wheel 공통 lift로 명령 차동을 연속 보존하고, 실제 wall-risk에서만
+   안쪽=0/바깥=차동으로 감속·회피한다. 과거 한쪽 0 고정 로직으로 되돌리면 지그재그가 재발한다.
+7. 타이머 폴백이 실제 진행도(IMU)를 우회하지 않게; "이번 프레임 누락"≠"이 회전 내내 없음".
+8. 확인 카운터에는 방향 포함 (좌1+우1 ≠ 2연속).
+9. front-only 이벤트는 루프당 1회, FSM 카운터 접근 금지.
+10. **각도 진행은 증분 누적** — `wrap180(now−entry)` 절대 금지 (180° wrap = 방향 반전 버그).
+11. 기준값(heading_ref/course_heading) 게이트에는 항상 "기준이 낡았을 때" 예외 경로를 둘 것.
+12. CubeMX regen: USER CODE 블록 밖 코드 소멸. `.ioc` = 소스오브트루스 (BT 스택 384, TIM2 PSC).
+13. CRLF repo — `git diff --check` 습관화. graphify-out/은 생성물이라 whitespace 경고 무시.
+14. 텔레메트리 인덱스/DS_ enum 값 = 웹앱 계약. 변경 금지, 추가는 append.
 
-결론: 설계서가 "as-built"로 표기한 부분은 코드와 일치. ②/③은 설계서 자신이 R3/R4 신규 설계로 명시 → 아직 없는 게 정상. 지금 코드 = Phase1 R0 이전 베이스라인.
+## 7. 남은 문제 (우선순위순)
 
-### 12.2 BNO055 z축 → xy 진행각 heading
+1. **§5.6 최신 Release 실차 검증**: 무충돌 여부, 각 코너 방향, 마지막 대칭 우회전, 완주 시간 측정.
+   실패 시 영상 타임스탬프와 같은 시각 BLE `F/L/R/h/st/fl/steer`를 함께 남길 것.
+2. **20s 목표**: 무충돌 성공 후에만 속도 조정. 현재 60/64(기본/직선고속)를 한 번에 5% 이내 상향.
+3. **방지턱(67cm 구간)**: 턱 위 스톨/미끄러짐 + 턱에서 센서 기하 붕괴(피치업 → 전방이 바닥/허공).
+   근본 해결 = 엔코더 부하 보상(속도 PI, 구 R4 계획) + [추정] IMU pitch 게이트(|pitch| 큰 동안
+   코너/브레이크 판정 유보). 엔코더 데이터는 이미 20ms마다 갱신됨(`dbg.v_l/v_r`) — 제어 연결만 남음.
+4. `#VT` 속도 목표는 저장만 됨 (`dbg.v_target`) — 속도 PI 미구현.
+5. 전방 초음파 저장착 이슈: 사용자가 하드웨어 재배치 [추정: 완료 여부 미확인]. 바닥 에코는
+   소프트웨어로 구분 불가 — 직진 중 산발적 가짜 BRAKE가 보이면 먼저 장착 높이/각도 확인.
+6. BNO055 heading은 실내에서 드리프트 — 절대값 의존 로직 추가 금지, 차분/단기 참조만.
 
-- `BNO055_ReadEuler()`가 EUL 레지스터(0x1A~)의 **heading = Z축 yaw**를 읽음 → 보드 평면 장착(칩 Z 수직) 전제에서 곧 차량 xy평면 진행각. **정상.**
-- 모드는 `OPR_MODE_IMU`(gyro+accel, 지자기 제외). 모터/L298N 자기간섭 회피용 상대각. 드리프트 ~1-3°/min이나 제어는 수 초 상대각만 사용 → 설계 의도대로.
-- 부호 규약: heading CW+. `turn_progress_deg`·yaw-rate 댐핑·grid-snap 전부 이 부호로 일관. (차가 정상 주행/회전 → 실측상 부호 맞음.)
-- ⚠ 전제 2가지 (하드웨어 확인 필요, 코드로는 검증 불가):
-  1. **보드 평면 장착.** 세워/뒤집어 달면 heading이 roll/pitch 축에서 나와 조향 붕괴. `AXIS_MAP`은 디폴트 P1(미변경) — bno055.c 상단에 전제 명시.
-  2. **크리스탈.** GY-BNO055류는 32.768kHz 크리스탈 탑재 → 외부 클럭이 heading 드리프트를 줄임.
+## 8. 불변식 (깨면 조용히 망가짐)
 
-### 12.3 전방 초음파 + 측면 ToF → 방향전환 (확인됨)
-
-경로: `cruise_run()` → 전방 HC-SR04 `f`가 `FRONT_ARC_CM(52)` 미만 + 측면 ToF `l/r`로 트인 쪽 판정 → `graze` 필터 통과 + `CORNER_CONFIRM_N`회 확정 → `corner_enter()`(트인 쪽으로 `turn_dir` 래치) → `DS_CORNER` 아크 → `corner_run()`이 **BNO055 heading의 `turn_progress_deg`**로 `TURN_TARGET_DEG(88°)` 또는 45° grid-exit 도달 시 탈출.
-- **직진/좌/우 판단 = 전방(언제 돌지) + 측면 ToF(어느 쪽) 결합.** ✅
-- **방향전환 완료 게이트 = BNO055 heading 회전각.** ✅
-- 전방 근접이 측벽 빔 그레이징(`front_graze_suspected`)이면 코너·제동 억제 → 직선 오코너 차단. 정상.
-
-### 12.4 이번 변경 (기능 무변경, heading 서브시스템 안전 개선 + 문서 정정)
-
-`Core/Src/bno055.c`
-- `BNO_USE_EXT_CRYSTAL`(기본 0=내부 osc, 현 거동 그대로) 추가. 1로 두면 외부 크리스탈 사용 → heading 드리프트↓. **보드에 크리스탈 있을 때만 켤 것**(없으면 융합 사망 → heading 상실).
-- `AXIS_MAP` 평면 장착 전제를 상단 주석으로 명문화.
-
-`Core/Inc/bno055.h`
-- 파일 헤더·`BNO055_Euler` 구조체·`Init`/`CalibStatus` 주석의 "NDOF/지자기" 표기를 실제 동작(IMU 모드, mag 미사용, heading=Z축 yaw=xy 진행각)으로 정정. 코드 동작 변경 없음, heading 오진단 방지용.
-
-빌드: `make -j4` 성공. RAM 22056B/128KB, FLASH 42884B/512KB.
-
-권장 후속(하드웨어 확인 후): ① BNO055 평면 장착·ADR=0x28 하네스 확인, ② 보드에 32.768kHz 크리스탈 있으면 `BNO_USE_EXT_CRYSTAL 1`로 heading 안정화 시도.
-
-## 13. SG-207 휠 엔코더 ×2 + 텔레메트리 + dash_board.html 연결 (2026-07-05)
-
-아키텍처 설계서 R0~R3 구현. 주행 상태머신/튜닝값은 무변경 — 측정·관측 계층만 추가.
-
-### 13.1 휠 엔코더 (신규 `Core/Src/encoder.c` + `Core/Inc/encoder.h`) — 2026-07-05 TIM2로 확정
-
-- 배선(실배선 기준, CubeMX .ioc 재생성 반영): **PA15 = TIM2_CH1**, **PB3 = TIM2_CH2**. VCC 3.3/5V, GND 공통. 모터 전원선과 신호선 분리 배선.
-  - 좌/우 가정: **좌=PA15(CH1), 우=PB3(CH2)** — 손 회전으로 확인해 반대면 `encoder.h`의 `ENC_LEFT`/`ENC_RIGHT` 두 값만 교환.
-  - PA15=JTDI, PB3=JTDO(JTAG 핀) — AF1 재구성으로 JTAG 상실, **SWD(PA13/14) 디버깅은 무관**.
-- 역할 분담: TIM2 베이스(1µs, **32-bit**)/GPIO/NVIC(prio5)/IRQ핸들러 = **CubeMX 생성**(tim.c/it.c). encoder.c는 캡처 IT 기동+ISR 기록+환산만. 32-bit라 구 TIM3안의 오버플로 확장 로직은 폐기(불필요).
-- T법(에지 간 주기) + 상승 단일 에지 + ICFilter 8(CubeMX) + **0속 타임아웃 100ms** + 최소주기 2ms 글리치 컷 + EMA(α 0.35).
-- 방향: 단채널이라 부호 없음 → `motor_dir_left/right`(최근 구동 명령 부호, motor.c) 채택. §3.2 명문화 한계.
-- 환산: `v = 1.021cm × 10⁶ / 주기[µs]` — **휠 Ø65mm/20슬롯 가정. 실측 후 `encoder.h`의 `ENC_WHEEL_DIAM_CM`/`ENC_SLOTS` 갱신 필수(§6.2).**
-- MotorTask가 매 루프 환산 → `dbg.v_l/v_r`(SWD) + `tel_vl/vr`(텔레메트리). 전원 OFF에서 손으로 굴려도 속도가 보임 → R0 배선검증/R2 캘리브 재플래시 불요.
-- R2 캘리브 절차: `M`(수동) → `#ML=25`+`#MR=25`…`80` duty 스윕 → 대시보드 vL/vR 기록 → FF 표 작성. 2m 스톱워치 실측 대비 오차 <5% 목표.
-- **delay_us 타임베이스 변경**: CubeMX 재생성에서 TIM11이 제거됨 → `delay.c`가 TIM2 free-run 차분 방식으로 승계(main.c가 부팅 시 `HAL_TIM_Base_Start(&htim2)`). ⚠ **TIM2 카운터 리셋 금지** — 엔코더 캡처와 delay_us가 같은 CNT 공유.
-
-### 13.1.1 CubeMX 재생성 시 주의 (이번에 실제 겪은 것)
-
-1. USER CODE 블록 밖 코드는 삭제된다 — BT 텔레메트리 헬퍼가 날아가서 `USER CODE FunctionPrototypes` 블록 안으로 이전해 복구함. 앞으로 추가 코드는 반드시 USER CODE 안에.
-2. BluetoothTask 스택이 256으로 되돌아간다 — freertos.c에서 384 재적용함. **.ioc의 태스크 스택도 384로 바꿔두면 근본 해결.**
-3. TIM11을 .ioc에서 지우면 delay.c/main.c가 깨진다 — 현재는 TIM2 승계로 해결됨(TIM11 재추가 불필요).
-
-### 13.2 텔레메트리 TX + '#' 명령 (freertos.c BluetoothTask 재작성)
-
-- TX 프레임(10Hz 기본, `#HZ=1..20`): `T,<t_ms>,<f cm>,<L mm>,<R mm>,<h×10>,<vL>,<vR>,<st>,<fl>\n`
-  - st: 0~6 = DriveState enum 1:1 (**순서 변경 금지**), 7 = MANUAL(수동 또는 전원 OFF)
-  - fl: b0 f_valid, b1 side_valid(ToF 양측 기동 성공), b2 imu_live, b3 sys_power, b4 sys_mode
-- 정수만(heading ×10) — float printf 없음. IT 송신, 직전 송신 미완료 시 스킵(`dbg.tel_skip`).
-- 9600bps에서 46B×10Hz ≈ 점유 48% — 동작하나 여유 없음. 밀리면 `#HZ=5`. 보레이트 승격은 모듈 AT 명령 + usart.c 동기 변경 필요(미실시).
-- RX: 레거시 1바이트 그대로 + `#KEY=VAL`: `VT`(저장만—R4 대비), `TEL`(0/1), `HZ`, `ML`/`MR`(수동 모드 duty 직접 지정, R2 캘리브용).
-- `HAL_UART_Transmit_IT`는 taskENTER_CRITICAL로 감쌈 — RxCplt ISR의 `Receive_IT` 재무장과 HAL 락 충돌(수신 영구정지 위험) 차단.
-- BluetoothTask 스택 256→384 word(§2.2 권고). 텔레메트리 미러는 필드별 단일 작성자 volatile(§2.4 D3/D4) — 뮤텍스 여전히 0개.
-
-### 13.3 dash_board.html
-
-- **HM-10류 BLE(FFE0/FFE1) Web Bluetooth 콘솔** — 안드로이드 Chrome + HTTPS(GitHub Pages 등) 필요. 프로토콜은 위 프레임/명령과 1:1 (HTML 쪽이 원래 정의했고 펌웨어가 이번에 맞춤).
-- ⚠ 모듈 주의: Web Bluetooth는 **BLE 전용**. HC-06(클래식 SPP)은 연결 불가 — HM-10/AT-09/MLT-BT05류 필요. 펌웨어는 UART 9600 8N1이라 어느 모듈이든 동일 동작.
-- 이번 추가: RAW 명령 입력(`#ML=35`, `#HZ=5` 등 전송) — R2 duty 스윕용. 나머지(나침반/복도/속도/상태/플래그/D-pad hold-to-drive)는 기존 그대로.
-
-### 13.4 검증 상태 / 다음 작업
-
-- `make -j4` clean 재빌드 경고 0. FLASH 47432B, RAM(bss) 22120B.
-- 실차 미검증. 벤치 체크 순서:
-  1. 플래시 → 대시보드 연결 → 프레임 수신 확인(나침반/거리 움직임).
-  2. 바퀴 손 회전 → `dbg.enc_l/enc_r` 증가 + vL/vR 표시 (R0/R1 DoD).
-  3. `M` → `#ML=35` → 좌바퀴 회전+속도 표시 (R2 진입).
-  4. 자율 주행 중 st/fl 상태 전이 확인.
-- 미구현(로드맵 유지): 속도 PI(R4), 조향 캐스케이드(R5). `#VT`는 수신·저장만 됨(`dbg.v_target`).
+- `FRONT_DANGER < FRONT_STOP < FRONT_TURN < FRONT_CLEAR < FRONT_ARC` (컴파일 가드 있음)
+- `ARC_INNER, ARC_APPROACH_INNER, TURN_INNER, TURN_PID_*_MIN ≥ MOTOR_MIN_PCT` (컴파일 가드 있음)
+- `CORNER_RESCUE_OUTER/INNER ≥ MOTOR_MIN_PCT`, `CORNER_ABORT < CORNER_TIGHTEN < FRONT_CLEAR` (가드 있음)
+- `CENTER_LATERAL_CMD_MAX_DEG(8°) < CORNER_ENTRY_HDG_MAX_DEG(12°)` — 코너 접근 시 차체가 코스축에서
+  과도하게 벗어나지 않도록 유지 (가드 없음, 수동 유지)
+- 회전 진행각: 누적 방식 유지 (§6-10)
+- IMU 의존 게이트에는 IMU-무관 백스톱 (`SPIN_BLIND_MS`, `LAUNCH_MS`) — 모터 기동 순간
+  인러시 브라운아웃으로 imu_live가 죽는 하드웨어 특성 때문
+- MotorTask만 모터 명령 발행 (예외: 폴트 핸들러 Car_Stop)

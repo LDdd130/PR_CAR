@@ -48,6 +48,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/bno055.c
     Core/Src/delay.c
     Core/Src/drive.c
+    Core/Src/drive_control.c
     Core/Src/motor.c
     Core/Src/ultra.c
     Core/Src/vl53l0x.c

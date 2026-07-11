@@ -1,12 +1,12 @@
-# Graph Report - C:\Users\user\STM\PR_CAR  (2026-07-08)
+# Graph Report - C:\Users\user\STM\PR_CAR  (2026-07-11)
 
 ## Corpus Check
-- 156 files · ~1,072,528 words
+- 160 files · ~1,069,774 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3156 nodes · 4155 edges · 129 communities detected
-- Extraction: 87% EXTRACTED · 13% INFERRED · 0% AMBIGUOUS · INFERRED: 553 edges (avg confidence: 0.8)
+- 3192 nodes · 4282 edges · 130 communities detected
+- Extraction: 86% EXTRACTED · 14% INFERRED · 0% AMBIGUOUS · INFERRED: 590 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
@@ -139,30 +139,31 @@
 - [[_COMMUNITY_Community 126|Community 126]]
 - [[_COMMUNITY_Community 127|Community 127]]
 - [[_COMMUNITY_Community 128|Community 128]]
+- [[_COMMUNITY_Community 129|Community 129]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `HAL_GetTick()` - 49 edges
+1. `HAL_GetTick()` - 50 edges
 2. `TIM_CCxChannelCmd()` - 39 edges
 3. `uxListRemove()` - 26 edges
 4. `xTaskResumeAll()` - 26 edges
 5. `HAL_DMA_Start_IT()` - 24 edges
 6. `vTaskSuspendAll()` - 23 edges
 7. `HAL_DMA_Abort_IT()` - 21 edges
-8. `StartDefaultTask()` - 19 edges
-9. `pvPortMalloc()` - 18 edges
-10. `StartTask02()` - 17 edges
+8. `cruise_run()` - 20 edges
+9. `StartDefaultTask()` - 20 edges
+10. `main()` - 18 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `HAL_GetTick()` --calls--> `HAL_RCC_OscConfig()`  [INFERRED]
   C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal.c → C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_rcc.c
+- `HAL_GetTick()` --calls--> `HAL_UARTEx_ReceiveToIdle()`  [INFERRED]
+  C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal.c → C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_uart.c
 - `HAL_DMA_GetState()` --calls--> `I2C_Slave_STOPF()`  [INFERRED]
   C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_dma.c → C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_i2c.c
-- `bno_bus_recover()` --calls--> `HAL_I2C_DeInit()`  [INFERRED]
-  C:\Users\user\STM\PR_CAR\Core\Src\bno055.c → C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_i2c.c
-- `bno_bus_recover()` --calls--> `HAL_GPIO_WritePin()`  [INFERRED]
-  C:\Users\user\STM\PR_CAR\Core\Src\bno055.c → C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_gpio.c
-- `bno_rd()` --calls--> `HAL_I2C_Mem_Read()`  [INFERRED]
-  C:\Users\user\STM\PR_CAR\Core\Src\bno055.c → C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_i2c.c
+- `vStreamBufferDelete()` --calls--> `vPortFree()`  [INFERRED]
+  C:\Users\user\STM\PR_CAR\Middlewares\Third_Party\FreeRTOS\Source\stream_buffer.c → C:\Users\user\STM\PR_CAR\Middlewares\Third_Party\FreeRTOS\Source\portable\MemMang\heap_4.c
+- `drive_deadbandf()` --calls--> `compute_steer()`  [INFERRED]
+  C:\Users\user\STM\PR_CAR\Core\Inc\drive_math.h → C:\Users\user\STM\PR_CAR\Core\Src\drive_control.c
 
 ## Communities
 
@@ -172,7 +173,7 @@ Nodes (226): AllocBlock(), CreateBlock(), FreeBlock(), OS_Tick_GetCount(), OS_Ti
 
 ### Community 1 - "Community 1"
 Cohesion: 0.02
-Nodes (156): HAL_DMA_Abort_IT(), HAL_DMA_Start_IT(), HAL_I2C_Master_Receive_DMA(), HAL_I2C_Master_Seq_Receive_DMA(), HAL_I2C_Master_Seq_Transmit_DMA(), HAL_I2C_Master_Transmit_DMA(), HAL_I2C_Slave_Receive_DMA(), HAL_I2C_Slave_Seq_Receive_DMA() (+148 more)
+Nodes (156): Encoder_Init(), HAL_DMA_Abort_IT(), HAL_DMA_Start_IT(), HAL_I2C_Master_Receive_DMA(), HAL_I2C_Master_Seq_Receive_DMA(), HAL_I2C_Master_Seq_Transmit_DMA(), HAL_I2C_Master_Transmit_DMA(), HAL_I2C_Slave_Receive_DMA() (+148 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.01
@@ -183,44 +184,44 @@ Cohesion: 0.01
 Nodes (0): 
 
 ### Community 4 - "Community 4"
-Cohesion: 0.01
-Nodes (0): 
+Cohesion: 0.02
+Nodes (53): osKernelInitialize(), NVIC_DecodePriority(), NVIC_EncodePriority(), SysTick_Config(), TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS(), MX_GPIO_Init(), HAL_I2C_MspDeInit() (+45 more)
 
 ### Community 5 - "Community 5"
 Cohesion: 0.01
 Nodes (0): 
 
 ### Community 6 - "Community 6"
-Cohesion: 0.02
-Nodes (5): __ROR(), __SXTAB16(), __SXTAB16_RORn(), __SXTB16(), __SXTB16_RORn()
+Cohesion: 0.01
+Nodes (0): 
 
 ### Community 7 - "Community 7"
 Cohesion: 0.02
-Nodes (0): 
+Nodes (5): __ROR(), __SXTAB16(), __SXTAB16_RORn(), __SXTB16(), __SXTB16_RORn()
 
 ### Community 8 - "Community 8"
 Cohesion: 0.02
 Nodes (0): 
 
 ### Community 9 - "Community 9"
-Cohesion: 0.04
-Nodes (73): bno_wr8(), HAL_GetTick(), HAL_I2C_AbortCpltCallback(), HAL_I2C_AddrCallback(), HAL_I2C_DeInit(), HAL_I2C_ER_IRQHandler(), HAL_I2C_ErrorCallback(), HAL_I2C_EV_IRQHandler() (+65 more)
-
-### Community 10 - "Community 10"
-Cohesion: 0.03
-Nodes (56): BNO055_HardReset(), BNO055_Init(), BNO055_ReadCalibStatus(), BNO055_ReadEuler(), bno_bus_recover(), bno_rd(), osKernelInitialize(), NVIC_DecodePriority() (+48 more)
-
-### Community 11 - "Community 11"
 Cohesion: 0.02
 Nodes (0): 
 
-### Community 12 - "Community 12"
+### Community 10 - "Community 10"
 Cohesion: 0.04
-Nodes (61): DMA_CalcBaseAndBitshift(), DMA_CheckFifoParam(), DMA_SetConfig(), HAL_DMA_Abort(), HAL_DMA_DeInit(), HAL_DMA_GetError(), HAL_DMA_GetState(), HAL_DMA_Init() (+53 more)
+Nodes (70): HAL_GetTick(), HAL_I2C_AbortCpltCallback(), HAL_I2C_AddrCallback(), HAL_I2C_DeInit(), HAL_I2C_ER_IRQHandler(), HAL_I2C_ErrorCallback(), HAL_I2C_EV_IRQHandler(), HAL_I2C_IsDeviceReady() (+62 more)
+
+### Community 11 - "Community 11"
+Cohesion: 0.07
+Nodes (88): apply_cruise_control(), approach_i16(), brake_enter(), brake_run(), clamp_pct(), command_arc(), command_pivot(), approach() (+80 more)
+
+### Community 12 - "Community 12"
+Cohesion: 0.02
+Nodes (0): 
 
 ### Community 13 - "Community 13"
-Cohesion: 0.08
-Nodes (60): osThreadFlagsClear(), brake_enter(), brake_run(), center_sanitize_cm(), Centering_Reset(), clampf(), corner_enter(), corner_run() (+52 more)
+Cohesion: 0.04
+Nodes (61): DMA_CalcBaseAndBitshift(), DMA_CheckFifoParam(), DMA_SetConfig(), HAL_DMA_Abort(), HAL_DMA_DeInit(), HAL_DMA_GetError(), HAL_DMA_GetState(), HAL_DMA_Init() (+53 more)
 
 ### Community 14 - "Community 14"
 Cohesion: 0.03
@@ -235,8 +236,8 @@ Cohesion: 0.03
 Nodes (0): 
 
 ### Community 17 - "Community 17"
-Cohesion: 0.04
-Nodes (2): TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS()
+Cohesion: 0.07
+Nodes (52): BNO055_HardReset(), BNO055_Init(), BNO055_ReadCalibStatus(), BNO055_ReadEuler(), bno_bus_recover(), bno_rd(), bno_wr8(), osDelay() (+44 more)
 
 ### Community 18 - "Community 18"
 Cohesion: 0.04
@@ -264,30 +265,30 @@ Nodes (2): TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS()
 
 ### Community 24 - "Community 24"
 Cohesion: 0.09
-Nodes (38): osDelay(), osMessageQueuePut(), BT_HandleByte(), BT_ParseLine(), BT_SendFrame(), HAL_UART_ErrorCallback(), HAL_UART_RxCpltCallback(), Init_ToF_Sensors() (+30 more)
+Nodes (32): FLASH_Erase_Sector(), FLASH_FlushCaches(), FLASH_MassErase(), FLASH_OB_BootConfig(), FLASH_OB_BOR_LevelConfig(), FLASH_OB_DisablePCROP(), FLASH_OB_DisableWRP(), FLASH_OB_EnablePCROP() (+24 more)
 
 ### Community 25 - "Community 25"
-Cohesion: 0.09
-Nodes (32): FLASH_Erase_Sector(), FLASH_FlushCaches(), FLASH_MassErase(), FLASH_OB_BootConfig(), FLASH_OB_BOR_LevelConfig(), FLASH_OB_DisablePCROP(), FLASH_OB_DisableWRP(), FLASH_OB_EnablePCROP() (+24 more)
+Cohesion: 0.05
+Nodes (2): TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS()
 
 ### Community 26 - "Community 26"
 Cohesion: 0.05
 Nodes (2): TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS()
 
 ### Community 27 - "Community 27"
-Cohesion: 0.05
-Nodes (2): TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS()
-
-### Community 28 - "Community 28"
 Cohesion: 0.06
 Nodes (0): 
 
-### Community 29 - "Community 29"
+### Community 28 - "Community 28"
 Cohesion: 0.12
-Nodes (21): osThreadFlagsWait(), prvBytesInBuffer(), prvInitialiseNewStreamBuffer(), prvReadBytesFromBuffer(), prvReadMessageFromBuffer(), prvWriteBytesToBuffer(), prvWriteMessageToBuffer(), xStreamBufferBytesAvailable() (+13 more)
+Nodes (20): prvBytesInBuffer(), prvInitialiseNewStreamBuffer(), prvReadBytesFromBuffer(), prvReadMessageFromBuffer(), prvWriteBytesToBuffer(), prvWriteMessageToBuffer(), vStreamBufferDelete(), xStreamBufferBytesAvailable() (+12 more)
+
+### Community 29 - "Community 29"
+Cohesion: 0.07
+Nodes (0): 
 
 ### Community 30 - "Community 30"
-Cohesion: 0.07
+Cohesion: 0.08
 Nodes (0): 
 
 ### Community 31 - "Community 31"
@@ -295,7 +296,7 @@ Cohesion: 0.08
 Nodes (0): 
 
 ### Community 32 - "Community 32"
-Cohesion: 0.08
+Cohesion: 0.09
 Nodes (0): 
 
 ### Community 33 - "Community 33"
@@ -311,28 +312,28 @@ Cohesion: 0.09
 Nodes (0): 
 
 ### Community 36 - "Community 36"
-Cohesion: 0.09
-Nodes (0): 
-
-### Community 37 - "Community 37"
 Cohesion: 0.1
 Nodes (2): _exit(), _kill()
 
-### Community 38 - "Community 38"
+### Community 37 - "Community 37"
 Cohesion: 0.17
 Nodes (13): ARM_MPU_ClrRegion(), ARM_MPU_ClrRegion_NS(), ARM_MPU_ClrRegionEx(), ARM_MPU_Load(), ARM_MPU_Load_NS(), ARM_MPU_LoadEx(), ARM_MPU_OrderedMemcpy(), ARM_MPU_SetMemAttr() (+5 more)
 
-### Community 39 - "Community 39"
+### Community 38 - "Community 38"
 Cohesion: 0.12
 Nodes (2): HAL_PWR_PVD_IRQHandler(), HAL_PWR_PVDCallback()
 
-### Community 40 - "Community 40"
+### Community 39 - "Community 39"
 Cohesion: 0.12
 Nodes (0): 
 
-### Community 41 - "Community 41"
+### Community 40 - "Community 40"
 Cohesion: 0.12
 Nodes (16): 0. 새 세션에서 먼저 볼 것, 10. 디버깅 포인트, 11. 최근 주행 이력 요약, 1. 프로젝트 목표, 2. 하드웨어와 센서, 3. 런타임 구조, 4. 코스 정보, 5. IMG_2985 관찰과 수정 결과 (+8 more)
+
+### Community 41 - "Community 41"
+Cohesion: 0.12
+Nodes (0): 
 
 ### Community 42 - "Community 42"
 Cohesion: 0.12
@@ -343,19 +344,19 @@ Cohesion: 0.12
 Nodes (0): 
 
 ### Community 44 - "Community 44"
-Cohesion: 0.12
-Nodes (0): 
-
-### Community 45 - "Community 45"
 Cohesion: 0.13
 Nodes (0): 
 
-### Community 46 - "Community 46"
+### Community 45 - "Community 45"
 Cohesion: 0.14
 Nodes (0): 
 
-### Community 47 - "Community 47"
+### Community 46 - "Community 46"
 Cohesion: 0.15
+Nodes (0): 
+
+### Community 47 - "Community 47"
+Cohesion: 0.17
 Nodes (0): 
 
 ### Community 48 - "Community 48"
@@ -363,23 +364,23 @@ Cohesion: 0.17
 Nodes (0): 
 
 ### Community 49 - "Community 49"
-Cohesion: 0.17
-Nodes (0): 
-
-### Community 50 - "Community 50"
 Cohesion: 0.2
 Nodes (0): 
 
-### Community 51 - "Community 51"
+### Community 50 - "Community 50"
 Cohesion: 0.22
 Nodes (0): 
 
-### Community 52 - "Community 52"
+### Community 51 - "Community 51"
 Cohesion: 0.29
 Nodes (2): ARM_MPU_Load(), ARM_MPU_OrderedMemcpy()
 
-### Community 53 - "Community 53"
+### Community 52 - "Community 52"
 Cohesion: 0.29
+Nodes (0): 
+
+### Community 53 - "Community 53"
+Cohesion: 0.33
 Nodes (0): 
 
 ### Community 54 - "Community 54"
@@ -387,23 +388,23 @@ Cohesion: 0.33
 Nodes (0): 
 
 ### Community 55 - "Community 55"
-Cohesion: 0.33
-Nodes (0): 
-
-### Community 56 - "Community 56"
 Cohesion: 0.6
 Nodes (3): DMA_MultiBufferSetConfig(), HAL_DMAEx_MultiBufferStart(), HAL_DMAEx_MultiBufferStart_IT()
 
-### Community 57 - "Community 57"
+### Community 56 - "Community 56"
 Cohesion: 0.4
 Nodes (4): Auto-Clarity, Boundaries, Intensity, Rules
 
-### Community 58 - "Community 58"
+### Community 57 - "Community 57"
 Cohesion: 0.67
 Nodes (2): SystemInit(), SystemInit_ExtMemCtl()
 
-### Community 59 - "Community 59"
+### Community 58 - "Community 58"
 Cohesion: 0.67
+Nodes (0): 
+
+### Community 59 - "Community 59"
+Cohesion: 1.0
 Nodes (0): 
 
 ### Community 60 - "Community 60"
@@ -412,7 +413,7 @@ Nodes (0):
 
 ### Community 61 - "Community 61"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (1): graphify
 
 ### Community 62 - "Community 62"
 Cohesion: 1.0
@@ -420,7 +421,7 @@ Nodes (1): graphify
 
 ### Community 63 - "Community 63"
 Cohesion: 1.0
-Nodes (1): graphify
+Nodes (0): 
 
 ### Community 64 - "Community 64"
 Cohesion: 1.0
@@ -682,162 +683,170 @@ Nodes (0):
 Cohesion: 1.0
 Nodes (0): 
 
+### Community 129 - "Community 129"
+Cohesion: 1.0
+Nodes (0): 
+
 ## Knowledge Gaps
 - **20 isolated node(s):** `Rules`, `Intensity`, `Auto-Clarity`, `Boundaries`, `graphify` (+15 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **Thin community `Community 60`** (2 nodes): `sysmem.c`, `_sbrk()`
+- **Thin community `Community 59`** (2 nodes): `sysmem.c`, `_sbrk()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 61`** (2 nodes): `stm32f4xx_hal_flash_ramfunc.c`, `void()`
+- **Thin community `Community 60`** (2 nodes): `stm32f4xx_hal_flash_ramfunc.c`, `void()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 62`** (2 nodes): `AGENTS.md`, `graphify`
+- **Thin community `Community 61`** (2 nodes): `AGENTS.md`, `graphify`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 63`** (2 nodes): `CLAUDE.md`, `graphify`
+- **Thin community `Community 62`** (2 nodes): `CLAUDE.md`, `graphify`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 64`** (1 nodes): `bno055.h`
+- **Thin community `Community 63`** (1 nodes): `bno055.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 65`** (1 nodes): `debug.h`
+- **Thin community `Community 64`** (1 nodes): `debug.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 66`** (1 nodes): `delay.h`
+- **Thin community `Community 65`** (1 nodes): `delay.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 67`** (1 nodes): `drive.h`
+- **Thin community `Community 66`** (1 nodes): `drive.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 68`** (1 nodes): `encoder.h`
+- **Thin community `Community 67`** (1 nodes): `drive_config.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 69`** (1 nodes): `FreeRTOSConfig.h`
+- **Thin community `Community 68`** (1 nodes): `drive_control.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 70`** (1 nodes): `gpio.h`
+- **Thin community `Community 69`** (1 nodes): `encoder.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 71`** (1 nodes): `i2c.h`
+- **Thin community `Community 70`** (1 nodes): `FreeRTOSConfig.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 72`** (1 nodes): `iwdg.h`
+- **Thin community `Community 71`** (1 nodes): `gpio.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 73`** (1 nodes): `main.h`
+- **Thin community `Community 72`** (1 nodes): `i2c.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 74`** (1 nodes): `motor.h`
+- **Thin community `Community 73`** (1 nodes): `iwdg.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 75`** (1 nodes): `stm32f4xx_hal_conf.h`
+- **Thin community `Community 74`** (1 nodes): `main.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 76`** (1 nodes): `stm32f4xx_it.h`
+- **Thin community `Community 75`** (1 nodes): `motor.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 77`** (1 nodes): `tim.h`
+- **Thin community `Community 76`** (1 nodes): `stm32f4xx_hal_conf.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 78`** (1 nodes): `ultra.h`
+- **Thin community `Community 77`** (1 nodes): `stm32f4xx_it.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 79`** (1 nodes): `usart.h`
+- **Thin community `Community 78`** (1 nodes): `tim.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 80`** (1 nodes): `vl53l0x.h`
+- **Thin community `Community 79`** (1 nodes): `ultra.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 81`** (1 nodes): `stm32f411xe.h`
+- **Thin community `Community 80`** (1 nodes): `usart.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 82`** (1 nodes): `stm32f4xx.h`
+- **Thin community `Community 81`** (1 nodes): `vl53l0x.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 83`** (1 nodes): `system_stm32f4xx.h`
+- **Thin community `Community 82`** (1 nodes): `stm32f411xe.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 84`** (1 nodes): `cmsis_version.h`
+- **Thin community `Community 83`** (1 nodes): `stm32f4xx.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 85`** (1 nodes): `tz_context.h`
+- **Thin community `Community 84`** (1 nodes): `system_stm32f4xx.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 86`** (1 nodes): `stm32f4xx_hal.h`
+- **Thin community `Community 85`** (1 nodes): `cmsis_version.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 87`** (1 nodes): `stm32f4xx_hal_cortex.h`
+- **Thin community `Community 86`** (1 nodes): `tz_context.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 88`** (1 nodes): `stm32f4xx_hal_def.h`
+- **Thin community `Community 87`** (1 nodes): `stm32f4xx_hal.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 89`** (1 nodes): `stm32f4xx_hal_dma.h`
+- **Thin community `Community 88`** (1 nodes): `stm32f4xx_hal_cortex.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 90`** (1 nodes): `stm32f4xx_hal_dma_ex.h`
+- **Thin community `Community 89`** (1 nodes): `stm32f4xx_hal_def.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 91`** (1 nodes): `stm32f4xx_hal_exti.h`
+- **Thin community `Community 90`** (1 nodes): `stm32f4xx_hal_dma.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 92`** (1 nodes): `stm32f4xx_hal_flash.h`
+- **Thin community `Community 91`** (1 nodes): `stm32f4xx_hal_dma_ex.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 93`** (1 nodes): `stm32f4xx_hal_flash_ex.h`
+- **Thin community `Community 92`** (1 nodes): `stm32f4xx_hal_exti.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 94`** (1 nodes): `stm32f4xx_hal_flash_ramfunc.h`
+- **Thin community `Community 93`** (1 nodes): `stm32f4xx_hal_flash.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 95`** (1 nodes): `stm32f4xx_hal_gpio.h`
+- **Thin community `Community 94`** (1 nodes): `stm32f4xx_hal_flash_ex.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 96`** (1 nodes): `stm32f4xx_hal_gpio_ex.h`
+- **Thin community `Community 95`** (1 nodes): `stm32f4xx_hal_flash_ramfunc.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 97`** (1 nodes): `stm32f4xx_hal_i2c.h`
+- **Thin community `Community 96`** (1 nodes): `stm32f4xx_hal_gpio.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 98`** (1 nodes): `stm32f4xx_hal_i2c_ex.h`
+- **Thin community `Community 97`** (1 nodes): `stm32f4xx_hal_gpio_ex.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 99`** (1 nodes): `stm32f4xx_hal_iwdg.h`
+- **Thin community `Community 98`** (1 nodes): `stm32f4xx_hal_i2c.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 100`** (1 nodes): `stm32f4xx_hal_pwr.h`
+- **Thin community `Community 99`** (1 nodes): `stm32f4xx_hal_i2c_ex.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 101`** (1 nodes): `stm32f4xx_hal_pwr_ex.h`
+- **Thin community `Community 100`** (1 nodes): `stm32f4xx_hal_iwdg.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 102`** (1 nodes): `stm32f4xx_hal_rcc.h`
+- **Thin community `Community 101`** (1 nodes): `stm32f4xx_hal_pwr.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 103`** (1 nodes): `stm32f4xx_hal_rcc_ex.h`
+- **Thin community `Community 102`** (1 nodes): `stm32f4xx_hal_pwr_ex.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 104`** (1 nodes): `stm32f4xx_hal_tim.h`
+- **Thin community `Community 103`** (1 nodes): `stm32f4xx_hal_rcc.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 105`** (1 nodes): `stm32f4xx_hal_tim_ex.h`
+- **Thin community `Community 104`** (1 nodes): `stm32f4xx_hal_rcc_ex.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 106`** (1 nodes): `stm32f4xx_hal_uart.h`
+- **Thin community `Community 105`** (1 nodes): `stm32f4xx_hal_tim.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 107`** (1 nodes): `stm32_hal_legacy.h`
+- **Thin community `Community 106`** (1 nodes): `stm32f4xx_hal_tim_ex.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 108`** (1 nodes): `cmsis_os.h`
+- **Thin community `Community 107`** (1 nodes): `stm32f4xx_hal_uart.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 109`** (1 nodes): `cmsis_os2.h`
+- **Thin community `Community 108`** (1 nodes): `stm32_hal_legacy.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 110`** (1 nodes): `freertos_mpool.h`
+- **Thin community `Community 109`** (1 nodes): `cmsis_os.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 111`** (1 nodes): `freertos_os2.h`
+- **Thin community `Community 110`** (1 nodes): `cmsis_os2.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 112`** (1 nodes): `croutine.h`
+- **Thin community `Community 111`** (1 nodes): `freertos_mpool.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 113`** (1 nodes): `deprecated_definitions.h`
+- **Thin community `Community 112`** (1 nodes): `freertos_os2.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 114`** (1 nodes): `event_groups.h`
+- **Thin community `Community 113`** (1 nodes): `croutine.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 115`** (1 nodes): `FreeRTOS.h`
+- **Thin community `Community 114`** (1 nodes): `deprecated_definitions.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 116`** (1 nodes): `list.h`
+- **Thin community `Community 115`** (1 nodes): `event_groups.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 117`** (1 nodes): `message_buffer.h`
+- **Thin community `Community 116`** (1 nodes): `FreeRTOS.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 118`** (1 nodes): `mpu_prototypes.h`
+- **Thin community `Community 117`** (1 nodes): `list.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 119`** (1 nodes): `mpu_wrappers.h`
+- **Thin community `Community 118`** (1 nodes): `message_buffer.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 120`** (1 nodes): `portable.h`
+- **Thin community `Community 119`** (1 nodes): `mpu_prototypes.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 121`** (1 nodes): `projdefs.h`
+- **Thin community `Community 120`** (1 nodes): `mpu_wrappers.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 122`** (1 nodes): `queue.h`
+- **Thin community `Community 121`** (1 nodes): `portable.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 123`** (1 nodes): `semphr.h`
+- **Thin community `Community 122`** (1 nodes): `projdefs.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 124`** (1 nodes): `StackMacros.h`
+- **Thin community `Community 123`** (1 nodes): `queue.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 125`** (1 nodes): `stack_macros.h`
+- **Thin community `Community 124`** (1 nodes): `semphr.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 126`** (1 nodes): `stream_buffer.h`
+- **Thin community `Community 125`** (1 nodes): `StackMacros.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 127`** (1 nodes): `task.h`
+- **Thin community `Community 126`** (1 nodes): `stack_macros.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 128`** (1 nodes): `timers.h`
+- **Thin community `Community 127`** (1 nodes): `stream_buffer.h`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 128`** (1 nodes): `task.h`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 129`** (1 nodes): `timers.h`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `HAL_GetTick()` connect `Community 9` to `Community 0`, `Community 10`, `Community 12`, `Community 13`, `Community 24`, `Community 25`?**
-  _High betweenness centrality (0.042) - this node is a cross-community bridge._
-- **Why does `main()` connect `Community 10` to `Community 0`, `Community 1`, `Community 13`?**
-  _High betweenness centrality (0.019) - this node is a cross-community bridge._
-- **Why does `StartTask02()` connect `Community 24` to `Community 0`, `Community 9`, `Community 10`, `Community 13`?**
-  _High betweenness centrality (0.014) - this node is a cross-community bridge._
-- **Are the 47 inferred relationships involving `HAL_GetTick()` (e.g. with `Encoder_OnCapture()` and `sensor_put_front_early()`) actually correct?**
-  _`HAL_GetTick()` has 47 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `HAL_GetTick()` connect `Community 10` to `Community 4`, `Community 11`, `Community 13`, `Community 17`, `Community 24`?**
+  _High betweenness centrality (0.028) - this node is a cross-community bridge._
+- **Why does `main()` connect `Community 4` to `Community 0`, `Community 1`, `Community 11`, `Community 17`?**
+  _High betweenness centrality (0.026) - this node is a cross-community bridge._
+- **Are the 48 inferred relationships involving `HAL_GetTick()` (e.g. with `Encoder_OnCapture()` and `sensor_put_front_danger_event()`) actually correct?**
+  _`HAL_GetTick()` has 48 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 10 inferred relationships involving `TIM_CCxChannelCmd()` (e.g. with `HAL_TIMEx_HallSensor_Start()` and `HAL_TIMEx_HallSensor_Stop()`) actually correct?**
   _`TIM_CCxChannelCmd()` has 10 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 25 inferred relationships involving `uxListRemove()` (e.g. with `vCoRoutineAddToDelayedList()` and `prvCheckPendingReadyList()`) actually correct?**
   _`uxListRemove()` has 25 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 16 inferred relationships involving `xTaskResumeAll()` (e.g. with `xEventGroupSync()` and `xEventGroupWaitBits()`) actually correct?**
   _`xTaskResumeAll()` has 16 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 22 inferred relationships involving `HAL_DMA_Start_IT()` (e.g. with `HAL_I2C_Master_Transmit_DMA()` and `HAL_I2C_Master_Receive_DMA()`) actually correct?**
+  _`HAL_DMA_Start_IT()` has 22 INFERRED edges - model-reasoned connections that need verification._
