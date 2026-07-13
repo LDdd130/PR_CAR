@@ -33,6 +33,8 @@ typedef struct
     int8_t corner_candidate;
     uint8_t grid_clear_count;
     uint8_t side_clear_count;
+    uint8_t front_decide_count;
+    uint8_t brake_clear_count;
     uint8_t corner_tight;
     uint8_t launching;
     uint8_t last_full_imu_live;
@@ -245,6 +247,18 @@ static float course_grid_snap(float heading)
     return drive_wrap360(drive.course_zero + (index * 45.0f));
 }
 
+/* Cruise heading references may only be course axes (90 deg grid). The 45 deg
+ * grid above is for corner-exit alignment checks; snapping a cruise reference
+ * to it converts a corner overshoot (e.g. +115 after a +90 turn) into a
+ * committed diagonal reference (+135) that steers the car across the corridor
+ * into the outer wall. */
+static float course_axis_snap(float heading)
+{
+    if (!drive.course_latched) return heading;
+    float index = roundf(drive_wrap180(heading - drive.course_zero) / 90.0f);
+    return drive_wrap360(drive.course_zero + (index * 90.0f));
+}
+
 /* Signed turn progress accumulated frame by frame. A single
  * wrap180(heading - entry) cannot represent rotations past 180 deg — it wraps
  * to -180 and reads as "turning the wrong way", flipping the spin direction
@@ -314,7 +328,7 @@ static void turn_pid_run(const DriveInputs *in, float progress)
 static void apply_cruise_control(const DriveInputs *in)
 {
     DriveControlOutput output = {0};
-    float grid_heading = in->imu_live ? course_grid_snap(in->heading) : drive.heading_ref;
+    float grid_heading = in->imu_live ? course_axis_snap(in->heading) : drive.heading_ref;
     DriveControl_Run(in, drive.heading_ref, grid_heading,
         in->now - drive.state_since_ms, &output);
 
@@ -349,7 +363,7 @@ static void cruise_enter(const DriveInputs *in)
 
     DriveControl_Reset();
     if (from_turn || reacquire_course)
-        drive.heading_ref = course_grid_snap(in->heading);
+        drive.heading_ref = course_axis_snap(in->heading);
     else if (from_avoid)
         drive.heading_ref = drive.course_heading;
     else if (in->imu_live && drive.course_latched)
@@ -382,6 +396,8 @@ static void cruise_enter(const DriveInputs *in)
 static void brake_enter(const DriveInputs *in)
 {
     reset_detection_counts();
+    drive.front_decide_count = 0U;
+    drive.brake_clear_count = 0U;
     motion_brake(in->now);
     state_enter(DS_BRAKE, in->now);
 }
@@ -537,6 +553,10 @@ static int8_t corner_direction(const DriveInputs *in)
 
     if (left_asym || (left_open && !right_open)) return 0;
     if (right_asym || (right_open && !left_open)) return 1;
+    /* No wider-side fallback here: without strong side evidence the turn
+     * direction is decided in DS_BRAKE, from a wall firmly confirmed at
+     * FRONT_DECIDE_CM. The front reading spikes, and a rolling decision off
+     * a spiked front turned the car in the middle of straights. */
     return -1;
 }
 
@@ -579,7 +599,7 @@ static void cruise_run(const DriveInputs *in)
         {
             if (in->imu_live)
             {
-                drive.heading_ref = course_grid_snap(in->heading);
+                drive.heading_ref = course_axis_snap(in->heading);
                 DriveControl_PrimeHeading(in->heading);
             }
             motion_command((int16_t)CENTER_SETTLE_SPEED_PCT,
@@ -602,6 +622,12 @@ static void cruise_run(const DriveInputs *in)
     uint8_t graze = (uint8_t)(front_near ? front_graze_suspected(in) : 0U);
     dbg.graze = graze;
 
+    /* A real corner always presents an approaching front wall (measured 20 to
+     * 26 cm at the entries). Side asymmetry alone also appears whenever the
+     * car rides off-center in a corridor, so with the front still open past
+     * the turn threshold it must not count as a corner. */
+    uint8_t front_wall = front_recent_below(in, FRONT_TURN_CM);
+
     int8_t direction = corner_direction(in);
     uint8_t symmetric_course_corner = 0U;
     if (direction < 0)
@@ -609,10 +635,10 @@ static void cruise_run(const DriveInputs *in)
         direction = symmetric_course_direction(in);
         symmetric_course_corner = (uint8_t)(direction >= 0);
     }
-    uint8_t side_only_corner = (uint8_t)(!front_near
+    uint8_t side_only_corner = (uint8_t)(!front_wall
         && in->front_miss >= FRONT_FAIL_LIMIT
         && strong_side_corner(in, direction));
-    if (direction >= 0 && (front_near || side_only_corner))
+    if (direction >= 0 && (front_wall || side_only_corner))
     {
         if (drive.corner_candidate != direction)
         {
@@ -677,20 +703,65 @@ static void cruise_run(const DriveInputs *in)
 static void brake_run(const DriveInputs *in)
 {
     if ((in->now - drive.state_since_ms) < BRAKE_MS) return;
-    motion_stop(in->now);
-
-    /* A turn direction must come from at least one current side sample. */
-    if (!in->left_valid && !in->right_valid) return;
 
     if (in->f_valid && in->f < FRONT_DANGER_CM)
     {
+        motion_stop(in->now);
+        /* A turn direction must come from at least one current side sample. */
+        if (!in->left_valid && !in->right_valid) return;
         if (drive.reverse_count < REV_MAX_CHUNKS)
             reverse_enter(in);
         else
             spin_enter(in, 0U);
         return;
     }
-    spin_enter(in, (uint8_t)(drive.reverse_count > 0U));
+
+    /* The braking front reading may have been a spike (floor echo, bounce).
+     * If the wall evaporates, this was a false brake: resume cruising instead
+     * of committing a turn that has no wall. */
+    if (!front_recent_below(in, FRONT_TURN_CM))
+    {
+        drive.brake_clear_count = increment_u8(drive.brake_clear_count);
+        if (drive.brake_clear_count >= CLEAR_CONFIRM)
+        {
+            cruise_enter(in);
+            return;
+        }
+    }
+    else
+    {
+        drive.brake_clear_count = 0U;
+    }
+
+    /* Only a wall firmly at FRONT_DECIDE_CM decides the turn: consecutive
+     * fresh samples, never the dropout latch. Hold still while confirming so
+     * the deciding left/right pair is read from a stable pose. */
+    if (in->f_valid && in->f <= FRONT_DECIDE_CM)
+    {
+        drive.front_decide_count = increment_u8(drive.front_decide_count);
+        if (drive.front_decide_count >= FRONT_DECIDE_CONFIRM_N
+            && (in->left_valid || in->right_valid))
+        {
+            spin_enter(in, (uint8_t)(drive.reverse_count > 0U));
+            return;
+        }
+        motion_stop(in->now);
+        return;
+    }
+    drive.front_decide_count = 0U;
+
+    /* Wall confirmed but still beyond the decide line: creep up to it so the
+     * decision happens at a known distance. A wall that never resolves below
+     * the line (angled face, absorbing surface) falls back to deciding from
+     * where the car stands rather than parking forever. */
+    if ((in->now - drive.state_since_ms) >= (BRAKE_MS + BRAKE_CREEP_MAX_MS))
+    {
+        motion_stop(in->now);
+        if (!in->left_valid && !in->right_valid) return;
+        spin_enter(in, (uint8_t)(drive.reverse_count > 0U));
+        return;
+    }
+    motion_command(BRAKE_CREEP_PCT, BRAKE_CREEP_PCT, in->now);
 }
 
 static void spin_restart(const DriveInputs *in, uint8_t flip)
@@ -1081,7 +1152,7 @@ void Drive_Update(const DriveInputs *in)
     {
         if (drive.course_reacquire_pending)
         {
-            drive.heading_ref = course_grid_snap(in->heading);
+            drive.heading_ref = course_axis_snap(in->heading);
             drive.course_heading = drive.heading_ref;
         }
         else

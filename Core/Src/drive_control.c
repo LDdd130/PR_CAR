@@ -12,6 +12,8 @@ typedef struct
     uint8_t right_prev_valid;
     uint8_t error_valid;
     uint8_t axis_resnap_count;
+    uint8_t hdg_lp_valid;
+    float heading_error_lp;
     float previous_error;
     float previous_heading;
     float previous_steer;
@@ -286,11 +288,14 @@ static float compute_steer(const DriveInputs *in,
                            const ControlSample *sample,
                            const ControlProfile *profile,
                            float dt,
-                           float heading_ref,
                            float *guard_risk_cm,
                            uint8_t *mode)
 {
-    float heading_error = in->imu_live ? drive_wrap180(in->heading - heading_ref) : 0.0f;
+    /* Low-pass filtered upstream: vibration jitters the raw heading a few
+     * degrees even on a clean straight, and a deadband wide enough to hide
+     * that either swallows the centering command or shifts the equilibrium
+     * to its own edge. Filtering keeps DC gain intact. */
+    float heading_error = sample->heading_error_deg;
     float steer = 0.0f;
 
     if (sample->pair_valid)
@@ -305,10 +310,9 @@ static float compute_steer(const DriveInputs *in,
         *mode = DRIVE_STEER_BOTH;
         if (in->imu_live)
         {
-            float desired_heading = drive_wrap360(heading_ref - control.lateral_command);
-            float target_error = drive_wrap180(in->heading - desired_heading);
             steer = CENTER_HDG_KP_PCT_PER_DEG
-                  * drive_deadbandf(target_error, CENTER_HDG_DEADBAND_DEG);
+                  * drive_deadbandf(heading_error + control.lateral_command,
+                                    CENTER_HDG_DEADBAND_DEG);
         }
         else
         {
@@ -528,13 +532,34 @@ void DriveControl_Run(const DriveInputs *in,
     ControlProfile profile = select_profile(&sample);
     heading_ref_deg = update_heading_reference(in, &sample, &profile,
         heading_ref_deg, grid_heading_deg, &out->axis_resnapped);
-    sample.heading_error_deg = in->imu_live
-        ? drive_wrap180(in->heading - heading_ref_deg)
-        : 0.0f;
+
+    /* Steering and speed caps consume the filtered heading error; the raw
+     * value above only feeds the reference-maintenance gates. Reseed on any
+     * reference step so the filter never smears a deliberate axis change. */
+    if (in->imu_live)
+    {
+        float raw_error = drive_wrap180(in->heading - heading_ref_deg);
+        if (!control.hdg_lp_valid || out->axis_resnapped)
+        {
+            control.heading_error_lp = raw_error;
+            control.hdg_lp_valid = 1U;
+        }
+        else
+        {
+            control.heading_error_lp += CENTER_HDG_ERR_LPF_ALPHA
+                * drive_wrap180(raw_error - control.heading_error_lp);
+        }
+        sample.heading_error_deg = control.heading_error_lp;
+    }
+    else
+    {
+        control.hdg_lp_valid = 0U;
+        sample.heading_error_deg = 0.0f;
+    }
 
     float guard_risk_cm;
     uint8_t mode;
-    float steer = compute_steer(in, &sample, &profile, dt, heading_ref_deg,
+    float steer = compute_steer(in, &sample, &profile, dt,
         &guard_risk_cm, &mode);
     float speed = compute_speed(in, &sample, &profile, steer, guard_risk_cm,
         cruise_elapsed_ms);
