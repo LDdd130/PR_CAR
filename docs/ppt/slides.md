@@ -3,309 +3,106 @@ marp: true
 theme: prcar
 paginate: true
 size: 16:9
-title: PR_CAR 자율주행차 프로젝트
-description: STM32F411CEU6 + FreeRTOS 기반 박스 코스 자율주행차 발표 초안
-style: |
-  :root {
-    --deck-blue: #0284c7;
-    --deck-sky: #38bdf8;
-    --deck-sky-soft: #e0f2fe;
-    --deck-sky-wash: #f0f9ff;
-    --deck-ink: #172033;
-    --deck-line: #bae6fd;
-    --deck-shadow: 0 18px 44px rgba(2, 132, 199, 0.12);
-  }
-  section {
-    position: relative;
-    overflow: hidden;
-    background:
-      radial-gradient(circle at 92% 8%, rgba(56, 189, 248, 0.22), transparent 28%),
-      radial-gradient(circle at 4% 94%, rgba(14, 165, 233, 0.12), transparent 24%),
-      linear-gradient(180deg, #ffffff 0%, #f7fbff 58%, #eff8ff 100%);
-  }
-  section::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 10px;
-    background: linear-gradient(90deg, var(--deck-blue), var(--deck-sky), #7dd3fc);
-  }
-  h1,
-  h2,
-  h3 {
-    color: var(--deck-ink);
-  }
-  h2 {
-    position: relative;
-    border-bottom: 0;
-  }
-  h2::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    bottom: -2px;
-    width: 150px;
-    height: 5px;
-    border-radius: 999px;
-    background: linear-gradient(90deg, var(--deck-blue), var(--deck-sky));
-  }
-  h3 {
-    color: #0369a1;
-  }
-  li::marker {
-    color: var(--deck-blue);
-  }
-  section.title {
-    background:
-      radial-gradient(circle at 86% 16%, rgba(56, 189, 248, 0.34), transparent 30%),
-      radial-gradient(circle at 16% 78%, rgba(2, 132, 199, 0.16), transparent 26%),
-      linear-gradient(135deg, #ffffff 0%, #f0f9ff 54%, #e0f2fe 100%);
-  }
-  section.title h1 {
-    color: #0f172a;
-    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.9);
-  }
-  section.title p {
-    color: #075985;
-  }
-  section.title h1::after {
-    content: "";
-    display: block;
-    width: 210px;
-    height: 7px;
-    margin-top: 24px;
-    border-radius: 999px;
-    background: linear-gradient(90deg, var(--deck-blue), var(--deck-sky));
-  }
-  section.split > .left,
-  section.split > .right:not(.placeholder) {
-    padding: 22px 24px;
-    border: 1px solid rgba(125, 211, 252, 0.7);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.72);
-    box-shadow: 0 14px 34px rgba(2, 132, 199, 0.08);
-  }
-  section.split > .left {
-    border-left: 6px solid var(--deck-sky);
-  }
-  section:not(.split):not(.title):not(.code-focus) > ol {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px 18px;
-    padding-left: 0;
-    list-style: none;
-    counter-reset: deck-step;
-  }
-  section:not(.split):not(.title):not(.code-focus) > ol > li {
-    counter-increment: deck-step;
-    min-height: 44px;
-    margin: 0;
-    padding: 13px 16px 13px 54px;
-    border: 1px solid rgba(125, 211, 252, 0.72);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.74);
-    box-shadow: 0 10px 26px rgba(2, 132, 199, 0.08);
-    position: relative;
-  }
-  section:not(.split):not(.title):not(.code-focus) > ol > li::before {
-    content: counter(deck-step);
-    position: absolute;
-    left: 15px;
-    top: 12px;
-    display: grid;
-    place-items: center;
-    width: 28px;
-    height: 28px;
-    border-radius: 999px;
-    background: linear-gradient(135deg, var(--deck-blue), var(--deck-sky));
-    color: #ffffff;
-    font-size: 16px;
-    font-weight: 800;
-  }
-  .placeholder {
-    display: flex;
-    position: relative;
-    align-items: center;
-    justify-content: center;
-    min-height: 250px;
-    padding: 22px;
-    border: 2px dashed #7dd3fc;
-    border-radius: 8px;
-    background:
-      linear-gradient(135deg, rgba(224, 242, 254, 0.9), rgba(255, 255, 255, 0.86)),
-      repeating-linear-gradient(135deg, rgba(56, 189, 248, 0.08) 0 12px, transparent 12px 24px);
-    color: #075985;
-    font-size: 22px;
-    font-weight: 700;
-    text-align: center;
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72), var(--deck-shadow);
-  }
-  .placeholder::before {
-    content: "VISUAL";
-    position: absolute;
-    top: 16px;
-    left: 16px;
-    padding: 5px 11px;
-    border-radius: 999px;
-    background: #ffffff;
-    color: var(--deck-blue);
-    font-size: 13px;
-    letter-spacing: 0.06em;
-  }
-  .placeholder.large { min-height: 390px; }
-  .placeholder.flow { min-height: 330px; }
-  .kpi-row {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 16px;
-    margin-top: 28px;
-  }
-  .kpi {
-    padding: 18px 20px;
-    border: 1px solid rgba(125, 211, 252, 0.76);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.76);
-    box-shadow: var(--deck-shadow);
-  }
-  .kpi strong {
-    display: block;
-    margin-bottom: 2px;
-    color: var(--deck-blue);
-    font-size: 34px;
-    line-height: 1.1;
-  }
-  .kpi span {
-    color: #075985;
-    font-size: 18px;
-    font-weight: 650;
-  }
-  .compact {
-    font-size: 24px;
-    line-height: 1.38;
-  }
-  .caption {
-    margin-top: 10px;
-    color: #6e7781;
-    font-size: 18px;
-  }
-  .callout {
-    padding: 18px 20px;
-    border: 1px solid var(--deck-line);
-    border-radius: 8px;
-    background: var(--deck-sky-wash);
-  }
-  table {
-    border-color: var(--deck-line);
-    box-shadow: 0 14px 32px rgba(2, 132, 199, 0.08);
-  }
-  th {
-    background: linear-gradient(180deg, #e0f2fe 0%, #f0f9ff 100%);
-    color: #075985;
-  }
-  td {
-    background: rgba(255, 255, 255, 0.8);
-  }
-  code {
-    border-color: rgba(56, 189, 248, 0.5);
-    background: #e0f2fe;
-    color: #075985;
-  }
-  section.code-focus {
-    background:
-      radial-gradient(circle at 88% 12%, rgba(56, 189, 248, 0.22), transparent 30%),
-      linear-gradient(180deg, #ffffff 0%, #f0f9ff 100%);
-  }
-  section.code-focus > pre {
-    border-color: #7dd3fc;
-    box-shadow: 0 18px 42px rgba(2, 132, 199, 0.15);
-  }
-  .badge {
-    border-color: #7dd3fc;
-    background: #e0f2fe;
-    color: #075985;
-  }
-  .badge.critical {
-    border-color: #f9a8d4;
-    background: #fdf2f8;
-    color: #be185d;
-  }
-  .badge.solved {
-    border-color: #67e8f9;
-    background: #ecfeff;
-    color: #0e7490;
-  }
+title: PR_CAR 자율주행 RC카
+description: STM32F411 + FreeRTOS 벽추종 자율주행 RC카 — 발표 & 포트폴리오 덱
 ---
 
 <!-- _class: title -->
+<!-- TODO: 발표자 이름/소속/날짜 추가. KPI 수치는 최신 실차 검증 주행 후 갱신 -->
 
-# PR_CAR 자율주행차 프로젝트
+# PR_CAR 자율주행 RC카
 
-STM32F411CEU6 + FreeRTOS 기반 박스 코스 자율주행차
+STM32F411 + FreeRTOS 기반 차동구동 벽추종 자율주행 — 설계·제어·트러블슈팅 기록
 
 <div class="kpi-row">
-  <div class="kpi"><strong>6.3m</strong><span>박스 코스 전체 길이</span></div>
-  <div class="kpi"><strong>30.895s</strong><span>최근 완주 기록 IMG_2986</span></div>
+  <div class="kpi"><strong>28.86s</strong><span>최근 완주 기록 (IMG_3018)</span></div>
   <div class="kpi"><strong>20s</strong><span>목표 랩타임</span></div>
+  <div class="kpi"><strong>6.3m</strong><span>트랙 길이 · 코너 8개</span></div>
+</div>
+
+<p class="caption">기준 수동주행 영상 18.93s — 자율주행으로 이 수준의 코너링 흐름을 목표로 한다.</p>
+
+---
+
+<!-- _class: split -->
+<!-- TODO: 최신 완주 영상 대표 프레임(코너 아크 장면 추천) 캡처 삽입. 실차 검증 후 랩타임 추이 갱신 -->
+
+## 결과 먼저: 완주 데모
+
+<div class="left compact">
+
+### 랩타임 추이
+
+| 주행 | 기록 |
+|---|---|
+| IMG_2986 | 30.90s |
+| IMG_3018 | 28.86s |
+| 목표 | **20s 이내** |
+
+- 무충돌 완주가 1순위, 랩타임은 그 다음
+- 개선의 각 단계가 뒤의 케이스 스터디 한 건씩에 대응
+
+</div>
+
+<div class="right placeholder large">
+완주 주행 영상 대표 캡처<br>
+(코너 아크 구간 프레임 추천)
 </div>
 
 ---
 
 ## 발표 흐름
 
-1. 프로젝트 목표와 제약 조건
-2. 하드웨어 구성과 센서 역할
-3. FreeRTOS 런타임 구조
-4. 벽타기 / heading-hold 제어 전략
-5. 최근 문제 진단과 45도 그리드 스냅 해결
-6. 텔레메트리와 디버깅 체계
-7. 검증 상태와 다음 로드맵
+1. 프로젝트 목표와 트랙 제약
+2. 하드웨어 · 시스템 아키텍처
+3. FreeRTOS 펌웨어 구조와 센서 계층
+4. 주행 제어: FSM + 캐스케이드 조향
+5. 트러블슈팅 케이스 스터디
+6. 텔레메트리와 검증 방법론
+7. 결과 · 로드맵 · 배운 점
 
 ---
 
 <!-- _class: split -->
+<!-- TODO: testtrack.drawio 캡처 삽입 (구간 폭 라벨 포함 버전이면 베스트) -->
 
-## 프로젝트 목표
-
-<div class="left">
-
-### 핵심 목표
-
-- 박스 코스를 충돌 없이 빠르게 완주
-- 전방 / 측면 센서 융합으로 코너와 벽 접근 판단
-- BNO055 heading 기반으로 직진 안정성 확보
-- 포트폴리오 관점에서 제어, RTOS, 센서 통합을 명확히 보여주는 구조
-
-</div>
-
-<div class="right placeholder large">
-차량 주행 사진 또는 대표 이미지 삽입 영역
-</div>
-
----
-
-<!-- _class: split -->
-
-## 코스와 주행 제약
+## 목표와 트랙 제약
 
 <div class="left compact">
 
-- 코스: `testtrack.drawio`
-- 전체 약 6.3m, 코너 8개
-- 최협 구간 폭 37cm
-- 차량 크기: 길이 27cm, 폭 16cm
-- 최협 중앙 주행 여유: 약 10.5cm
-- 45도 코너와 90도 코너가 혼재
+### 목표
 
-<span class="badge critical">critical</span> heading 기준이 틀어지면 앞/뒤 모서리가 센서 위치보다 먼저 벽에 접근한다.
+- 무충돌 완주 최우선, 목표 랩타임 20s
+- 코너는 정지 없는 전진 아크로 통과
+
+### 제약
+
+- 트랙 폭 37 → 45 → 43 → 55(45° 챔퍼 ×2) → 50 → **67(방지턱)** → 50 → 60cm
+- 차체 27 × 16cm — 최협 구간 측면 여유 약 10cm
+- 45° 코너와 90° 코너 혼재, 편도 코스
+
+<span class="badge critical">critical</span> 여유 10cm에서는 heading 오차가 곧 충돌 — 자세 안정화가 핵심 문제다.
 
 </div>
 
 <div class="right placeholder large">
-코스맵 / 주행 경로 이미지 삽입 영역<br>
-예: testtrack.drawio 캡처
+트랙 도면 캡처 영역<br>
+testtrack.drawio + 구간 폭 표기
 </div>
+
+---
+
+<!-- TODO: 블록도 제작 (MCU 중심, 센서/구동/통신 3그룹 + 버스·타이머 라벨) -->
+
+## 시스템 아키텍처
+
+<div class="placeholder large">
+하드웨어 블록도 영역<br>
+STM32F411 ← HC-SR04(TIM3 IC) · VL53L0X×2(I2C1) · BNO055(I2C1) · SG-207×2(TIM2)<br>
+STM32F411 → L298N(TIM4 PWM) · HM-10 BLE(USART1)
+</div>
+
+<p class="caption">센서 4종 → 판단(FSM+조향) → 차동 구동, BLE 텔레메트리로 전 과정 관측 가능.</p>
 
 ---
 
@@ -313,69 +110,67 @@ STM32F411CEU6 + FreeRTOS 기반 박스 코스 자율주행차
 
 | 구성 | 연결 | 역할 |
 |---|---|---|
-| STM32F411CEU6 | 100MHz, FreeRTOS | 메인 제어기 |
-| 전방 HC-SR04 | PA5 / TIM3_CH1 PA6 | 정면 거리, 코너 진입 판단 |
-| VL53L0X ToF x2 | I2C1, XSHUT PA1/PA2 | 좌우 벽 거리 |
-| BNO055 | I2C1, INT PA0, RST PB1 | 차량 진행각 heading |
-| L298N + DC Motor | TIM4 PWM, PB12~15 | 좌우 차동 구동 |
-| Bluetooth | USART1 PA9/PA10 | 명령, 텔레메트리 |
-| IWDG | 2.048s | 센서/제어 루프 fail-safe |
+| STM32F411CEU6 | 100MHz Cortex-M4, FreeRTOS | 메인 제어기 |
+| HC-SR04 전방 | TIM3 CH1 입력캡처, 에코 버짓 6ms(~1m) | 정면 거리 · 코너 판정 |
+| VL53L0X ToF ×2 | I2C1, XSHUT 순차 기동(좌측 0x60 재배치) | 좌우 벽 거리 |
+| BNO055 IMU | I2C1, 부팅 상대축 heading | 차체 진행각 |
+| SG-207 엔코더 ×2 | TIM2 (`delay_us`와 공유) | 휠 속도 (텔레메트리) |
+| L298N + TT모터 4륜 | TIM4 PWM (CH1 우 / CH2 좌) | 차동 구동 |
+| HM-10 BLE | USART1 9600 | 명령 수신 · 텔레메트리 10Hz |
+| IWDG | 2.048s | 제어 루프 fail-safe |
 
 ---
 
 <!-- _class: split -->
+<!-- TODO: 태스크/큐 데이터 플로우 다이어그램 제작 -->
 
-## 센서 설계 포인트
-
-<div class="left compact">
-
-### ToF 주소 분리
-
-- VL53L0X는 기본 주소가 모두 `0x52`
-- XSHUT로 한 개씩 깨운 뒤 좌측만 `0x60`으로 이동
-- 우측은 기본 `0x52` 유지
-- IWDG 리셋 뒤에도 S0~S6 초기화 시퀀스로 결정적 복구
-
-### BNO055 사용 방식
-
-- `heading = Z축 yaw`
-- 차량 xy 평면 진행각으로 사용
-- roll / pitch는 직진 판단에 사용하지 않음
-
-</div>
-
-<div class="right placeholder flow">
-센서 배치도 / I2C 버스 구성도 삽입 영역
-</div>
-
----
-
-<!-- _class: split -->
-
-## FreeRTOS 런타임 구조
+## 펌웨어 아키텍처 — FreeRTOS 3태스크
 
 <div class="left compact">
 
 ### SensorTask
 
-- 전방 초음파 측정
-- 좌/우 ToF 폴링
-- BNO055 heading 폴링
-- median 필터와 유효성 게이팅
-- `DriveInputs`를 `driveQ`로 발행
+- 센서 측정 → median 필터 · 유효성 게이팅
+- `DriveInputs`를 `driveQ`로 발행 (12cm 미만은 비상 이벤트)
 
 ### MotorTask
 
-- `driveQ` 수신
-- IWDG refresh
-- `Drive_Update(&din)`
-- 모터 명령의 유일한 발행자
+- `driveQ` 소비 → `Drive_Update()`, 수신 시에만 IWDG refresh
+- **모터 명령의 유일한 발행자** — 경쟁 조건 차단
+
+### BluetoothTask
+
+- RX 명령 파싱 + TX 텔레메트리 10Hz
 
 </div>
 
 <div class="right placeholder flow">
 SensorTask → driveQ → MotorTask → PWM<br>
-BluetoothTask / Telemetry 포함 데이터 플로우 차트 영역
+BluetoothTask 양방향 · IWDG 경로 표시
+</div>
+
+---
+
+<!-- _class: split -->
+<!-- TODO: 센서 배치도(측면/평면) 또는 I2C 버스 구성도 삽입 -->
+
+## 센서 계층 설계
+
+<div class="left compact">
+
+### 신뢰할 수 있는 입력 만들기
+
+- ToF ×2 기본 주소 동일(`0x52`) → XSHUT 순차 기동, 좌측만 `0x60` 재배치 — 리셋 후에도 결정적 복구
+- 초음파 에코 버짓 6ms(~1m) — **타임아웃은 "먼 거리"가 아니라 `f_valid=0`**
+- BNO055는 부팅 상대축 사용 (실내 드리프트 대응)
+- invalid → valid 첫 샘플은 LPF를 raw로 재초기화
+
+<span class="badge solved">solved</span> 유효성 플래그를 모든 소비자에 강제 — "타임아웃 80cm = 개구부" 오독 버그 차단.
+
+</div>
+
+<div class="right placeholder flow">
+센서 배치도 / I2C 버스 구성도 영역
 </div>
 
 ---
@@ -384,191 +179,448 @@ BluetoothTask / Telemetry 포함 데이터 플로우 차트 영역
 
 | 상태 | 역할 |
 |---|---|
-| `CRUISE` | 일반 직진, 벽타기, 코너 후보 판단 |
-| `BRAKE` | 정면 위험 감속 / 정지 |
-| `SPIN` | 제자리 또는 피벗성 회전 보정 |
-| `REVERSE` | 막힘 상황 후진 탈출 |
-| `HOLD` | 정지 유지 |
-| `SIDE_AVOID` | 측벽 근접 비상 회피 |
-| `CORNER` | 전진성 아크 코너링 |
+| `CRUISE (0)` | 직진 · 벽추종 · 코너 후보 판단 |
+| `BRAKE (1)` | 정면 위험 감속 / 정지 |
+| `SPIN (2)` | 피벗 회전 — **폴백 전용** |
+| `REVERSE (3)` | 막힘 상황 후진 탈출 |
+| `HOLD (4)` | 정지 유지 |
+| `SIDE_AVOID (5)` | 측벽 근접 비상 회피 |
+| `CORNER (6)` | 전진 아크 코너링 — **정상 경로** |
 
-<span class="badge solved">solved</span> 모터 명령은 MotorTask 한 곳에서만 발행해 경쟁 조건을 줄인다.
+정상 코너 = `0→6→0`. `0→1→2` 반복이 보이면 코너 판정 문제 — 상태값이 텔레메트리 `st`와 1:1이라 로그만으로 진단 가능.
 
 ---
 
 <!-- _class: split -->
+<!-- TODO: 캐스케이드 블록 다이어그램 제작 (외루프→내루프→믹싱, 벽 반발 주입점 표시) -->
 
-## 제어 전략: 벽타기 + heading-hold
+## 조향: 2단 캐스케이드 + 벽 반발
 
 <div class="left compact">
 
-### 중심 유지
+### 외루프 — 어디를 볼 것인가
 
-좌우 ToF 차이를 중심 오차로 사용한다.
+- 횡오차 `(L−R)` P/D → 목표 heading 오프셋
+- 캡 ±8° — 코너 진입 자세 보호
 
-`wall_error = dist_left - dist_right`
+### 내루프 — 어떻게 돌 것인가
 
-- 양벽 유효: 좌우 등거리 센터링
-- 단일벽 유효: 벽 흡인 금지, 가까운 벽에서 밀어내기
-- 벽 정보 부족: BNO055 heading-hold
+- heading 오차 → 차동 duty + yaw-rate 댐핑
 
-### 직진 안정화
+### ref-무관 안전층
 
-- 긴 직선에서는 heading 기준을 강하게 유지
-- 현재 흔들리는 차체각을 새 기준으로 학습하지 않음
+- 11cm 점진 벽 반발 (양벽 시 센터링 스프링 합성)
+- 9cm 근접 가드
+- heading 기준이 오염돼도 동작하는 유일한 복구 조향력
 
 </div>
 
 <div class="right placeholder flow">
-벽타기 제어식 / 차체 중심 오차 설명 다이어그램 영역
+캐스케이드 제어 블록 다이어그램 영역
 </div>
 
 ---
 
 <!-- _class: split -->
+<!-- TODO: duty-속도 특성(스톨 하한) 실측 그래프 or 개념도 삽입 -->
 
-## 최근 문제 진단
-
-<div class="left compact">
-
-### IMG_2986 관찰
-
-- 완주 시간: 30.895초
-- 1.6m 긴 직선에서 좌우 지그재그 잔류
-- 45R 코너 2개에서 과회전 / 대각 주행
-- 마지막 90R 부근에서 큰 wiggle 발생
-
-### 구조 원인
-
-<span class="badge critical">critical</span> 코너 진입 시점의 대각 자세가 다음 레그의 `h_ref`로 유전됨
-
-</div>
-
-<div class="right placeholder large">
-IMG_2986 프레임 비교 / 문제 구간 캡처 영역
-</div>
-
----
-
-<!-- _class: split -->
-
-## 해결 방향: 45도 그리드 스냅
+## 속도 제어와 액추에이터의 현실
 
 <div class="left compact">
 
-코스의 모든 레그축은 다음 불변식을 따른다.
+### 실측으로 확인한 물리 한계
 
-`course_zero + 45° × k`
+- 직진 스톨 하한 **30% duty** — (0, 30) 명령은 실현 불가
+- 피벗(4륜 스키드)은 돌파 duty가 그보다 **훨씬 높음** — 전 바퀴 횡슬립
+- 하한 위반은 `drive_config.h` `#error` 컴파일 가드로 차단
 
-- `course_zero`: 시작 시 heading 래치
-- `course_grid_snap(h)`: 현재 heading에서 가장 가까운 그리드축 복원
-- 코너 탈출 후 `h_ref`를 현재 차체각이 아니라 그리드축으로 재설정
-- 45도 코너는 35~65도 회전 + 전방 clear 조건에서 조기 탈출
+### 속도 스케줄
 
-<span class="badge solved">solved</span> 진입 대각과 45도 코너 오염을 기준계에서 제거
+- 폭 / 전방 거리 / heading 오차 기반 속도 캡
+- sub-stall 구간은 `mix_substall()`: 요 모멘트는 보존, 공통 속도만 감속 → "보정 중 감속"
 
 </div>
 
 <div class="right placeholder flow">
-45도 그리드 스냅 개념도 영역<br>
-예: course_zero, k축, 현재 heading 투영
+duty–거동 특성 그래프 영역<br>
+(직진 스톨 30% vs 피벗 돌파 duty)
 </div>
-
----
-
-<!-- _class: code-focus -->
-
-# 텔레메트리 프레임
-
-```text
-T,<t_ms>,<front_cm>,<left_mm>,<right_mm>,<heading_x10>,<vL>,<vR>,<state>,<flags>
-
-state:
-0 CRUISE / 1 BRAKE / 2 SPIN / 3 REVERSE / 4 HOLD / 5 SIDE_AVOID / 6 CORNER / 7 MANUAL
-
-flags:
-b0 front_valid / b1 side_valid / b2 imu_live / b3 sys_power / b4 sys_mode
-```
-
-60초간 10Hz 프레임 안정성, 명령 왕복 지연, 상태 전이를 대시보드에서 확인한다.
 
 ---
 
 <!-- _class: split -->
+<!-- 케이스 공통 템플릿: 좌=증상(영상+관찰) / 우=원인→수정→검증. TODO: IMG_3014/3016 지그재그 구간 프레임 삽입 -->
 
-## 디버깅 관측 포인트
-
-<div class="left compact">
-
-### SWD Live Expressions
-
-- `dist_left`, `dist_right`
-- `wall_error`
-- `dbg.state`, `dbg.steer_mode`
-- `dbg.steer`, `dbg.hdg_err`
-- `dbg.yaw_rate`
-- `dbg.duty_l`, `dbg.duty_r`
-- `dbg.v_l`, `dbg.v_r`
-- `dbg.tel_tx`, `dbg.tel_skip`
-
-</div>
-
-<div class="right placeholder large">
-대시보드 화면 / 실시간 그래프 캡처 영역
-</div>
-
----
-
-## 현재 검증 상태
-
-| 항목 | 상태 |
-|---|---|
-| 최신 빌드 | `make -j4` 성공 |
-| 최근 완주 | `IMG_2986.mov`, 30.895초 |
-| 45도 그리드 스냅 | 코드 반영, 실차 재주행 필요 |
-| ToF 주소 분리 | as-built 검증 통과 |
-| BNO055 heading | xy 평면 진행각 사용 확인 |
-| 엔코더 / 텔레메트리 | R0~R3 계층 추가, 벤치 검증 필요 |
-| 속도 PI / 조향 캐스케이드 | 후속 로드맵 |
-
-<span class="badge critical">next</span> 최신 bin 플래시 후 `IMG_2987.mov` 촬영과 주행 분석이 다음 기준점이다.
-
----
-
-<!-- _class: split -->
-
-## 다음 로드맵
+## 케이스 #1 — 직선 지그재그 리밋사이클
 
 <div class="left compact">
 
-### 단기
+### 증상 <span class="badge critical">critical</span>
 
-1. 최신 bin 플래시
-2. 새 주행 영상 촬영
-3. 긴 직선 지그재그 감소 확인
-4. 45R 코너가 45도만 돌고 탈출하는지 확인
-5. 문제가 남으면 튜닝값을 한 번에 하나만 변경
+- 직선에서 좌우 발산 진동, 반대벽 오버슈트 반복
+- steer가 캡(±18%)에 반복 포화
+
+<div class="placeholder">
+지그재그 구간 영상 프레임 영역
+</div>
 
 </div>
 
 <div class="right compact">
 
-### 중기
+### 근본 원인
 
-1. 엔코더 벤치 체크
-2. 텔레메트리 10Hz 안정성 확인
-3. duty sweep으로 feed-forward 표 작성
-4. 속도 PI 적용
-5. 조향 출력을 `%duty`에서 `cm/s` 차동 속도로 전환
+sub-stall에서 안쪽 바퀴를 0으로 떨구며 바깥 바퀴는 유지 → 실제 차동이 명령의 2~3배로 **증폭** → 요 킥 → 리밋사이클
+
+### 수정
+
+`mix_substall()`: 안쪽 (0,30)% 구간에서 **요 모멘트는 명령 그대로 보존**, 공통 속도만 감속
+
+### 검증 <span class="badge solved">solved</span>
+
+직선 steer 포화 소멸 확인 — 텔레메트리 `steer` 필드로 정량 확인
+
+</div>
+
+---
+
+<!-- _class: split -->
+<!-- TODO: IMG_3012 포켓 왕복 회전 프레임 삽입 -->
+
+## 케이스 #2 — 180° wrap 회전각 버그
+
+<div class="left compact">
+
+### 증상 <span class="badge critical">critical</span>
+
+- 코너 포켓에서 좌↔우 왕복 헛돌기, 탈출 실패
+
+<div class="placeholder">
+포켓 왕복 회전 영상 프레임 영역
+</div>
+
+</div>
+
+<div class="right compact">
+
+### 근본 원인
+
+`wrap180(now − entry)`는 180° 초과 회전을 표현 불가 — +179° → −180° 점프를 "역회전"으로 오판 → 방향 반전 → 무한 왕복
+
+### 수정
+
+프레임 증분 누적 `turn_accum_deg`로 교체 + 진행 ≥180°면 코스 기준 게이트 무효화(기준 노화 예외)
+
+### 검증 <span class="badge solved">solved</span>
+
+실주행에서 포켓 탈출 확인 — **원칙: 각도 진행량은 증분 누적으로**
+
+</div>
+
+---
+
+<!-- _class: split -->
+<!-- TODO: dash_board 웹앱 실화면 캡처 삽입 -->
+
+## 텔레메트리 & 대시보드
+
+<div class="left compact">
+
+BLE 10Hz, 웹 대시보드와 인덱스 계약 — **필드는 append만, 변경 금지.**
+
+```text
+T,<t_ms>,<f cm>,<L mm>,<R mm>,
+  <h×10>,<vL>,<vR>,<st>,<fl>,<steer>
+```
+
+- `st` = FSM 상태 1:1 → 로그만으로 상태 전이 복원
+- `fl` 비트: f_valid / side_valid / imu_live / power / mode
+- `steer` = 조향 출력 — 진동·포화 진단용
+- RX: `A/M/U/D/L/R/S` + `#KEY=VAL` 런타임 튜닝
+
+</div>
+
+<div class="right placeholder large">
+웹 대시보드 실화면 캡처 영역<br>
+(실시간 그래프 + 상태 표시)
+</div>
+
+---
+
+<!-- _class: split -->
+<!-- TODO: 영상+로그 동기 분석 예시 캡처 (같은 시각 프레임과 로그 나란히) -->
+
+## 검증 방법론 — 시뮬레이터 없는 회귀 테스트
+
+<div class="left compact">
+
+호스트 시뮬레이터 없음 → **유일한 회귀 테스트 = 실차.** 그래서 관측을 계층화했다.
+
+1. **영상 + BLE 로그 동기 분석** — 프레임 타임스탬프와 `st/steer/fl` 대조
+2. **SWD Live Expressions** — `dbg.*` 구조체로 내부 상태 실시간 관측
+3. **수동주행 실측 캘리브레이션** — 트랙 각 지점의 L/R/F 실측값으로 코너 판정 임계 도출
+
+<span class="badge solved">solved</span> 실측 조합 검사: 직선 오검출 0건, 코너 방향 오판 0건 (±2cm 범위 포함)
+
+</div>
+
+<div class="right placeholder large">
+영상 프레임 + 동시각 BLE 로그<br>
+동기 분석 예시 영역
+</div>
+
+---
+
+<!-- TODO: 실차 검증 후 수치 갱신 — 이 슬라이드가 덱의 신뢰성 앵커 -->
+
+## 결과와 현재 상태
+
+<div class="kpi-row">
+  <div class="kpi"><strong>28.86s</strong><span>완주 기록 (IMG_3018)</span></div>
+  <div class="kpi"><strong>10.76%</strong><span>FLASH 사용 (56KB/512KB)</span></div>
+  <div class="kpi"><strong>17.08%</strong><span>RAM 사용 (22KB/128KB)</span></div>
+</div>
+
+| 항목 | 상태 |
+|---|---|
+| 코너 진입/방향 판정 | 수동주행 실측 기반 재캘리브레이션 완료 |
+| 마지막 대칭 코너 | 코스축 기반 우회전 폴백 추가 |
+| 최신 Release 빌드 | `-Wall` 통과 — **실차 재검증 대기** |
+
+<span class="badge critical">next</span> 다음 기준점 = 최신 hex 플래시 후 전체 주행 + BLE 로그 동시 기록.
+
+---
+
+<!-- _class: split -->
+
+## 로드맵과 배운 점
+
+<div class="left compact">
+
+### 로드맵
+
+1. 최신 Release 실차 검증 (무충돌 · 코너 방향 · 완주 시간)
+2. 무충돌 확보 후 속도 5% 단위 상향 → 20s
+3. 엔코더 기반 속도 PI (데이터는 이미 20ms 주기 수집 중)
+4. 방지턱: 부하 보상 + IMU pitch 게이트
+
+</div>
+
+<div class="right compact">
+
+### 배운 점 → 설계 원칙
+
+- 각도 진행량은 **증분 누적** (wrap 차분 금지)
+- duty 명령은 **실현 가능 범위** 안에서 — 컴파일 가드로 강제
+- 액추에이터 명령은 **단일 발행자**
+- 기준값 게이트에는 **"기준이 낡았을 때" 예외 경로** 필수
+- 튜닝은 실측 먼저, 게인은 그 다음
 
 </div>
 
 ---
 
 <!-- _class: title -->
+<!-- TODO: repo 링크 / 연락처 / QR 삽입 -->
 
-# 결론
+# 정리
 
-PR_CAR의 현재 핵심은 단순한 게인 조정이 아니라 기준계 안정화다.
+이 프로젝트의 핵심은 게인 튜닝이 아니라 **신뢰할 수 있는 기준계와 관측 체계**를 만든 것이다.
 
-45도 그리드 스냅으로 heading 기준 오염을 끊고, 이후 엔코더 기반 속도 루프와 텔레메트리로 튜닝을 숫자로 닫는 것이 다음 단계다.
+센서 유효성 → 기준계 안정화 → 텔레메트리 기반 정량 검증의 사이클로, 30.9s에서 28.9s까지 왔고 20s를 향해 간다.
+
+<p class="caption">Repo · 연락처 영역 (TODO)</p>
+
+---
+
+<!-- _class: inverse -->
+
+# Appendix
+
+트러블슈팅 케이스 추가 4건 · 실측 캘리브레이션 · 프로토콜 상세 · 엔지니어링 원칙
+
+---
+
+<!-- _class: split -->
+<!-- TODO: IMG_3009 제자리 왕복 프레임 삽입 -->
+
+## A1. 케이스 — 피벗 스톨과 스키드 돌파 duty
+
+<div class="left compact">
+
+### 증상 <span class="badge critical">critical</span>
+
+- 제자리 왕복 회전, 목표각 도달 전 멈춤 (IMG_3009)
+- 이후 "턴 힘 부족" 재보고
+
+<div class="placeholder">
+제자리 왕복 회전 프레임 영역
+</div>
+
+</div>
+
+<div class="right compact">
+
+### 근본 원인
+
+4륜 스키드 피벗은 전 바퀴 횡슬립 — 돌파 duty가 직진 스톨(30%)보다 훨씬 높은데 회전 PID 하한이 그 아래
+
+### 수정
+
+`TURN_SPEED 56 / TURN_INNER 34`, PID 하한 44/40 — 전부 `#error` 컴파일 가드로 고정
+
+### 검증 <span class="badge solved">solved</span>
+
+실주행 회전 응답 즉시 개선 확인
+
+</div>
+
+---
+
+<!-- _class: split -->
+
+## A2. 케이스 — 전방 타임아웃 시맨틱
+
+<div class="left compact">
+
+### 증상 <span class="badge critical">critical</span>
+
+- 회전 탈출 게이트가 안 풀려 코너에서 고착
+- 대시보드는 `f=80`으로 "멀쩡해 보임"
+
+</div>
+
+<div class="right compact">
+
+### 근본 원인
+
+에코 6ms 타임아웃(>1m)은 `f_valid=0`인데 탈출 게이트가 전부 `f_valid &&`로 잠김 — **표시값 80은 유효 신호가 아님** (`fl` b0 확인 필수)
+
+### 수정
+
+`front_open_at()` = valid면 거리 비교, invalid면 연속 miss 횟수로 개방 판단. 순간 결손은 `front_recent_below()`로 최근 median 유지
+
+### 검증 <span class="badge solved">solved</span>
+
+탈출 게이트 정상화. 잔여: 저장착 시 바닥 에코는 SW 구분 불가 — 하드웨어 장착 높이 이슈로 분리
+
+</div>
+
+---
+
+<!-- _class: split -->
+
+## A3. 케이스 — 모터 기동 시 IMU 브라운아웃
+
+<div class="left compact">
+
+### 증상 <span class="badge critical">critical</span>
+
+- 출발/피벗 시작 순간 `imu_live` 사망
+- IMU 의존 게이트가 시작부터 무력화
+
+</div>
+
+<div class="right compact">
+
+### 근본 원인
+
+모터 인러시 전류 → 전압 강하 → BNO055 응답 상실. 소프트웨어 버그가 아니라 **전원 하드웨어 특성**
+
+### 수정
+
+IMU 의존 게이트마다 IMU-무관 백스톱 시간창(`SPIN_BLIND_MS`, `LAUNCH_MS`) — 브라운아웃 동안 시간 기반으로 판단 유지
+
+### 검증 <span class="badge solved">solved</span>
+
+기동 직후 오동작 제거. 원칙: 센서 의존 게이트에는 항상 센서-무관 백스톱
+
+</div>
+
+---
+
+<!-- _class: split -->
+<!-- TODO: IMG_3013 벽 접착 프레임 삽입 -->
+
+## A4. 케이스 — 직선 벽 접착
+
+<div class="left compact">
+
+### 증상 <span class="badge critical">critical</span>
+
+- 벽에 붙은 뒤 스스로 못 떨어짐 (IMG_3013)
+
+<div class="placeholder">
+벽 접착 구간 프레임 영역
+</div>
+
+</div>
+
+<div class="right compact">
+
+### 근본 원인
+
+① `forward_floor`가 sub-stall 안쪽 바퀴를 30%로 올려 명령 차동을 반토막
+② 11cm 벽 반발이 단일벽 전용이라 양벽 직선에서 미동작 — 반발은 heading ref와 무관한 **유일한 복구 조향력**인데 꺼져 있었음
+
+### 수정
+
+벽 반발 상시 적용 + sub-stall 처리 경로 정리 (→ 본편 케이스 #1로 연결)
+
+### 검증 <span class="badge solved">solved</span>
+
+접착 해소 — 부작용(지그재그)은 케이스 #1에서 마무리
+
+</div>
+
+---
+
+<!-- TODO: 실차 검증 결과로 "판정 결과" 열 채우기 -->
+
+## A5. 수동주행 실측 → 판정 캘리브레이션
+
+| 위치 | 실측 (cm) | 기대 판정 |
+|---|---|---|
+| 초기 좁은 직선 | L=20, R=15 | 직선 유지 |
+| 첫 직각 코너 | F≈20, L=23, R=36 | 우회전 |
+| 둘째 직각 코너 | L=33, R=17 | 좌회전 |
+| 넓고 긴 직선 | L=24, R=19~20 | 직선 유지 |
+| 곡선 진입 | F≈26, L=19~20, R=46~50 | 우회전 |
+| 방지턱 전 마지막 직각 | L≈R | 코스축 폴백 우회전 |
+
+- 실측 ±2cm 조합 검사: 직선 오검출 0, 코너 방향 오판 0
+- 도출 임계: 일반 open 26 / 넓은 구간 30 / asym 10cm, `CORNER_ABORT` 24→16cm
+- 마지막 대칭 코너: 전방 ≤34cm + \|L−R\|≤6cm + 시작축 대비 +90°±20° 3회 확인 시 우회전
+
+---
+
+<!-- _class: code-focus -->
+
+# A6. BLE 프로토콜 상세
+
+```text
+TX @10Hz:
+T,<t_ms>,<f cm>,<L mm>,<R mm>,<h×10>,<vL>,<vR>,<st>,<fl>,<steer>
+
+st : 0 CRUISE / 1 BRAKE / 2 SPIN / 3 REVERSE / 4 HOLD / 5 SIDE_AVOID / 6 CORNER
+fl : b0 f_valid / b1 side_valid / b2 imu_live / b3 power / b4 mode
+
+RX:
+1/0 전원 · A 자율 · M 수동 · U/D/L/R/S 수동 조작
+#KEY=VAL : VT(목표속도) · TEL · HZ · ML/MR (런타임 튜닝)
+```
+
+부팅 시 모터 OFF — `A` 수신으로 시작. 기존 필드 인덱스는 웹앱과의 계약이라 변경 금지, 추가는 끝에 append.
+
+---
+
+## A7. 엔지니어링 원칙 (재발 방지 목록에서)
+
+1. 각도 진행량은 증분 누적 — `wrap180(now−entry)` 금지
+2. 모터 명령은 단일 발행자 (MotorTask)
+3. duty는 실현 가능 범위 확인 — 스톨/돌파 하한을 컴파일 가드로
+4. 기준값 게이트에는 "기준이 낡았을 때" 예외 경로
+5. 유효성 플래그는 모든 소비자에 일괄 적용
+6. invalid→valid 첫 샘플은 필터 raw 재초기화
+7. 확인 카운터에는 방향 포함 (좌1+우1 ≠ 2연속)
+8. 텔레메트리 인덱스 = 외부 계약, append-only

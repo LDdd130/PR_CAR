@@ -62,7 +62,11 @@
 | Claude 4차 (§5.3) | IMG_3013: 벽 접착 → 벽 반발 상시화 + sub-stall 반올림 수정 | 접착 해소, 지그재그 부작용 |
 | Claude 5차 (§5.4) | IMG_3014: 직선 지그재그 → `mix_substall` 요-보존 감속 믹싱 | 후속 Codex 수정으로 대체 |
 | Codex 6차 (§5.5) | IMG_3016/3018: 직선 필터·속도 완화, graze 안전 우회 제거, `56/0` 구조 아크 제거 | 빌드 통과, IMG_3018에서 구 수정 문제 확인 |
-| Codex 7차 (§5.6) | 수동 실측값 + drawio: 구간별 코너 기준, 마지막 대칭 코너 전용 우회전 폴백 | **최신, 실차 미검증** |
+| Codex 7차 (§5.6) | 수동 실측값 + drawio: 구간별 코너 기준, 마지막 대칭 코너 전용 우회전 폴백 | 실차: 직진 좌우 위빙 (IMG_3028) |
+| Claude 6차 (§5.7) | IMG_3028: 직진 위빙 → deadband를 헤딩 노이즈 항에만 적용 + 노이즈 노브 완화 | 실차: 위빙 잔존 (deadband 구성 자체가 결함) |
+| Claude 7차 (§5.8) | 위빙 재발 → 헤딩오차 LPF + deadband 축소 + 측면 3cm 진짜 데드존; 코너 방향 = 전방벽+좌우비교 폴백 | 실차: 전방 튐 → 조기/오발 회전 |
+| Claude 8차 (§5.9) | 전방 스파이크 → §5.8 44cm 폴백 철회; BRAKE=벽 검증(스파이크→크루즈 복귀) + 20cm 크립 확정 후 좌우 판정 | 실차: 직진 위빙 해소, 턴 이후 사행 (IMG_3029) |
+| Claude 9차 (§5.10) | IMG_3029+mapp 교차분석: 크루즈 ref 90°축 스냅(45°대각 금지), 코너 게이트 68→44cm, side-only 30→36cm, TURN_MIN 45→30° | **최신, 실차 미검증** |
 
 Codex 세션 원본: `C:\Users\user\CODEX_SESSION_{1,2,3}.jsonl` (1=메인, 2=제어 리뷰 서브에이전트,
 3=영상분석 서브에이전트). 상세 복원은 git 히스토리의 본 문서 이전 판 참조.
@@ -193,6 +197,107 @@ make RELEASE=1 -j4      # Release → build/release/PR_CAR.hex
   right를 반환. 3회 확인하며, 일반 코너 및 BRAKE→SPIN tie에도 적용.
 - BNO055 절대 방위가 아니라 부팅 상대축을 쓰며 주행은 약 20s이므로 이 한정된 course-axis 사용만 허용.
   다른 절대 heading 의존 로직으로 일반화하지 말 것.
+
+### 5.7 직진 좌우 위빙 (IMG_3028) — **최신**
+
+#### 관찰
+- §5.6 릴리스 실주행(IMG_3028)에서 직진 구간 좌우 흔들림. 사용자 확인: 진동 때문에 직진 중에도
+  heading이 양옆으로 몇 도씩 튀는 것이 정상 — 과하게 헤딩을 잡으려 하면 안 됨.
+
+#### 원인 (구조 결함)
+- `compute_steer` 양벽 브랜치가 `deadband(heading − ref + lateral_cmd)`로 **노이즈와 센터링 명령의
+  합**에 deadband를 걸었음. 위치오차 약 7cm까지의 센터링 명령(<1.8°)이 전부 deadband에 흡수 →
+  11cm 벽 반발 존 사이에서 위치 무규제 → 표류→반발 킥→반대편 표류의 저속 위빙 리밋사이클.
+- deadband를 키우면(노이즈 억제) 위치 불감대가 커지고, 줄이면 노이즈가 통과 — 두 목적이 한 노브에
+  묶여 튜닝 불가 상태였음. 단일벽 브랜치는 이미 heading 항만 deadband하는 올바른 구조.
+- 요 댐퍼가 지터 미분을 증폭: cap 6% = 조향 권한(18%)의 1/3을 노이즈가 랜덤 주입.
+
+#### 수정
+- `drive_control.c`: `steer = KP × (deadband(heading − ref) + lateral_cmd)` — deadband는 측정
+  노이즈 항에만, 센터링 명령은 직결 (단일벽 브랜치와 동일 구조로 통일).
+- 노브: `CENTER_HDG_KP 0.65→0.50`(§5.4 처방), `CENTER_HDG_DEADBAND 1.8→2.5`(지터 대역, 이제
+  위치제어와 무관하므로 안전), `CENTER_YAW_LPF_ALPHA 0.35→0.22`, `CENTER_YAW_RATE_DEADBAND 6→10`,
+  `CENTER_YAW_DAMP_MAX 6→4`.
+- 실측 판정(§5.6) 및 코너 FSM 무변경. 빌드 통과, 실차 미검증.
+- **실차 결과: 위빙 잔존.** `deadband(노이즈)+명령` 구성은 평형점이 deadband 가장자리로 밀려
+  임의의 작은 보정에도 차체가 2.5°+명령만큼 크랩 → 오버슈트 → 반대편 반복. §5.8이 대체.
+
+### 5.8 위빙 재발 + 코너 방향 단순화 (사용자 폼보드 실주행) — **최신**
+
+#### 교훈 (§5.7의 오류)
+- hard deadband는 어느 쪽에 걸어도 결함: 합에 걸면 위치 무규제 대역(§5.7 원인), 노이즈 항에만
+  걸면 평형점이 대역 가장자리로 이동(달성 헤딩 = deadband+명령, 소명령 증폭). **노이즈는 주파수
+  영역에서(LPF), deadband는 채터 방지용 소폭만.**
+
+#### 수정 1 — 직진 조향
+- `CENTER_HDG_ERR_LPF_ALPHA 0.25` 신설: 조향/속도캡용 헤딩오차를 1-pole LPF(fc≈2.3Hz)로 필터.
+  진동 지터(±2~3°, >5Hz) 3~5배 감쇠, 실제 선회(<2Hz)는 통과. href 게이트는 raw 유지.
+  기준축 스텝(fresh/resnap/IMU 부활) 시 필터 재시드 — 의도된 축 변경을 문지르지 않음.
+- `CENTER_HDG_DEADBAND_DEG 2.5→0.6` (채터 방지 소폭), 구성은 `deadband(오차_f+명령)` 복원.
+- 측면 데드존 진짜 불감대화: `CENTER_DEADZONE_CM 2→3`, `CENTER_INNER_KP_SCALE 0.35→0`.
+  사용자 요구: ToF가 0.5cm를 확신 못 하면 미세 센터링은 하지 말 것 — |L−R|<3cm(중심이탈
+  1.5cm)는 "이미 센터"로 간주, 헤딩 유지만 수행.
+
+#### 수정 2 — 코너 방향 판정 (사용자 명세)
+- `corner_direction()` 폴백 추가: asym/open 패턴 불충족이어도 **전방벽 확인(≤FRONT_TURN 44cm)
+  시 좌우 비교(SIDE_HYST 6cm)로 방향 결정** → DS_CORNER 진입. 폼보드 등으로 좁아진 통로에서
+  open 문턱(26/30cm)을 영원히 못 넘어 brake→spin으로 떨어지던 경로 제거.
+- 실측 직선 |L−R|≤5cm < hyst 6 → 직선 오발화 없음. 대칭 코너(<6cm)는 여전히 -1 →
+  코스축 우회전 폴백 소유. 센터링 데드존/LPF와 코너 판정은 비결합(코너는 raw 프레임 값 사용).
+
+#### 산출물
+- Debug/Release `-Wall` 무경고 빌드. 플래시: `build/release/PR_CAR.hex`.
+- **실차 결과: 전방이 튀어 조기/오발 좌우회전.** 44cm 폴백이 스파이크 래치(`front_recent_below`)로
+  발화 + `FRONT_STOP 34` 즉시 brake→spin이 스파이크 무검증. §5.9가 대체.
+
+### 5.9 전방 스파이크 무력화 — 좌우 판정은 20cm 확정 후 (사용자 명세) — **최신**
+
+#### 원인
+- HC-SR04 전방이 튐(바닥 에코/바운스). 스파이크가 median(3)을 뚫으면:
+  (a) §5.8의 44cm 폴백이 래치 기반 `front_recent_below`로 발화 → 직선 한복판 가짜 코너,
+  (b) `FRONT_STOP 34` 단일 프레임 brake → `brake_run`이 80ms 후 **무검증 즉시 spin** → 가짜 피벗.
+
+#### 수정 (사용자 명세: "전방 20cm 밑 확실히 확정되는 순간에 좌우회전 판단")
+- §5.8의 44cm 좌우비교 폴백 **철회** — 약한 증거 회전 경로 자체 제거.
+- `brake_run` 재작성 = 벽 검증 단계:
+  1. 벽 증발(`!front_recent_below(44)` × `CLEAR_CONFIRM 3`) → **cruise 복귀** (스파이크 무해화).
+  2. 벽 유지 + 전방 > 20cm → `BRAKE_CREEP_PCT 32`로 크립 접근 (최대 `BRAKE_CREEP_MAX_MS 700`).
+  3. `f_valid && f <= FRONT_DECIDE_CM 20` **연속 `FRONT_DECIDE_CONFIRM_N 2` 프레임 (fresh만,
+     dropout 래치 불인정)** → 정지 자세에서 좌우 비교 → `spin_enter`.
+  4. 700ms 내 20cm 미해결(경사벽/흡음) → 현 위치에서 구판정 폴백 (교착 방지).
+  5. `FRONT_DANGER 12` 미만 → 기존 reverse/spin 경로 그대로.
+- 강한 asym/open 실코너 롤링 아크(§5.6)와 대칭 코너 코스축 우회전은 무변경.
+  spin 진입이 ~20cm라 `symmetric_course_direction`의 front≤34 게이트 자연 충족.
+- 컴파일 가드: `DANGER < DECIDE < STOP`, `BRAKE_CREEP_PCT ≥ MOTOR_MIN_PCT`.
+- Debug/Release 무경고 빌드. 플래시: `build/release/PR_CAR.hex`.
+- **실차 결과 (IMG_3029+mapp.mp4): 직진 위빙 해소 확인, 그러나 턴 이후 사행/상태 스래시.** §5.10이 원인 규명.
+
+### 5.10 턴 이후 사행 — 영상+텔레메트리 교차분석 (IMG_3029.mov ↔ mapp.mp4) — **최신**
+
+#### 분석 방법
+- 웹앱 녹화(mapp.mp4, 37.9s)를 0.5s 간격 crop 시트로, 주행영상(IMG_3029.mov, 32.5s)을 1s
+  몽타주로 추출해 상태/Δheading/F/L/R/steer 타임라인 재구성. 시작 오프셋 ≈1.5s, 웹앱이 끝에서 ~5s 김.
+
+#### 규명된 3중 원인 (모두 데이터로 확인)
+1. **45° 그리드 ref 스냅**: 첫 코너 오버슈트 Δ+115 → `course_grid_snap`(45° 단위)이 ref를
+   **+135 대각선**으로 스냅 → 차가 복도를 대각 횡단 → F16 벽 → 스핀 → 반복 (t=2.5~8).
+2. **코너 오발**: 복도에서 치우치기만 해도 비대칭이 생기는데 전방 게이트가 `FRONT_ARC 68cm`라
+   F=46/49에서 CORNER 발화 (t=9.0: Δ−0.9 F46 L114/R299 → 가짜 우회전). front 타임아웃 시
+   side-only 경로도 far=33cm로 발화 (t=28.5, 문턱 30).
+3. **회전 양자화**: SPIN 최소 45°/목표 88° — 코너 후 20~30° 어긋남 보정에 88°를 돌려 반대로
+   과회전, BRAKE/SPIN/REVERSE 스래시 (전체 타임라인의 대부분이 이 반복).
+
+#### 수정
+- `course_axis_snap()` 신설(90° 단위) — **크루즈 heading_ref는 코스축만 허용**: cruise_enter,
+  launch, resnap 타깃, IMU 부활 4개소 교체. 45° `course_grid_snap`은 코너 그리드 탈출
+  정렬 검사(§CORNER_GRID) 전용으로 유지.
+- 코너 게이트 `front_near(68)` → `front_wall(FRONT_TURN 44)`: 실측 코너 진입 F=20~26이므로
+  여유 충분, 오프센터 비대칭 오발(F≥46) 차단. `CORNER_SIDE_ONLY_OPEN_CM 30→36`(오프센터
+  far 33 차단, 실측 side-only 코너 36~50).
+- `TURN_MIN_DEG 45→30`: 전방 열림 확인(52cm×3) 시 30°부터 스핀 탈출 — 소각 보정 허용.
+- 부가 발견: **우측 엔코더 전 구간 0 cm/s** (좌만 17~76). 제어 미사용이라 주행 무영향이나
+  속도 PI(R4) 전에 하드웨어 점검 필요.
+- Debug/Release 무경고 빌드. 플래시: `build/release/PR_CAR.hex`. 실차 미검증.
 
 #### 최신 빌드/산출물
 - Debug/Release `-Wall` 빌드 통과, `git diff --check` 통과, 실측 판정 조합 테스트 통과.

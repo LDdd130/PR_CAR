@@ -26,9 +26,18 @@
 #define CORNER_RESCUE_OUTER             48
 #define CORNER_RESCUE_INNER             32
 
-/* Front/side geometry (cm). Keep DANGER < STOP < TURN < CLEAR < ARC. */
+/* Front/side geometry (cm). Keep DANGER < DECIDE < STOP < TURN < CLEAR < ARC. */
 #define FRONT_DANGER_CM                 12
 #define CORNER_ABORT_CM                 16
+/* The HC-SR04 front reading spikes (floor echo, dropouts), so a pivot's turn
+ * direction is only decided from a wall that is firmly at FRONT_DECIDE_CM:
+ * consecutive fresh (non-latched) samples, reached by creeping after braking.
+ * A braking event whose wall evaporates instead resumes cruise — a spike must
+ * never pick a turn direction. */
+#define FRONT_DECIDE_CM                 20
+#define FRONT_DECIDE_CONFIRM_N           2U
+#define BRAKE_CREEP_PCT                 32
+#define BRAKE_CREEP_MAX_MS             700U
 #define FRONT_STOP_CM                   34
 #define FRONT_TURN_CM                   44
 #define FRONT_CLEAR_CM                  52
@@ -47,7 +56,9 @@
 #define CORNER_MIN_PROGRESS_DPS         75.0f
 #define CORNER_PROGRESS_SLACK_DEG        8.0f
 #define CORNER_SIDE_ONLY_CONFIRM_N        3U
-#define CORNER_SIDE_ONLY_OPEN_CM         30U
+/* 36: an off-center run in the wide straight reads the far wall at ~33 cm,
+ * which must stay below this; the real front-lost corners read 36-50 cm. */
+#define CORNER_SIDE_ONLY_OPEN_CM         36U
 #define CORNER_SIDE_ONLY_WIDE_OPEN_CM    46U
 #define CORNER_SIDE_ONLY_NEAR_CM         20U
 #define CORNER_SIDE_ONLY_ASYM_CM         12U
@@ -80,7 +91,10 @@
 #define BRAKE_MS                         80U
 #define SPIN_COMMIT_MS                  100U
 #define CLEAR_CONFIRM                    3
-#define TURN_MIN_DEG                    45.0f
+/* Minimum rotation before a clear front may end a spin. Post-corner wall
+ * encounters often need only a 25-40 deg correction; forcing more converts
+ * every small misalignment into an overshoot the next state must undo. */
+#define TURN_MIN_DEG                    30.0f
 #define TURN_TARGET_DEG                 88.0f
 #define TURN_CUTOFF_DEG                 96.0f
 #define TURN_WRONG_DEG                  20.0f
@@ -118,10 +132,13 @@
 #define CENTER_LPF_ALPHA                  0.45f
 #define CENTER_DERR_LPF_ALPHA             0.28f
 #define CENTER_DERR_MAX_CMS              35.0f
-#define CENTER_YAW_LPF_ALPHA              0.35f
+#define CENTER_YAW_LPF_ALPHA              0.22f
 #define CENTER_YAW_RATE_MAX_DPS          90.0f
-#define CENTER_DEADZONE_CM                2.0f
-#define CENTER_INNER_KP_SCALE             0.35f
+/* Side ToF pair is only trustworthy to about the cm; below this difference
+ * the corridor position is taken as "already centered" and the controller
+ * holds heading instead of chasing sensor wiggle. */
+#define CENTER_DEADZONE_CM                3.0f
+#define CENTER_INNER_KP_SCALE             0.0f
 #define CENTER_SIDE_PAIR_MAX_CM          58.0f
 #define CENTER_SINGLE_MAX_CM             32.0f
 #define COURSE_CAR_WIDTH_CM              16.0f
@@ -138,12 +155,18 @@
 #define CENTER_LATERAL_CMD_MAX_DEG        8.0f
 #define CENTER_LATERAL_CMD_SLEW_DPS      70.0f
 
-/* Inner loop: heading target -> differential wheel duty. */
-#define CENTER_HDG_KP_PCT_PER_DEG         0.65f
-#define CENTER_HDG_DEADBAND_DEG           1.8f
+/* Inner loop: heading target -> differential wheel duty.
+ * Vibration jitters the raw heading a few degrees even on a clean straight.
+ * That noise is removed by CENTER_HDG_ERR_LPF_ALPHA, not by the deadband:
+ * a deadband wide enough to hide it would leave the corridor position
+ * unregulated (or shift the settling point to the band edge) and the car
+ * weaves between the wall-repel zones. Keep the deadband small. */
+#define CENTER_HDG_ERR_LPF_ALPHA          0.25f
+#define CENTER_HDG_KP_PCT_PER_DEG         0.50f
+#define CENTER_HDG_DEADBAND_DEG           0.6f
 #define CENTER_YAW_KD_PCT_PER_DPS         0.24f
-#define CENTER_YAW_RATE_DEADBAND_DPS      6.0f
-#define CENTER_YAW_DAMP_MAX_PCT           6.0f
+#define CENTER_YAW_RATE_DEADBAND_DPS     10.0f
+#define CENTER_YAW_DAMP_MAX_PCT           4.0f
 #define CENTER_STEER_MAX_PCT             18.0f
 #define CENTER_STEER_SLEW_PCT_PER_S     140.0f
 
@@ -210,6 +233,14 @@
 #if !(FRONT_DANGER_CM < FRONT_STOP_CM && FRONT_STOP_CM < FRONT_TURN_CM && \
       FRONT_TURN_CM < FRONT_CLEAR_CM && FRONT_CLEAR_CM < FRONT_ARC_CM)
 #error "Front distance thresholds must remain strictly ordered"
+#endif
+
+#if !(FRONT_DANGER_CM < FRONT_DECIDE_CM && FRONT_DECIDE_CM < FRONT_STOP_CM)
+#error "Turn-decide distance must sit between the danger and stop thresholds"
+#endif
+
+#if BRAKE_CREEP_PCT < MOTOR_MIN_PCT
+#error "Brake creep duty must stay above the motor stall floor"
 #endif
 
 #if ARC_INNER < MOTOR_MIN_PCT || ARC_APPROACH_INNER < MOTOR_MIN_PCT
