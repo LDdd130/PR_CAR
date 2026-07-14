@@ -1,11 +1,11 @@
 # Graph Report - C:\Users\user\STM\PR_CAR  (2026-07-13)
 
 ## Corpus Check
-- 160 files · ~1,072,762 words
+- 160 files · ~1,072,456 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3193 nodes · 4289 edges · 131 communities detected
+- 3193 nodes · 4290 edges · 131 communities detected
 - Extraction: 86% EXTRACTED · 14% INFERRED · 0% AMBIGUOUS · INFERRED: 592 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
@@ -149,8 +149,8 @@
 4. `xTaskResumeAll()` - 26 edges
 5. `HAL_DMA_Start_IT()` - 24 edges
 6. `vTaskSuspendAll()` - 23 edges
-7. `HAL_DMA_Abort_IT()` - 21 edges
-8. `cruise_run()` - 20 edges
+7. `cruise_run()` - 21 edges
+8. `HAL_DMA_Abort_IT()` - 21 edges
 9. `StartDefaultTask()` - 20 edges
 10. `main()` - 18 edges
 
@@ -159,22 +159,22 @@
   C:\Users\user\STM\PR_CAR\Core\Src\encoder.c → C:\Users\user\STM\PR_CAR\Core\Src\freertos.c
 - `Encoder_Edges()` --calls--> `StartDefaultTask()`  [INFERRED]
   C:\Users\user\STM\PR_CAR\Core\Src\encoder.c → C:\Users\user\STM\PR_CAR\Core\Src\freertos.c
+- `HAL_GetTick()` --calls--> `HAL_RCC_OscConfig()`  [INFERRED]
+  C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal.c → C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_rcc.c
 - `HAL_GetTick()` --calls--> `HAL_UARTEx_ReceiveToIdle()`  [INFERRED]
   C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal.c → C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_uart.c
-- `HAL_GPIO_Init()` --calls--> `HAL_RCC_MCOConfig()`  [INFERRED]
-  C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_gpio.c → C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_rcc.c
-- `drive_deadbandf()` --calls--> `compute_steer()`  [INFERRED]
-  C:\Users\user\STM\PR_CAR\Core\Inc\drive_math.h → C:\Users\user\STM\PR_CAR\Core\Src\drive_control.c
+- `HAL_DMA_GetState()` --calls--> `I2C_Slave_STOPF()`  [INFERRED]
+  C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_dma.c → C:\Users\user\STM\PR_CAR\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_i2c.c
 
 ## Communities
 
 ### Community 0 - "Community 0"
 Cohesion: 0.01
-Nodes (228): AllocBlock(), CreateBlock(), FreeBlock(), OS_Tick_GetCount(), OS_Tick_GetInterval(), OS_Tick_GetOverflow(), osDelay(), osDelayUntil() (+220 more)
+Nodes (223): AllocBlock(), CreateBlock(), FreeBlock(), OS_Tick_GetCount(), OS_Tick_GetInterval(), OS_Tick_GetOverflow(), osDelay(), osDelayUntil() (+215 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.02
-Nodes (156): HAL_DMA_Abort_IT(), HAL_DMA_Start_IT(), HAL_I2C_Master_Receive_DMA(), HAL_I2C_Master_Seq_Receive_DMA(), HAL_I2C_Master_Seq_Transmit_DMA(), HAL_I2C_Master_Transmit_DMA(), HAL_I2C_Slave_Receive_DMA(), HAL_I2C_Slave_Seq_Receive_DMA() (+148 more)
+Nodes (163): osThreadFlagsSet(), Encoder_Edges(), Encoder_Init(), Encoder_OnCapture(), Encoder_SpeedCmps(), HAL_DMA_Abort_IT(), HAL_DMA_Start_IT(), HAL_I2C_Master_Receive_DMA() (+155 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.01
@@ -197,20 +197,20 @@ Cohesion: 0.02
 Nodes (5): __ROR(), __SXTAB16(), __SXTAB16_RORn(), __SXTB16(), __SXTB16_RORn()
 
 ### Community 7 - "Community 7"
-Cohesion: 0.03
-Nodes (82): HAL_DMA_GetState(), HAL_GetTick(), HAL_I2C_AbortCpltCallback(), HAL_I2C_AddrCallback(), HAL_I2C_DeInit(), HAL_I2C_ER_IRQHandler(), HAL_I2C_ErrorCallback(), HAL_I2C_EV_IRQHandler() (+74 more)
+Cohesion: 0.02
+Nodes (0): 
 
 ### Community 8 - "Community 8"
 Cohesion: 0.02
 Nodes (0): 
 
 ### Community 9 - "Community 9"
-Cohesion: 0.02
-Nodes (0): 
+Cohesion: 0.04
+Nodes (72): HAL_GetTick(), HAL_I2C_AbortCpltCallback(), HAL_I2C_AddrCallback(), HAL_I2C_DeInit(), HAL_I2C_ER_IRQHandler(), HAL_I2C_ErrorCallback(), HAL_I2C_EV_IRQHandler(), HAL_I2C_Init() (+64 more)
 
 ### Community 10 - "Community 10"
 Cohesion: 0.02
-Nodes (15): NVIC_DecodePriority(), SysTick_Config(), TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS(), HAL_NVIC_GetPriority(), HAL_NVIC_SetPriorityGrouping(), HAL_SYSTICK_Callback(), HAL_SYSTICK_Config() (+7 more)
+Nodes (53): osKernelInitialize(), NVIC_DecodePriority(), NVIC_EncodePriority(), SysTick_Config(), test_delay(), MX_GPIO_Init(), HAL_I2C_MspDeInit(), HAL_I2C_MspInit() (+45 more)
 
 ### Community 11 - "Community 11"
 Cohesion: 0.07
@@ -222,11 +222,11 @@ Nodes (0):
 
 ### Community 13 - "Community 13"
 Cohesion: 0.04
-Nodes (64): BNO055_HardReset(), BNO055_Init(), BNO055_ReadCalibStatus(), BNO055_ReadEuler(), bno_bus_recover(), bno_rd(), bno_wr8(), osKernelInitialize() (+56 more)
+Nodes (61): DMA_CalcBaseAndBitshift(), DMA_CheckFifoParam(), DMA_SetConfig(), HAL_DMA_Abort(), HAL_DMA_DeInit(), HAL_DMA_GetError(), HAL_DMA_GetState(), HAL_DMA_Init() (+53 more)
 
 ### Community 14 - "Community 14"
-Cohesion: 0.04
-Nodes (60): DMA_CalcBaseAndBitshift(), DMA_CheckFifoParam(), DMA_SetConfig(), HAL_DMA_Abort(), HAL_DMA_DeInit(), HAL_DMA_GetError(), HAL_DMA_Init(), HAL_DMA_PollForTransfer() (+52 more)
+Cohesion: 0.03
+Nodes (0): 
 
 ### Community 15 - "Community 15"
 Cohesion: 0.03
@@ -237,8 +237,8 @@ Cohesion: 0.03
 Nodes (0): 
 
 ### Community 17 - "Community 17"
-Cohesion: 0.03
-Nodes (0): 
+Cohesion: 0.07
+Nodes (49): BNO055_HardReset(), BNO055_Init(), BNO055_ReadCalibStatus(), BNO055_ReadEuler(), bno_bus_recover(), bno_rd(), bno_wr8(), osMessageQueueNew() (+41 more)
 
 ### Community 18 - "Community 18"
 Cohesion: 0.04
@@ -253,7 +253,7 @@ Cohesion: 0.04
 Nodes (2): TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS()
 
 ### Community 21 - "Community 21"
-Cohesion: 0.05
+Cohesion: 0.04
 Nodes (2): TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS()
 
 ### Community 22 - "Community 22"
@@ -265,39 +265,39 @@ Cohesion: 0.05
 Nodes (2): TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS()
 
 ### Community 24 - "Community 24"
-Cohesion: 0.09
-Nodes (32): FLASH_Erase_Sector(), FLASH_FlushCaches(), FLASH_MassErase(), FLASH_OB_BootConfig(), FLASH_OB_BOR_LevelConfig(), FLASH_OB_DisablePCROP(), FLASH_OB_DisableWRP(), FLASH_OB_EnablePCROP() (+24 more)
-
-### Community 25 - "Community 25"
 Cohesion: 0.05
 Nodes (2): TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS()
+
+### Community 25 - "Community 25"
+Cohesion: 0.09
+Nodes (32): FLASH_Erase_Sector(), FLASH_FlushCaches(), FLASH_MassErase(), FLASH_OB_BootConfig(), FLASH_OB_BOR_LevelConfig(), FLASH_OB_DisablePCROP(), FLASH_OB_DisableWRP(), FLASH_OB_EnablePCROP() (+24 more)
 
 ### Community 26 - "Community 26"
 Cohesion: 0.05
 Nodes (2): TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS()
 
 ### Community 27 - "Community 27"
+Cohesion: 0.05
+Nodes (2): TZ_NVIC_SetPriority_NS(), TZ_SysTick_Config_NS()
+
+### Community 28 - "Community 28"
 Cohesion: 0.06
 Nodes (0): 
 
-### Community 28 - "Community 28"
+### Community 29 - "Community 29"
 Cohesion: 0.07
 Nodes (0): 
 
-### Community 29 - "Community 29"
+### Community 30 - "Community 30"
 Cohesion: 0.13
 Nodes (19): prvBytesInBuffer(), prvInitialiseNewStreamBuffer(), prvReadBytesFromBuffer(), prvReadMessageFromBuffer(), prvWriteBytesToBuffer(), prvWriteMessageToBuffer(), xStreamBufferBytesAvailable(), xStreamBufferGenericCreate() (+11 more)
-
-### Community 30 - "Community 30"
-Cohesion: 0.08
-Nodes (0): 
 
 ### Community 31 - "Community 31"
 Cohesion: 0.08
 Nodes (0): 
 
 ### Community 32 - "Community 32"
-Cohesion: 0.09
+Cohesion: 0.08
 Nodes (0): 
 
 ### Community 33 - "Community 33"
@@ -313,12 +313,12 @@ Cohesion: 0.09
 Nodes (0): 
 
 ### Community 36 - "Community 36"
-Cohesion: 0.1
-Nodes (2): _exit(), _kill()
+Cohesion: 0.09
+Nodes (0): 
 
 ### Community 37 - "Community 37"
-Cohesion: 0.28
-Nodes (18): Init_ToF_Sensors(), get_spad_info(), rd16(), rd8(), rd_n(), ref_calibration(), tmo_decode(), tmo_encode() (+10 more)
+Cohesion: 0.1
+Nodes (2): _exit(), _kill()
 
 ### Community 38 - "Community 38"
 Cohesion: 0.17
@@ -841,12 +841,12 @@ Nodes (0):
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `HAL_GetTick()` connect `Community 7` to `Community 37`, `Community 10`, `Community 11`, `Community 13`, `Community 14`, `Community 24`?**
-  _High betweenness centrality (0.041) - this node is a cross-community bridge._
-- **Why does `main()` connect `Community 13` to `Community 0`, `Community 1`, `Community 10`, `Community 11`?**
-  _High betweenness centrality (0.023) - this node is a cross-community bridge._
-- **Why does `StartDefaultTask()` connect `Community 11` to `Community 0`, `Community 13`, `Community 7`?**
-  _High betweenness centrality (0.016) - this node is a cross-community bridge._
+- **Why does `HAL_GetTick()` connect `Community 9` to `Community 1`, `Community 10`, `Community 11`, `Community 13`, `Community 17`, `Community 25`?**
+  _High betweenness centrality (0.040) - this node is a cross-community bridge._
+- **Why does `main()` connect `Community 10` to `Community 0`, `Community 1`, `Community 11`, `Community 17`?**
+  _High betweenness centrality (0.021) - this node is a cross-community bridge._
+- **Why does `StartTask02()` connect `Community 17` to `Community 0`, `Community 1`, `Community 9`?**
+  _High betweenness centrality (0.015) - this node is a cross-community bridge._
 - **Are the 48 inferred relationships involving `HAL_GetTick()` (e.g. with `Encoder_OnCapture()` and `sensor_put_front_danger_event()`) actually correct?**
   _`HAL_GetTick()` has 48 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 10 inferred relationships involving `TIM_CCxChannelCmd()` (e.g. with `HAL_TIMEx_HallSensor_Start()` and `HAL_TIMEx_HallSensor_Stop()`) actually correct?**

@@ -33,6 +33,7 @@ typedef struct
     int8_t corner_candidate;
     uint8_t grid_clear_count;
     uint8_t side_clear_count;
+    uint8_t front_wall_count;
     uint8_t front_decide_count;
     uint8_t brake_clear_count;
     uint8_t corner_tight;
@@ -79,10 +80,11 @@ static uint8_t front_recent_below(const DriveInputs *in, uint16_t cm)
 
 static uint8_t wide_corner_context(const DriveInputs *in)
 {
+    /* Classify the corridor independently from corner plausibility.  Folding
+     * the near-side limit into this helper made a wall-hugging run in a wide
+     * straight fall back to the more permissive narrow-corridor thresholds. */
     return (uint8_t)(drive_corridor_class((float)in->l, (float)in->r)
-            == DRIVE_CORRIDOR_WIDE
-        && in->l >= CORNER_WIDE_NEAR_CM
-        && in->r >= CORNER_WIDE_NEAR_CM);
+        == DRIVE_CORRIDOR_WIDE);
 }
 
 static uint8_t strong_side_corner(const DriveInputs *in, int8_t direction)
@@ -348,6 +350,7 @@ static void reset_detection_counts(void)
     drive.corner_count = 0U;
     drive.corner_candidate = -1;
     drive.side_clear_count = 0U;
+    drive.front_wall_count = 0U;
 }
 
 static void cruise_enter(const DriveInputs *in)
@@ -468,7 +471,7 @@ static void side_avoid_enter(const DriveInputs *in)
     else if (in->right_valid && (!in->left_valid || in->r < in->l))
         drive.turn_right = 0U;
     state_enter(DS_SIDE_AVOID, in->now);
-    command_arc(SIDE_ESCAPE_OUTER, SIDE_ESCAPE_INNER, in->now);
+    command_pivot(CORNER_RESCUE_OUTER, CORNER_RESCUE_INNER, in->now, 1U);
 }
 
 static void corner_enter(const DriveInputs *in, uint8_t turn_right)
@@ -500,8 +503,9 @@ static uint8_t front_graze_suspected(const DriveInputs *in)
         uint8_t wide = wide_corner_context(in);
         uint16_t asymmetry = wide ? CORNER_WIDE_ASYM_CM : CORNER_ASYM_CM;
         uint16_t open = wide ? CORNER_WIDE_ASYM_OPEN_CM : CORNER_ASYM_OPEN_CM;
+        uint16_t near_min = wide ? CORNER_WIDE_NEAR_CM : CORNER_NEAR_SAFE_CM;
 
-        if (far >= (uint16_t)(near + asymmetry) && far >= open && near >= CORNER_NEAR_SAFE_CM)
+        if (far >= (uint16_t)(near + asymmetry) && far >= open && near >= near_min)
         {
             if (in->imu_live
                 && fabsf(drive_wrap180(in->heading - drive.heading_ref)) > CORNER_ENTRY_HDG_MAX_DEG)
@@ -543,13 +547,14 @@ static int8_t corner_direction(const DriveInputs *in)
     uint16_t side_open = wide ? CORNER_WIDE_OPEN_CM : SIDE_OPEN_CM;
     uint16_t asym_open = wide ? CORNER_WIDE_ASYM_OPEN_CM : CORNER_ASYM_OPEN_CM;
     uint16_t asymmetry = wide ? CORNER_WIDE_ASYM_CM : CORNER_ASYM_CM;
+    uint16_t near_min = wide ? CORNER_WIDE_NEAR_CM : CORNER_NEAR_SAFE_CM;
 
-    uint8_t left_open = (uint8_t)(in->l >= side_open && in->r >= CORNER_NEAR_SAFE_CM);
-    uint8_t right_open = (uint8_t)(in->r >= side_open && in->l >= CORNER_NEAR_SAFE_CM);
+    uint8_t left_open = (uint8_t)(in->l >= side_open && in->r >= near_min);
+    uint8_t right_open = (uint8_t)(in->r >= side_open && in->l >= near_min);
     uint8_t left_asym = (uint8_t)(in->l >= asym_open
-        && in->l >= (uint16_t)(in->r + asymmetry) && in->r >= CORNER_NEAR_SAFE_CM);
+        && in->l >= (uint16_t)(in->r + asymmetry) && in->r >= near_min);
     uint8_t right_asym = (uint8_t)(in->r >= asym_open
-        && in->r >= (uint16_t)(in->l + asymmetry) && in->l >= CORNER_NEAR_SAFE_CM);
+        && in->r >= (uint16_t)(in->l + asymmetry) && in->l >= near_min);
 
     if (left_asym || (left_open && !right_open)) return 0;
     if (right_asym || (right_open && !left_open)) return 1;
@@ -623,10 +628,17 @@ static void cruise_run(const DriveInputs *in)
     dbg.graze = graze;
 
     /* A real corner always presents an approaching front wall (measured 20 to
-     * 26 cm at the entries). Side asymmetry alone also appears whenever the
-     * car rides off-center in a corridor, so with the front still open past
-     * the turn threshold it must not count as a corner. */
-    uint8_t front_wall = front_recent_below(in, FRONT_TURN_CM);
+     * 26 cm at the entries) that STAYS close. A weaving car sees the far wall
+     * at an angle, which dips the front reading for a frame or two and, with
+     * the off-center side asymmetry, forged corners in the long straight.
+     * Demand the wall for consecutive frames before any corner may confirm. */
+    /* Confirmation is fresh-only.  A close sample followed by HC-SR04
+     * dropouts must not become three apparently consecutive wall samples. */
+    uint8_t front_wall_now = (uint8_t)(in->f_valid
+        && in->f < FRONT_TURN_CM && !graze);
+    drive.front_wall_count = front_wall_now
+        ? increment_u8(drive.front_wall_count) : 0U;
+    uint8_t front_wall = (uint8_t)(drive.front_wall_count >= FRONT_WALL_CONFIRM_N);
 
     int8_t direction = corner_direction(in);
     uint8_t symmetric_course_corner = 0U;
@@ -659,24 +671,28 @@ static void cruise_run(const DriveInputs *in)
             return;
         }
 
-        /* Do not spend the confirmation frame moving into a nearby or unseen
-         * front wall. The next full frame can enter the turn from rest. */
-        if (side_only_corner || front_recent_below(in, FRONT_STOP_CM))
+        /* A fresh wall plus strong side geometry is enough to begin a rolling
+         * arc while the final direction-confirmation frame arrives.  Keep the
+         * unseen-front side-only path stopped for safety. */
+        if (side_only_corner)
             motion_brake(in->now);
         else
-            apply_cruise_control(in);
+        {
+            drive.turn_right = (uint8_t)direction;
+            command_arc(ARC_OUTER, ARC_INNER, in->now);
+        }
         return;
     }
     drive.corner_count = 0U;
     drive.corner_candidate = -1;
 
-    if (front_recent_below(in, FRONT_STOP_CM))
+    if (front_recent_below(in, FRONT_STOP_CM) && !graze)
     {
         brake_enter(in);
         return;
     }
 
-    if (front_recent_below(in, FRONT_TURN_CM))
+    if (front_recent_below(in, FRONT_TURN_CM) && !graze)
     {
         drive.front_near_count = increment_u8(drive.front_near_count);
         if (drive.front_near_count >= FRONT_CONFIRM_N)
@@ -1098,7 +1114,7 @@ static void side_avoid_run(const DriveInputs *in)
         brake_enter(in);
         return;
     }
-    command_arc(SIDE_ESCAPE_OUTER, SIDE_ESCAPE_INNER, in->now);
+    command_pivot(CORNER_RESCUE_OUTER, CORNER_RESCUE_INNER, in->now, 0U);
 }
 
 void Drive_Init(void)

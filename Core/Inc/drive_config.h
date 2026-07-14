@@ -44,9 +44,14 @@
 #define FRONT_ARC_CM                    68
 #define SIDE_BLOCK_CM                    8
 #define SIDE_HYST                        6
-#define SIDE_OPEN_CM                    26
-#define CORNER_ASYM_CM                  10
-#define CORNER_ASYM_OPEN_CM             28
+/* Corner-opening evidence. An off-center run in a straight reads the far wall
+ * at up to ~33 cm (observed 28.6 and 33.3 on false fires), so anything below
+ * 34 must not open a corner; the measured real corners read 33-50 cm and a
+ * marginal miss safely falls back to the 20 cm brake-and-decide pivot. */
+#define SIDE_OPEN_CM                    34
+#define CORNER_ASYM_CM                  14
+#define CORNER_ASYM_OPEN_CM             34
+#define FRONT_WALL_CONFIRM_N             3U
 #define CORNER_NEAR_SAFE_CM              7
 #define CORNER_CONFIRM_N                 2
 #define CORNER_ENTRY_HDG_MAX_DEG        12.0f
@@ -69,18 +74,19 @@
 #define COURSE_FINAL_ENTRY_TOL_DEG       20.0f
 
 /* Wide corridors need stronger evidence before an opening becomes a corner. */
-#define CORNER_WIDE_OPEN_CM             30U
-#define CORNER_WIDE_ASYM_OPEN_CM        30U
-#define CORNER_WIDE_ASYM_CM             10U
+#define CORNER_WIDE_OPEN_CM             34U
+#define CORNER_WIDE_ASYM_OPEN_CM        34U
+#define CORNER_WIDE_ASYM_CM             12U
 #define CORNER_WIDE_NEAR_CM             15U
 
-/* Emergency side escape. Normal centering should act before this state. */
+/* Emergency side escape. Normal centering should act before this state.
+ * The escape must rotate the nose off the wall with the same breakaway-capable
+ * pivot as a corner rescue: a forward arc with a sub-stall inner wheel (the
+ * old 40/12) stalls against the wall and deadlocks the avoid/brake loop. */
 #define SIDE_AVOID_CM                    6
 #define SIDE_AVOID_CLEAR_CM              8
 #define SIDE_AVOID_CLEAR_CONFIRM         3
 #define SIDE_AVOID_MAX_MS              360U
-#define SIDE_ESCAPE_OUTER               40
-#define SIDE_ESCAPE_INNER               12
 
 /* HC-SR04 side-wall grazing model. */
 #define FRONT_BEAM_HALF_SIN              0.26f
@@ -203,7 +209,7 @@
 #define CENTER_BASE_SPEED_PCT            60.0f
 #define CENTER_STRAIGHT_FAST_SPEED_PCT   64.0f
 #define CENTER_NARROW_FAST_SPEED_PCT     60.0f
-#define CENTER_WIDE_FAST_SPEED_PCT       68.0f
+#define CENTER_WIDE_FAST_SPEED_PCT       65.0f
 #define CENTER_STRAIGHT_FAST_ERR_CM       8.0f
 #define CENTER_STRAIGHT_FAST_HDG_DEG      8.0f
 #define CENTER_MIN_SPEED_PCT             36.0f
@@ -213,7 +219,7 @@
 #define CENTER_SETTLE_MS                 90U
 #define CENTER_SETTLE_SPEED_PCT          56.0f
 #define CENTER_MID_SETTLE_SPEED_PCT      60.0f
-#define CENTER_WIDE_SETTLE_SPEED_PCT     66.0f
+#define CENTER_WIDE_SETTLE_SPEED_PCT     63.0f
 #define CENTER_HDG_FAST_DEG               4.0f
 #define CENTER_HDG_SLOW_DEG              14.0f
 #define CENTER_HDG_MIN_SPEED_PCT         40.0f
