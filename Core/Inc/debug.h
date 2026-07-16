@@ -31,6 +31,8 @@ typedef struct
     uint16_t front;
     uint16_t left;
     uint16_t right;
+    uint8_t tof_st_l;    /* 좌 ToF device range status code (11=valid, §5.20) */
+    uint8_t tof_st_r;    /* 우 ToF device range status code */
     uint8_t front_miss;
     uint32_t loop_ms;
     float heading;

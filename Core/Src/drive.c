@@ -1,5 +1,31 @@
+/* ============================================================================
+ * PR_CAR drive core v2 (§5.17 rewrite).
+ *
+ * Three logical layers behind the unchanged seven-state telemetry enum:
+ *
+ *   CRUISE  — corridor centering (perpendicular ToF pair) + heading hold on
+ *             the 90 deg course axis + a speed governor that keeps the car
+ *             inside its sensing/braking budget at all times.
+ *   TURN    — DS_CORNER rolling arc as the primary corner, DS_SPIN pivot as
+ *             the fallback and the decide-at-20cm path (user spec §5.9).
+ *   RECOVER — DS_BRAKE (stop, verify, creep, decide), DS_REVERSE (backing:
+ *             three-point-turn chunk from a blocked pivot, straight
+ *             otherwise), DS_SIDE_AVOID (side rescue), DS_HOLD (sensors dead).
+ *
+ * Carried-over invariants (HANDOVER §7/§9):
+ *   - Turn progress is wrap180-increment accumulation, never
+ *     wrap180(now - entry). turn_accum survives backing chunks; turn_leg
+ *     resets at every interruption and alone may unlock a course reversal.
+ *   - Front-wall decisions need consecutive FRESH samples; a spike or a
+ *     dropout latch never brakes, opens a corner or picks a direction.
+ *   - Cruise heading references are 90 deg course axes only.
+ *   - Every TURN->CRUISE exit passes the course-reversal gate.
+ *   - Pivot/rescue duties never drop below the skid breakaway floor.
+ *   - IMU-dependent gates keep IMU-independent backstops (motor inrush
+ *     brownout kills imu_live).
+ * ==========================================================================*/
+
 #include "drive.h"
-#include "drive_control.h"
 #include "drive_math.h"
 #include "motor.h"
 #include "debug.h"
@@ -8,66 +34,97 @@
 
 volatile DebugMonitor_t dbg;
 
+/* Steer-mode telemetry values (webapp contract, formerly drive_control.h). */
+#define STEER_MODE_BOTH      0U
+#define STEER_MODE_HEADING   3U
+#define STEER_MODE_OPEN      4U
+#define STEER_MODE_SINGLE    5U
+
 typedef struct
 {
     float integral;
     float previous_progress;
     uint32_t previous_ms;
     uint8_t previous_valid;
-} TurnPidContext;
+} TurnPid;
 
 typedef struct
 {
     DriveState state;
     uint32_t state_since_ms;
-    uint32_t launch_since_ms;
-    uint32_t spin_since_ms;
-    uint32_t stuck_since_ms;
 
-    uint8_t turn_right;
-    uint8_t swap_count;
-    uint8_t reverse_count;
-    uint8_t clear_count;
-    uint8_t front_near_count;
-    uint8_t corner_count;
-    int8_t corner_candidate;
-    uint8_t grid_clear_count;
-    uint8_t side_clear_count;
-    uint8_t front_wall_count;
-    uint8_t front_decide_count;
-    uint8_t brake_clear_count;
-    uint8_t corner_tight;
     uint8_t launching;
-    uint8_t last_full_imu_live;
+    uint32_t launch_since_ms;
 
-    float turn_last_heading;
-    float turn_accum_deg;
-    float heading_ref;
-    float stuck_heading;
-    float course_heading;
-    float course_zero;
-    uint8_t entry_heading_valid;
+    /* course frame (boot-relative; BNO055 absolute heading is never trusted) */
     uint8_t course_latched;
-    uint8_t course_reacquire_pending;
+    uint8_t reacquire_pending;
+    uint8_t last_imu_live;
+    float course_zero;
+    float course_heading;
+    float heading_ref;
 
+    /* turn */
+    uint8_t turn_right;
+    uint8_t entry_heading_valid;
+    uint8_t flip_used;
+    float turn_last_heading;
+    float turn_accum;       /* episode total, survives backing chunks */
+    float turn_leg;         /* current uninterrupted sweep only (§5.16) */
+    float stuck_heading;
+    uint32_t stuck_since_ms;
+    uint32_t spin_since_ms;
+    TurnPid pid;
+
+    /* recover */
+    uint8_t back_from_turn;
+    uint8_t retry_count;
+
+    /* fresh-confirm counters */
+    uint8_t front_wall_n;
+    uint8_t front_stop_n;
+    uint8_t decide_n;
+    uint8_t wall_gone_n;
+    uint8_t clear_n;
+    uint8_t block_n;
+    uint8_t side_clear_n;
+    int8_t corner_dir;
+    uint8_t corner_n;
+    uint8_t corner_dropout;
+
+    /* centering filters */
+    uint8_t lp_valid;
+    uint8_t l_prev_valid;
+    uint8_t r_prev_valid;
+    uint8_t err_valid;
+    uint8_t hdg_lp_valid;
+    uint8_t imu_prev_live;
+    float l_lp, r_lp;
+    float err_prev;
+    float derr_lp;
+    float yaw_lp;
+    float hdg_err_lp;
+    float previous_heading;
+    float lateral_cmd;
+    float previous_steer;
+    uint32_t center_prev_ms;
+
+    /* motion ramp */
     int16_t motion_left;
     int16_t motion_right;
     uint32_t motion_ms;
     uint8_t motion_valid;
-
-    TurnPidContext turn_pid;
 } DriveContext;
 
-static DriveContext drive = {
+static DriveContext d = {
     .state = DS_CRUISE,
     .launching = 1U,
-    .corner_candidate = -1,
+    .corner_dir = -1,
 };
 
-static uint8_t increment_u8(uint8_t value)
-{
-    return (value < 255U) ? (uint8_t)(value + 1U) : value;
-}
+/* ---------------------------------------------------------------- helpers */
+
+static uint8_t inc_u8(uint8_t v) { return (v < 255U) ? (uint8_t)(v + 1U) : v; }
 
 /* A short echo dropout must not erase the last near-wall observation. */
 static uint8_t front_recent_below(const DriveInputs *in, uint16_t cm)
@@ -78,57 +135,19 @@ static uint8_t front_recent_below(const DriveInputs *in, uint16_t cm)
         && in->f < cm);
 }
 
-static uint8_t wide_corner_context(const DriveInputs *in)
+/* No echo within the 6 ms budget means nothing within ~1 m: a persistent
+ * timeout counts as open space, an isolated one does not. */
+static uint8_t front_open_at(const DriveInputs *in, uint16_t cm)
 {
-    /* Classify the corridor independently from corner plausibility.  Folding
-     * the near-side limit into this helper made a wall-hugging run in a wide
-     * straight fall back to the more permissive narrow-corridor thresholds. */
-    return (uint8_t)(drive_corridor_class((float)in->l, (float)in->r)
-        == DRIVE_CORRIDOR_WIDE);
+    if (in->f_valid) return (uint8_t)(in->f >= cm);
+    return (uint8_t)(in->front_miss >= FRONT_FAIL_LIMIT);
 }
 
-static uint8_t strong_side_corner(const DriveInputs *in, int8_t direction)
+static int16_t clamp_pct(int16_t v)
 {
-    if (direction < 0 || !in->left_valid || !in->right_valid) return 0U;
-
-    uint16_t open = (direction == 0) ? in->l : in->r;
-    uint16_t near = (direction == 0) ? in->r : in->l;
-    uint8_t wide = wide_corner_context(in);
-    uint16_t open_min = wide
-        ? CORNER_SIDE_ONLY_WIDE_OPEN_CM
-        : CORNER_SIDE_ONLY_OPEN_CM;
-    uint16_t asym_min = wide
-        ? CORNER_SIDE_ONLY_WIDE_ASYM_CM
-        : CORNER_SIDE_ONLY_ASYM_CM;
-
-    return (uint8_t)(open >= open_min
-        && near <= CORNER_SIDE_ONLY_NEAR_CM
-        && open >= (uint16_t)(near + asym_min));
-}
-
-/* testtrack.drawio ends with an eastbound-to-southbound right turn before the
- * speed bump. Its side ranges can be symmetric, so geometry alone has no turn
- * direction. Restrict this fallback to that course axis and a confirmed wall. */
-static int8_t symmetric_course_direction(const DriveInputs *in)
-{
-    if (!drive.course_latched || !in->imu_live
-        || !in->left_valid || !in->right_valid
-        || !front_recent_below(in, FRONT_STOP_CM))
-        return -1;
-
-    uint16_t side_diff = (in->l >= in->r) ? (in->l - in->r) : (in->r - in->l);
-    if (side_diff > CORNER_SYMMETRIC_MAX_DIFF_CM) return -1;
-
-    float relative_heading = drive_wrap180(in->heading - drive.course_zero);
-    float final_axis_error = drive_wrap180(relative_heading - COURSE_FINAL_ENTRY_DEG);
-    return (fabsf(final_axis_error) <= COURSE_FINAL_ENTRY_TOL_DEG) ? 1 : -1;
-}
-
-static int16_t clamp_pct(int16_t value)
-{
-    if (value > 100) return 100;
-    if (value < -100) return -100;
-    return value;
+    if (v > 100) return 100;
+    if (v < -100) return -100;
+    return v;
 }
 
 static int16_t approach_i16(int16_t current, int16_t target, int16_t step)
@@ -146,51 +165,56 @@ static int16_t approach_i16(int16_t current, int16_t target, int16_t step)
     return current;
 }
 
-/* Motion states share one time-based wheel ramp. Brake/stop bypass it. */
-static void motion_command(int16_t left_pct, int16_t right_pct, uint32_t now)
+static float approach_f(float current, float target, float max_step)
 {
-    left_pct = clamp_pct(left_pct);
-    right_pct = clamp_pct(right_pct);
-
-    if (!drive.motion_valid)
-    {
-        drive.motion_left = 0;
-        drive.motion_right = 0;
-        drive.motion_ms = now - DRIVE_NOMINAL_UPDATE_MS;
-        drive.motion_valid = 1U;
-    }
-
-    uint32_t elapsed_ms = now - drive.motion_ms;
-    if (elapsed_ms > 100U) elapsed_ms = 100U;
-    int16_t step = (int16_t)((DRIVE_WHEEL_SLEW_PCT_PER_S * (float)elapsed_ms / 1000.0f) + 0.5f);
-    if (elapsed_ms > 0U && step < 1) step = 1;
-    drive.motion_left = approach_i16(drive.motion_left, left_pct, step);
-    drive.motion_right = approach_i16(drive.motion_right, right_pct, step);
-
-    drive.motion_ms = now;
-    Motor_SetWheels(drive.motion_left, drive.motion_right);
-    dbg.duty_l = drive.motion_left;
-    dbg.duty_r = drive.motion_right;
+    return drive_clampf(target, current - max_step, current + max_step);
 }
 
-static void motion_command_immediate(int16_t left_pct, int16_t right_pct, uint32_t now)
+/* Motion states share one time-based wheel ramp; brake/stop bypass it. */
+static void motion_command(int16_t left, int16_t right, uint32_t now)
 {
-    drive.motion_left = clamp_pct(left_pct);
-    drive.motion_right = clamp_pct(right_pct);
-    drive.motion_ms = now;
-    drive.motion_valid = 1U;
-    Motor_SetWheels(drive.motion_left, drive.motion_right);
-    dbg.duty_l = drive.motion_left;
-    dbg.duty_r = drive.motion_right;
+    left = clamp_pct(left);
+    right = clamp_pct(right);
+
+    if (!d.motion_valid)
+    {
+        d.motion_left = 0;
+        d.motion_right = 0;
+        d.motion_ms = now - DRIVE_NOMINAL_UPDATE_MS;
+        d.motion_valid = 1U;
+    }
+
+    uint32_t elapsed = now - d.motion_ms;
+    if (elapsed > 100U) elapsed = 100U;
+    int16_t step = (int16_t)((DRIVE_WHEEL_SLEW_PCT_PER_S * (float)elapsed / 1000.0f) + 0.5f);
+    if (elapsed > 0U && step < 1) step = 1;
+    d.motion_left = approach_i16(d.motion_left, left, step);
+    d.motion_right = approach_i16(d.motion_right, right, step);
+
+    d.motion_ms = now;
+    Motor_SetWheels(d.motion_left, d.motion_right);
+    dbg.duty_l = d.motion_left;
+    dbg.duty_r = d.motion_right;
+}
+
+static void motion_command_immediate(int16_t left, int16_t right, uint32_t now)
+{
+    d.motion_left = clamp_pct(left);
+    d.motion_right = clamp_pct(right);
+    d.motion_ms = now;
+    d.motion_valid = 1U;
+    Motor_SetWheels(d.motion_left, d.motion_right);
+    dbg.duty_l = d.motion_left;
+    dbg.duty_r = d.motion_right;
 }
 
 static void motion_stop(uint32_t now)
 {
     Car_Stop();
-    drive.motion_left = 0;
-    drive.motion_right = 0;
-    drive.motion_ms = now;
-    drive.motion_valid = 1U;
+    d.motion_left = 0;
+    d.motion_right = 0;
+    d.motion_ms = now;
+    d.motion_valid = 1U;
     dbg.duty_l = 0;
     dbg.duty_r = 0;
     dbg.steer = 0.0f;
@@ -199,10 +223,10 @@ static void motion_stop(uint32_t now)
 static void motion_brake(uint32_t now)
 {
     Car_Brake();
-    drive.motion_left = 0;
-    drive.motion_right = 0;
-    drive.motion_ms = now;
-    drive.motion_valid = 1U;
+    d.motion_left = 0;
+    d.motion_right = 0;
+    d.motion_ms = now;
+    d.motion_valid = 1U;
     dbg.duty_l = 0;
     dbg.duty_r = 0;
     dbg.steer = 0.0f;
@@ -211,7 +235,7 @@ static void motion_brake(uint32_t now)
 static void command_arc(uint8_t outer, uint8_t inner, uint32_t now)
 {
     int16_t delta = (int16_t)((outer - inner) / 2U);
-    if (drive.turn_right)
+    if (d.turn_right)
     {
         motion_command((int16_t)outer, (int16_t)inner, now);
         dbg.steer = -(float)delta;
@@ -225,89 +249,118 @@ static void command_arc(uint8_t outer, uint8_t inner, uint32_t now)
 
 static void command_pivot(uint8_t outer, uint8_t inner, uint32_t now, uint8_t immediate)
 {
-    int16_t left = drive.turn_right ? (int16_t)outer : -(int16_t)inner;
-    int16_t right = drive.turn_right ? -(int16_t)inner : (int16_t)outer;
+    int16_t left = d.turn_right ? (int16_t)outer : -(int16_t)inner;
+    int16_t right = d.turn_right ? -(int16_t)inner : (int16_t)outer;
     if (immediate) motion_command_immediate(left, right, now);
     else motion_command(left, right, now);
 
-    if (drive.turn_right)
-        dbg.steer = (float)(-((int16_t)outer + (int16_t)inner) / 2);
-    else
-        dbg.steer = (float)(((int16_t)outer + (int16_t)inner) / 2);
+    dbg.steer = d.turn_right
+        ? -(float)(((int16_t)outer + (int16_t)inner) / 2)
+        : (float)(((int16_t)outer + (int16_t)inner) / 2);
 }
 
-static void state_enter(DriveState state, uint32_t now)
+/* Reverse phase of a three-point turn: retreat while yaw keeps the committed
+ * sign, so the backing chunk contributes turn progress instead of only
+ * buying centimetres the re-approach immediately spends (§5.14). */
+static void command_back_turn(uint32_t now, uint8_t immediate)
 {
-    drive.state = state;
-    drive.state_since_ms = now;
+    int16_t inner = -(int16_t)REV_TURN_INNER;
+    int16_t outer = -(int16_t)REV_TURN_OUTER;
+    int16_t left = d.turn_right ? inner : outer;
+    int16_t right = d.turn_right ? outer : inner;
+    if (immediate) motion_command_immediate(left, right, now);
+    else motion_command(left, right, now);
+
+    dbg.steer = d.turn_right
+        ? -(float)((REV_TURN_OUTER + REV_TURN_INNER) / 2)
+        : (float)((REV_TURN_OUTER + REV_TURN_INNER) / 2);
 }
 
-static float course_grid_snap(float heading)
-{
-    if (!drive.course_latched) return heading;
-    float index = roundf(drive_wrap180(heading - drive.course_zero) / 45.0f);
-    return drive_wrap360(drive.course_zero + (index * 45.0f));
-}
+/* ------------------------------------------------------------ course frame */
 
-/* Cruise heading references may only be course axes (90 deg grid). The 45 deg
- * grid above is for corner-exit alignment checks; snapping a cruise reference
- * to it converts a corner overshoot (e.g. +115 after a +90 turn) into a
- * committed diagonal reference (+135) that steers the car across the corridor
- * into the outer wall. */
+/* Cruise references may only be 90 deg course axes: any finer grid converts
+ * a corner overshoot into a committed diagonal reference (§5.10). */
 static float course_axis_snap(float heading)
 {
-    if (!drive.course_latched) return heading;
-    float index = roundf(drive_wrap180(heading - drive.course_zero) / 90.0f);
-    return drive_wrap360(drive.course_zero + (index * 90.0f));
+    if (!d.course_latched) return heading;
+    float index = roundf(drive_wrap180(heading - d.course_zero) / 90.0f);
+    return drive_wrap360(d.course_zero + (index * 90.0f));
 }
 
-/* Signed turn progress accumulated frame by frame. A single
- * wrap180(heading - entry) cannot represent rotations past 180 deg — it wraps
- * to -180 and reads as "turning the wrong way", flipping the spin direction
- * mid-search. Accumulation keeps the angle unbounded and monotonic. */
+static uint8_t axis_aligned(float heading)
+{
+    return (uint8_t)(fabsf(drive_wrap180(heading - course_axis_snap(heading)))
+        <= TURN_AXIS_ALIGN_DEG);
+}
+
+/* Both flanks open (or dead) means there is no corridor whose axis a turn
+ * could align to — the plaza facets sit at 45 deg, and holding out for a
+ * 90 deg pose there is what churned mappv13/14 (§5.19). */
+static uint8_t sides_open_wide(const DriveInputs *in)
+{
+    uint8_t l_open = (uint8_t)(!in->left_valid || in->l >= TURN_WIDE_EXIT_SIDE_CM);
+    uint8_t r_open = (uint8_t)(!in->right_valid || in->r >= TURN_WIDE_EXIT_SIDE_CM);
+    return (uint8_t)(l_open && r_open);
+}
+
+/* ---------------------------------------------------------- turn progress */
+
 static void turn_progress_reset(float heading)
 {
-    drive.turn_accum_deg = 0.0f;
-    drive.turn_last_heading = heading;
+    d.turn_accum = 0.0f;
+    d.turn_leg = 0.0f;
+    d.turn_last_heading = heading;
 }
 
 static float turn_progress_update(float heading)
 {
-    float delta = drive_wrap180(heading - drive.turn_last_heading);
-    drive.turn_last_heading = heading;
-    drive.turn_accum_deg += drive.turn_right ? delta : -delta;
-    return drive.turn_accum_deg;
+    float delta = drive_wrap180(heading - d.turn_last_heading);
+    d.turn_last_heading = heading;
+    float signed_delta = d.turn_right ? delta : -delta;
+    d.turn_accum += signed_delta;
+    d.turn_leg += signed_delta;
+    return d.turn_accum;
 }
 
-static void turn_pid_reset(void)
+/* course_heading is only trustworthy within a half revolution. A single
+ * uninterrupted 180 deg sweep (turn_leg) proves the pocket demanded a course
+ * reversal; the episode total must never unlock this — totals preserved
+ * across backing chunks reach 180 in an ordinary corner fight (§5.16). */
+static uint8_t exit_course_ok(const DriveInputs *in)
 {
-    drive.turn_pid = (TurnPidContext){0};
+    if (!in->imu_live) return 1U;
+    float dev = fabsf(drive_wrap180(in->heading - d.course_heading));
+    dbg.course_dev = dev;
+    return (uint8_t)(dev < COURSE_REV_DEG || d.turn_leg >= TURN_LEG_REVERSAL_DEG);
 }
+
+/* --------------------------------------------------------------- turn PID */
+
+static void turn_pid_reset(void) { d.pid = (TurnPid){0}; }
 
 static void turn_pid_run(const DriveInputs *in, float progress)
 {
     float dt = 0.02f;
-    if (drive.turn_pid.previous_ms != 0U && in->now > drive.turn_pid.previous_ms)
-        dt = drive_clampf((float)(in->now - drive.turn_pid.previous_ms) / 1000.0f, 0.005f, 0.100f);
+    if (d.pid.previous_ms != 0U && in->now > d.pid.previous_ms)
+        dt = drive_clampf((float)(in->now - d.pid.previous_ms) / 1000.0f, 0.005f, 0.100f);
 
     float error = TURN_TARGET_DEG - progress;
     if (error < 0.0f) error = 0.0f;
     if (error < 45.0f)
     {
-        drive.turn_pid.integral += error * dt;
-        drive.turn_pid.integral = drive_clampf(drive.turn_pid.integral,
-            -TURN_PID_I_MAX, TURN_PID_I_MAX);
+        d.pid.integral += error * dt;
+        d.pid.integral = drive_clampf(d.pid.integral, -TURN_PID_I_MAX, TURN_PID_I_MAX);
     }
     else
     {
-        drive.turn_pid.integral = 0.0f;
+        d.pid.integral = 0.0f;
     }
 
-    float rate = drive.turn_pid.previous_valid
-        ? (progress - drive.turn_pid.previous_progress) / dt
+    float rate = d.pid.previous_valid
+        ? (progress - d.pid.previous_progress) / dt
         : 0.0f;
     float command = (TURN_PID_KP * error)
-                  + (TURN_PID_KI * drive.turn_pid.integral)
+                  + (TURN_PID_KI * d.pid.integral)
                   - (TURN_PID_KD * rate);
     float minimum = (error <= TURN_PID_FINE_DEG)
         ? (float)TURN_PID_FINE_MIN_PCT
@@ -315,276 +368,512 @@ static void turn_pid_run(const DriveInputs *in, float progress)
     command = drive_clampf(command, minimum, (float)TURN_SPEED);
 
     uint8_t outer = (uint8_t)(command + 0.5f);
-    /* The inner pair reverses against the skid; below the stall floor it
-     * freezes and the rotation centre drifts onto the stopped side. */
     uint8_t inner = (uint8_t)((command * TURN_PID_INNER_RATIO) + 0.5f);
     if (inner < MOTOR_MIN_PCT) inner = MOTOR_MIN_PCT;
     if (inner > TURN_INNER) inner = TURN_INNER;
     command_pivot(outer, inner, in->now, 0U);
 
-    drive.turn_pid.previous_progress = progress;
-    drive.turn_pid.previous_valid = 1U;
-    drive.turn_pid.previous_ms = in->now;
+    d.pid.previous_progress = progress;
+    d.pid.previous_valid = 1U;
+    d.pid.previous_ms = in->now;
 }
 
-static void apply_cruise_control(const DriveInputs *in)
+/* ---------------------------------------------------------------- centering */
+
+static void centering_reset(const DriveInputs *in)
 {
-    DriveControlOutput output = {0};
-    float grid_heading = in->imu_live ? course_axis_snap(in->heading) : drive.heading_ref;
-    DriveControl_Run(in, drive.heading_ref, grid_heading,
-        in->now - drive.state_since_ms, &output);
-
-    drive.heading_ref = output.heading_ref_deg;
-    if (output.axis_resnapped) drive.course_heading = output.heading_ref_deg;
-    motion_command(output.left_pct, output.right_pct, in->now);
-
-    dbg.steer = output.steer_pct;
-    dbg.steer_mode = output.mode;
-    dbg.yaw_rate = output.yaw_rate_dps;
-    dbg.hdg_err = output.heading_error_deg;
+    d.lp_valid = 0U;
+    d.l_prev_valid = 0U;
+    d.r_prev_valid = 0U;
+    d.err_valid = 0U;
+    d.hdg_lp_valid = 0U;
+    d.derr_lp = 0.0f;
+    d.yaw_lp = 0.0f;
+    d.lateral_cmd = 0.0f;
+    d.previous_steer = 0.0f;
+    d.center_prev_ms = 0U;
+    if (in->imu_live)
+    {
+        d.previous_heading = in->heading;
+        d.imu_prev_live = 1U;
+    }
+    else
+    {
+        d.imu_prev_live = 0U;
+    }
 }
 
-static void reset_detection_counts(void)
+static float sanitize_distance(uint16_t cm, uint8_t valid)
 {
-    drive.front_near_count = 0U;
-    drive.corner_count = 0U;
-    drive.corner_candidate = -1;
-    drive.side_clear_count = 0U;
-    drive.front_wall_count = 0U;
+    if (!valid || cm == 0U || cm > CENTER_SENSOR_MAX_CM)
+        return (float)CENTER_SENSOR_MAX_CM;
+    return (float)cm;
+}
+
+/* Lateral offset shaping: dead inside sensor trust (3 cm), linear in the
+ * weave regime, extra slope past the knee so a large offset recenters before
+ * the car rides into the repel zone (§5.15). */
+static float shaped_center_error(float error_cm)
+{
+    float mag = fabsf(error_cm);
+    if (mag <= CENTER_DEADZONE_CM) return 0.0f;
+    float shaped = mag - CENTER_DEADZONE_CM;
+    if (mag > CENTER_LATERAL_KNEE_CM)
+        shaped += (mag - CENTER_LATERAL_KNEE_CM) * CENTER_LATERAL_KNEE_GAIN;
+    return (error_cm >= 0.0f) ? shaped : -shaped;
+}
+
+/* Heading P term with extra authority past the knee: the base gain is
+ * weave-tuned and alone crawls back from a 25-30 deg off-axis pose (§5.15). */
+static float heading_steer_cmd(float error_deg, float kp)
+{
+    float steer = kp * error_deg;
+    float over = fabsf(error_deg) - CENTER_HDG_KNEE_DEG;
+    if (over > 0.0f)
+        steer += ((error_deg >= 0.0f) ? over : -over) * CENTER_HDG_KP2_PCT_PER_DEG;
+    return steer;
+}
+
+/* Keep normal centering continuous across the motor floor; near a wall keep
+ * both wheels above breakaway and cap the differential to a controlled arc. */
+static void mix_substall(float *left, float *right, uint8_t wall_risk)
+{
+    float slow = fminf(*left, *right);
+    if (slow <= 0.0f || slow >= (float)MOTOR_MIN_PCT) return;
+
+    float differential = fabsf(*right - *left);
+    if (!wall_risk)
+    {
+        float lift = (float)MOTOR_MIN_PCT - slow;
+        *left += lift;
+        *right += lift;
+        return;
+    }
+
+    float inner = CENTER_WALL_INNER_FLOOR_PCT;
+    float turn = fminf(differential, CENTER_WALL_DIFF_MAX_PCT);
+    float outer = fmaxf(fmaxf(*left, *right), inner + turn);
+    if (*left < *right) { *left = inner; *right = outer; }
+    else                { *right = inner; *left = outer; }
+}
+
+/* Cruise control frame: centering + heading hold + speed governor. */
+static void centering_run(const DriveInputs *in)
+{
+    float dt = 0.02f;
+    if (d.center_prev_ms != 0U && in->now > d.center_prev_ms)
+        dt = drive_clampf((float)(in->now - d.center_prev_ms) / 1000.0f, 0.005f, 0.100f);
+
+    /* -- side pair conditioning (perpendicular ToF: l/r are true lateral) */
+    float l_raw = sanitize_distance(in->l, in->left_valid);
+    float r_raw = sanitize_distance(in->r, in->right_valid);
+    if (!d.lp_valid)
+    {
+        d.l_lp = l_raw;
+        d.r_lp = r_raw;
+        d.lp_valid = 1U;
+    }
+    else
+    {
+        /* invalid -> valid transitions reseed raw (§7-4) */
+        if (!in->left_valid) d.l_lp = (float)CENTER_SENSOR_MAX_CM;
+        else if (!d.l_prev_valid) d.l_lp = l_raw;
+        else d.l_lp += CENTER_LPF_ALPHA * (l_raw - d.l_lp);
+
+        if (!in->right_valid) d.r_lp = (float)CENTER_SENSOR_MAX_CM;
+        else if (!d.r_prev_valid) d.r_lp = r_raw;
+        else d.r_lp += CENTER_LPF_ALPHA * (r_raw - d.r_lp);
+    }
+    d.l_prev_valid = in->left_valid;
+    d.r_prev_valid = in->right_valid;
+
+    uint8_t left_seen = (uint8_t)(in->left_valid && d.l_lp < (float)CENTER_SENSOR_MAX_CM);
+    uint8_t right_seen = (uint8_t)(in->right_valid && d.r_lp < (float)CENTER_SENSOR_MAX_CM);
+    uint8_t pair_valid = (uint8_t)(left_seen && right_seen
+        && (d.l_lp + d.r_lp) <= SIDE_PAIR_MAX_CM);
+
+    uint8_t left_track = left_seen;
+    uint8_t right_track = right_seen;
+    if (!pair_valid && left_seen && right_seen)
+    {
+        if (d.l_lp <= d.r_lp) right_track = 0U;
+        else                  left_track = 0U;
+    }
+    if (left_track && d.l_lp > CENTER_SINGLE_MAX_CM) left_track = 0U;
+    if (right_track && d.r_lp > CENTER_SINGLE_MAX_CM) right_track = 0U;
+
+    float err_cm = d.l_lp - d.r_lp;
+    float raw_derr = (pair_valid && d.err_valid) ? (err_cm - d.err_prev) / dt : 0.0f;
+    if (pair_valid && d.err_valid)
+        d.derr_lp += CENTER_DERR_LPF_ALPHA * (raw_derr - d.derr_lp);
+    else
+        d.derr_lp = 0.0f;
+    float derr = drive_clampf(d.derr_lp, -CENTER_DERR_MAX_CMS, CENTER_DERR_MAX_CMS);
+    d.err_prev = err_cm;
+    d.err_valid = pair_valid;
+
+    /* -- yaw rate (IMU differences only) */
+    float raw_yaw = (in->imu_live && d.imu_prev_live)
+        ? drive_wrap180(in->heading - d.previous_heading) / dt
+        : 0.0f;
+    if (in->imu_live && d.imu_prev_live)
+        d.yaw_lp += CENTER_YAW_LPF_ALPHA * (raw_yaw - d.yaw_lp);
+    else
+        d.yaw_lp = 0.0f;
+    float yaw = drive_clampf(d.yaw_lp, -CENTER_YAW_RATE_MAX_DPS, CENTER_YAW_RATE_MAX_DPS);
+    if (in->imu_live) d.previous_heading = in->heading;
+    d.imu_prev_live = in->imu_live;
+
+    /* -- heading error, LPF'd (noise dies here, not in a wide deadband §5.8) */
+    float hdg_err = 0.0f;
+    if (in->imu_live)
+    {
+        float raw_err = drive_wrap180(in->heading - d.heading_ref);
+        if (!d.hdg_lp_valid)
+        {
+            d.hdg_err_lp = raw_err;
+            d.hdg_lp_valid = 1U;
+        }
+        else
+        {
+            d.hdg_err_lp += CENTER_HDG_ERR_LPF_ALPHA
+                * drive_wrap180(raw_err - d.hdg_err_lp);
+        }
+        hdg_err = d.hdg_err_lp;
+    }
+    else
+    {
+        d.hdg_lp_valid = 0U;
+    }
+
+    /* -- steering */
+    float steer = 0.0f;
+    uint8_t mode;
+    if (pair_valid)
+    {
+        float lateral_target = (CENTER_LATERAL_KP_DEG_PER_CM * shaped_center_error(err_cm))
+                             + (CENTER_LATERAL_KD_DEG_PER_CMS * derr);
+        lateral_target = drive_clampf(lateral_target,
+            -CENTER_LATERAL_CMD_MAX_DEG, CENTER_LATERAL_CMD_MAX_DEG);
+        d.lateral_cmd = approach_f(d.lateral_cmd, lateral_target,
+            CENTER_LATERAL_CMD_SLEW_DPS * dt);
+
+        mode = STEER_MODE_BOTH;
+        if (in->imu_live)
+            steer = heading_steer_cmd(
+                drive_deadbandf(hdg_err + d.lateral_cmd, CENTER_HDG_DEADBAND_DEG),
+                CENTER_HDG_KP_PCT_PER_DEG);
+        else
+            steer = CENTER_HDG_KP_PCT_PER_DEG * d.lateral_cmd;
+    }
+    else if (left_track || right_track)
+    {
+        d.lateral_cmd = 0.0f;
+        float wall_steer = left_track
+            ? CENTER_SINGLE_KP * (d.l_lp - CENTER_SINGLE_TARGET_CM)
+            : CENTER_SINGLE_KP * (CENTER_SINGLE_TARGET_CM - d.r_lp);
+        /* only ever steer AWAY from the tracked wall */
+        if (left_track && wall_steer > 0.0f) wall_steer = 0.0f;
+        if (!left_track && wall_steer < 0.0f) wall_steer = 0.0f;
+
+        /* curve zone: one wall, the other flank open — the wall is the only
+         * trustworthy reference, so a large axis error must not drag the car
+         * off the wall-follow line (§5.19) */
+        uint8_t other_wide = left_track
+            ? (uint8_t)(!right_seen || d.r_lp >= CENTER_WIDE_SIDE_CM)
+            : (uint8_t)(!left_seen || d.l_lp >= CENTER_WIDE_SIDE_CM);
+
+        mode = STEER_MODE_SINGLE;
+        steer = wall_steer;
+        if (in->imu_live
+            && !(other_wide && fabsf(hdg_err) > CENTER_OPEN_FREE_DEG))
+            steer += CENTER_SINGLE_HDG_BLEND
+                   * heading_steer_cmd(
+                         drive_deadbandf(hdg_err, CENTER_HDG_DEADBAND_DEG),
+                         CENTER_OPEN_HDG_KP_PCT_PER_DEG);
+    }
+    else if (in->imu_live)
+    {
+        d.lateral_cmd = 0.0f;
+        mode = STEER_MODE_HEADING;
+        /* no wall inside 30 cm on either flank here by construction: past
+         * CENTER_OPEN_FREE_DEG the axis error is the curve's fault — hold
+         * the line with yaw damping only instead of pivot-fighting (§5.19) */
+        if (fabsf(hdg_err) <= CENTER_OPEN_FREE_DEG)
+            steer = heading_steer_cmd(
+                drive_deadbandf(hdg_err, CENTER_HDG_DEADBAND_DEG),
+                CENTER_OPEN_HDG_KP_PCT_PER_DEG);
+    }
+    else
+    {
+        d.lateral_cmd = 0.0f;
+        mode = STEER_MODE_OPEN;
+    }
+
+    /* progressive wall repel: the only steering term needing no reference */
+    {
+        float span = SIDE_SOFT_CM - SIDE_HARD_CM;
+        if (left_track && d.l_lp < SIDE_SOFT_CM)
+        {
+            float depth = SIDE_SOFT_CM - d.l_lp;
+            steer -= CENTER_SIDE_REPEL_KP * depth * depth / span;
+        }
+        if (right_track && d.r_lp < SIDE_SOFT_CM)
+        {
+            float depth = SIDE_SOFT_CM - d.r_lp;
+            steer += CENTER_SIDE_REPEL_KP * depth * depth / span;
+        }
+    }
+
+    if (in->imu_live)
+    {
+        float yaw_damp = drive_deadbandf(yaw, CENTER_YAW_RATE_DEADBAND_DPS);
+        steer += drive_clampf(CENTER_YAW_KD_PCT_PER_DPS * yaw_damp,
+            -CENTER_YAW_DAMP_MAX_PCT, CENTER_YAW_DAMP_MAX_PCT);
+    }
+
+    /* off-axis recovery unlocks extra clamp; the weave regime never sees it */
+    float steer_limit = (in->imu_live && fabsf(hdg_err) >= CENTER_STEER_ALIGN_ERR_DEG)
+        ? CENTER_STEER_MAX_ALIGN_PCT
+        : CENTER_STEER_MAX_PCT;
+    steer = drive_clampf(steer, -steer_limit, steer_limit);
+    steer = approach_f(d.previous_steer, steer, CENTER_STEER_SLEW_PCT_PER_S * dt);
+    d.previous_steer = steer;
+
+    /* -- speed governor: lowest cap wins; front cap is the braking budget */
+    float speed = SPEED_TOP_PCT;
+    if (in->f_valid)
+    {
+        float cap;
+        if ((float)in->f <= SPEED_FRONT_SLOW_CM)
+            cap = SPEED_FRONT_MIN_PCT;
+        else if ((float)in->f >= SPEED_FRONT_FAST_CM)
+            cap = SPEED_TOP_PCT;
+        else
+            cap = SPEED_FRONT_MIN_PCT
+                + ((SPEED_TOP_PCT - SPEED_FRONT_MIN_PCT)
+                   * ((float)in->f - SPEED_FRONT_SLOW_CM)
+                   / (SPEED_FRONT_FAST_CM - SPEED_FRONT_SLOW_CM));
+        if (speed > cap) speed = cap;
+    }
+    if (left_track || right_track)
+    {
+        float side_min = left_track ? d.l_lp : d.r_lp;
+        if (right_track && d.r_lp < side_min) side_min = d.r_lp;
+        float cap;
+        if (side_min <= SIDE_HARD_CM)
+            cap = SPEED_SIDE_MIN_PCT;
+        else if (side_min >= SIDE_SOFT_CM)
+            cap = SPEED_TOP_PCT;
+        else
+            cap = SPEED_SIDE_MIN_PCT
+                + ((SPEED_TOP_PCT - SPEED_SIDE_MIN_PCT)
+                   * (side_min - SIDE_HARD_CM) / (SIDE_SOFT_CM - SIDE_HARD_CM));
+        if (speed > cap) speed = cap;
+    }
+    if (in->imu_live)
+    {
+        float mag = fabsf(hdg_err);
+        float cap;
+        if (mag >= SPEED_HDG_SLOW_DEG) cap = SPEED_HDG_MIN_PCT;
+        else if (mag <= SPEED_HDG_FAST_DEG) cap = SPEED_TOP_PCT;
+        else cap = SPEED_TOP_PCT
+                 - ((SPEED_TOP_PCT - SPEED_HDG_MIN_PCT)
+                    * (mag - SPEED_HDG_FAST_DEG)
+                    / (SPEED_HDG_SLOW_DEG - SPEED_HDG_FAST_DEG));
+        if (speed > cap) speed = cap;
+
+        float ymag = fabsf(yaw);
+        if (ymag >= SPEED_YAW_SLOW_DPS) cap = SPEED_YAW_MIN_PCT;
+        else if (ymag <= SPEED_YAW_FAST_DPS) cap = SPEED_TOP_PCT;
+        else cap = SPEED_TOP_PCT
+                 - ((SPEED_TOP_PCT - SPEED_YAW_MIN_PCT)
+                    * (ymag - SPEED_YAW_FAST_DPS)
+                    / (SPEED_YAW_SLOW_DPS - SPEED_YAW_FAST_DPS));
+        if (speed > cap) speed = cap;
+    }
+    if ((in->now - d.state_since_ms) < SPEED_SETTLE_MS && speed > SPEED_SETTLE_PCT)
+        speed = SPEED_SETTLE_PCT;
+    speed = drive_clampf(speed, SPEED_MIN_PCT, SPEED_TOP_PCT);
+
+    float left = drive_clampf(speed - steer + (float)MOTOR_TRIM_PCT, 0.0f, 100.0f);
+    float right = drive_clampf(speed + steer - (float)MOTOR_TRIM_PCT, 0.0f, 100.0f);
+    uint8_t wall_risk = (uint8_t)((left_track && d.l_lp < SIDE_HARD_CM)
+        || (right_track && d.r_lp < SIDE_HARD_CM));
+    mix_substall(&left, &right, wall_risk);
+    motion_command((int16_t)(left + 0.5f), (int16_t)(right + 0.5f), in->now);
+
+    d.center_prev_ms = in->now;
+    dbg.steer = steer;
+    dbg.steer_mode = mode;
+    dbg.yaw_rate = yaw;
+    dbg.hdg_err = hdg_err;
+}
+
+/* ------------------------------------------------------------ state entry */
+
+static void state_enter(DriveState state, uint32_t now)
+{
+    d.state = state;
+    d.state_since_ms = now;
+}
+
+static void reset_confirm_counters(void)
+{
+    d.front_wall_n = 0U;
+    d.front_stop_n = 0U;
+    d.decide_n = 0U;
+    d.wall_gone_n = 0U;
+    d.clear_n = 0U;
+    d.block_n = 0U;
+    d.side_clear_n = 0U;
+    d.corner_dir = -1;
+    d.corner_n = 0U;
+    d.corner_dropout = 0U;
 }
 
 static void cruise_enter(const DriveInputs *in)
 {
-    DriveState previous = drive.state;
-    uint8_t previous_was_turn = (uint8_t)(previous == DS_SPIN || previous == DS_CORNER);
-    uint8_t from_turn = (uint8_t)(previous_was_turn
-        && drive.entry_heading_valid && in->imu_live);
-    uint8_t from_avoid = (uint8_t)(previous == DS_SIDE_AVOID
-        && in->imu_live && drive.course_latched);
-    uint8_t reacquire_course = (uint8_t)(in->imu_live
-        && drive.course_reacquire_pending);
+    DriveState previous = d.state;
+    uint8_t from_turn = (uint8_t)((previous == DS_SPIN || previous == DS_CORNER)
+        && d.entry_heading_valid && in->imu_live);
+    uint8_t reacquire = (uint8_t)(in->imu_live && d.reacquire_pending);
 
-    DriveControl_Reset();
-    if (from_turn || reacquire_course)
-        drive.heading_ref = course_axis_snap(in->heading);
-    else if (from_avoid)
-        drive.heading_ref = drive.course_heading;
-    else if (in->imu_live && drive.course_latched)
-        drive.heading_ref = drive.course_heading;
-    else if (in->imu_live)
-        drive.heading_ref = in->heading;
-
+    centering_reset(in);
     if (in->imu_live)
     {
-        if (from_turn || reacquire_course)
-            drive.course_heading = drive.heading_ref;
-        drive.course_reacquire_pending = 0U;
-        if (from_turn || from_avoid || reacquire_course)
-            DriveControl_PrimeHeading(in->heading);
+        if (from_turn || reacquire)
+        {
+            d.heading_ref = course_axis_snap(in->heading);
+            d.course_heading = d.heading_ref;
+        }
+        else if (d.course_latched)
+        {
+            d.heading_ref = d.course_heading;
+        }
+        else
+        {
+            d.heading_ref = in->heading;
+        }
+        d.reacquire_pending = 0U;
     }
-    else if (previous_was_turn)
+    else if (previous == DS_SPIN || previous == DS_CORNER)
     {
-        drive.course_reacquire_pending = 1U;
+        /* brownout during the turn: re-snap the axis when the IMU returns */
+        d.reacquire_pending = 1U;
     }
 
-    drive.reverse_count = 0U;
-    reset_detection_counts();
+    d.retry_count = 0U;
+    reset_confirm_counters();
     state_enter(DS_CRUISE, in->now);
-
-    if (in->side_valid) apply_cruise_control(in);
-    else motion_command((int16_t)CENTER_SETTLE_SPEED_PCT,
-                        (int16_t)CENTER_SETTLE_SPEED_PCT, in->now);
+    centering_run(in);
 }
 
 static void brake_enter(const DriveInputs *in)
 {
-    reset_detection_counts();
-    drive.front_decide_count = 0U;
-    drive.brake_clear_count = 0U;
+    reset_confirm_counters();
     motion_brake(in->now);
     state_enter(DS_BRAKE, in->now);
 }
 
-static void select_spin_direction(const DriveInputs *in, uint8_t tie_flip)
+/* keep_progress: arc->pivot escalation and post-backing resume keep the
+ * episode accumulation; a fresh decide starts from zero. */
+static void spin_begin(const DriveInputs *in, uint8_t keep_progress)
 {
-    if (in->left_valid && in->right_valid)
+    reset_confirm_counters();
+    if (!keep_progress)
     {
-        if (in->l > (uint16_t)(in->r + SIDE_HYST)) drive.turn_right = 0U;
-        else if (in->r > (uint16_t)(in->l + SIDE_HYST)) drive.turn_right = 1U;
-        else
-        {
-            int8_t course_direction = symmetric_course_direction(in);
-            if (course_direction >= 0) drive.turn_right = (uint8_t)course_direction;
-            else if (tie_flip) drive.turn_right ^= 1U;
-        }
+        turn_progress_reset(in->heading);
+        d.flip_used = 0U;
     }
-    else if (in->left_valid)
-    {
-        drive.turn_right = 1U;
-    }
-    else if (in->right_valid)
-    {
-        drive.turn_right = 0U;
-    }
-    else if (tie_flip)
-    {
-        drive.turn_right ^= 1U;
-    }
-}
-
-static void spin_enter(const DriveInputs *in, uint8_t tie_flip)
-{
-    reset_detection_counts();
-    select_spin_direction(in, tie_flip);
-    drive.swap_count = 0U;
-    drive.clear_count = 0U;
-    turn_progress_reset(in->heading);
-    drive.stuck_heading = in->heading;
-    drive.entry_heading_valid = in->imu_live;
-    drive.stuck_since_ms = in->now;
-    drive.spin_since_ms = in->now;
+    d.entry_heading_valid = in->imu_live;
+    d.stuck_heading = in->heading;
+    d.stuck_since_ms = in->now;
+    d.spin_since_ms = in->now;
     turn_pid_reset();
     state_enter(DS_SPIN, in->now);
     command_pivot(TURN_SPEED, TURN_INNER, in->now, 1U);
 }
 
-static void reverse_enter(const DriveInputs *in)
+static void corner_enter(const DriveInputs *in, uint8_t turn_right)
 {
-    reset_detection_counts();
-    state_enter(DS_REVERSE, in->now);
-    if (drive.reverse_count < 255U) drive.reverse_count++;
-    motion_command_immediate(-DRIVE_SPEED, -DRIVE_SPEED, in->now);
+    reset_confirm_counters();
+    d.turn_right = turn_right;
+    d.flip_used = 0U;
+    d.retry_count = 0U;    /* a confirmed corner is forward progress */
+    turn_progress_reset(in->heading);
+    d.entry_heading_valid = in->imu_live;
+    turn_pid_reset();
+    state_enter(DS_CORNER, in->now);
+    command_arc(ARC_OUTER, ARC_INNER, in->now);
 }
 
-static void hold_enter(const DriveInputs *in)
+static void back_enter(const DriveInputs *in, uint8_t from_turn)
 {
-    reset_detection_counts();
-    motion_stop(in->now);
-    state_enter(DS_HOLD, in->now);
+    reset_confirm_counters();
+    d.retry_count = inc_u8(d.retry_count);
+    /* budget spent: degrade to straight backing + a fresh decide instead of
+     * chaining turn-preserving chunks without bound (§5.15/§5.16) */
+    if (d.retry_count > RECOVER_RETRY_MAX) from_turn = 0U;
+    d.back_from_turn = from_turn;
+    state_enter(DS_REVERSE, in->now);
+    if (from_turn) command_back_turn(in->now, 1U);
+    else motion_command_immediate(-DRIVE_SPEED, -DRIVE_SPEED, in->now);
+    dbg.rev_cnt = d.retry_count;
 }
 
 static void side_avoid_enter(const DriveInputs *in)
 {
-    reset_detection_counts();
+    reset_confirm_counters();
     if (in->left_valid && (!in->right_valid || in->l < in->r))
-        drive.turn_right = 1U;
+        d.turn_right = 1U;
     else if (in->right_valid && (!in->left_valid || in->r < in->l))
-        drive.turn_right = 0U;
-    state_enter(DS_SIDE_AVOID, in->now);
-    command_pivot(CORNER_RESCUE_OUTER, CORNER_RESCUE_INNER, in->now, 1U);
-}
-
-static void corner_enter(const DriveInputs *in, uint8_t turn_right)
-{
-    reset_detection_counts();
-    drive.grid_clear_count = 0U;
-    drive.clear_count = 0U;
-    drive.reverse_count = 0U;   /* a confirmed corner is forward progress */
-    drive.turn_right = turn_right;
-    drive.corner_tight = front_recent_below(in, CORNER_TIGHTEN_CM);
+        d.turn_right = 0U;
     turn_progress_reset(in->heading);
-    drive.entry_heading_valid = in->imu_live;
-    turn_pid_reset();
-    state_enter(DS_CORNER, in->now);
-    if (drive.corner_tight)
-        command_pivot(CORNER_RESCUE_OUTER, CORNER_RESCUE_INNER, in->now, 1U);
-    else
-        command_arc(ARC_OUTER, ARC_INNER, in->now);
+    d.entry_heading_valid = in->imu_live;
+    state_enter(DS_SIDE_AVOID, in->now);
+    command_pivot(RESCUE_OUTER, RESCUE_INNER, in->now, 1U);
 }
 
-static uint8_t front_graze_suspected(const DriveInputs *in)
+static void hold_enter(const DriveInputs *in)
 {
-    if (!in->left_valid && !in->right_valid) return 0U;
+    reset_confirm_counters();
+    motion_stop(in->now);
+    state_enter(DS_HOLD, in->now);
+}
 
+/* Direction of a decided pivot. Sides first (with hysteresis); a confirmed
+ * wall with tied sides falls back to the course-final rule (the last
+ * right-angle before the bump is geometrically symmetric); otherwise keep
+ * the previous direction rather than inventing one from noise. */
+static void decide_turn_direction(const DriveInputs *in)
+{
     if (in->left_valid && in->right_valid)
     {
-        uint16_t near = (in->l < in->r) ? in->l : in->r;
-        uint16_t far = (in->l < in->r) ? in->r : in->l;
-        uint8_t wide = wide_corner_context(in);
-        uint16_t asymmetry = wide ? CORNER_WIDE_ASYM_CM : CORNER_ASYM_CM;
-        uint16_t open = wide ? CORNER_WIDE_ASYM_OPEN_CM : CORNER_ASYM_OPEN_CM;
-        uint16_t near_min = wide ? CORNER_WIDE_NEAR_CM : CORNER_NEAR_SAFE_CM;
-
-        if (far >= (uint16_t)(near + asymmetry) && far >= open && near >= near_min)
+        if (in->l > (uint16_t)(in->r + SIDE_HYST_CM)) { d.turn_right = 0U; return; }
+        if (in->r > (uint16_t)(in->l + SIDE_HYST_CM)) { d.turn_right = 1U; return; }
+        if (d.course_latched && in->imu_live)
         {
-            if (in->imu_live
-                && fabsf(drive_wrap180(in->heading - drive.heading_ref)) > CORNER_ENTRY_HDG_MAX_DEG)
-                return 1U;
-            return 0U;
+            float rel = drive_wrap180(in->heading - d.course_zero);
+            if (fabsf(drive_wrap180(rel - COURSE_FINAL_ENTRY_DEG))
+                <= COURSE_FINAL_ENTRY_TOL_DEG)
+            {
+                d.turn_right = 1U;
+                return;
+            }
         }
+        return;                      /* tie: keep previous direction */
     }
-
-    uint16_t near = in->left_valid
-        ? (in->right_valid && in->r < in->l ? in->r : in->l)
-        : in->r;
-    if ((float)near <= (float)in->f * FRONT_BEAM_HALF_SIN) return 1U;
-
-    if (in->imu_live)
-    {
-        float signed_yaw = drive_wrap180(in->heading - drive.heading_ref);
-        float yaw = drive_clampf(fabsf(signed_yaw), 0.0f, 45.0f);
-        float radians = yaw * 0.0174532925f;
-        float beam_cos = sqrtf(1.0f - (FRONT_BEAM_HALF_SIN * FRONT_BEAM_HALF_SIN));
-        float effective_sin = (FRONT_BEAM_HALF_SIN * cosf(radians))
-                            + (beam_cos * sinf(radians));
-        if (signed_yaw > 0.0f && in->right_valid
-            && (float)in->r <= (float)in->f * effective_sin)
-            return 1U;
-        if (signed_yaw <= 0.0f && in->left_valid
-            && (float)in->l <= (float)in->f * effective_sin)
-            return 1U;
-        if (fabsf(signed_yaw) > FRONT_OFFAXIS_DEG) return 1U;
-    }
-    return 0U;
+    if (in->left_valid) { d.turn_right = 1U; return; }
+    if (in->right_valid) { d.turn_right = 0U; return; }
 }
 
-/* Returns -1 for no corner, 0 for left, 1 for right. */
-static int8_t corner_direction(const DriveInputs *in)
-{
-    if (!in->left_valid || !in->right_valid) return -1;
-
-    uint8_t wide = wide_corner_context(in);
-    uint16_t side_open = wide ? CORNER_WIDE_OPEN_CM : SIDE_OPEN_CM;
-    uint16_t asym_open = wide ? CORNER_WIDE_ASYM_OPEN_CM : CORNER_ASYM_OPEN_CM;
-    uint16_t asymmetry = wide ? CORNER_WIDE_ASYM_CM : CORNER_ASYM_CM;
-    uint16_t near_min = wide ? CORNER_WIDE_NEAR_CM : CORNER_NEAR_SAFE_CM;
-
-    uint8_t left_open = (uint8_t)(in->l >= side_open && in->r >= near_min);
-    uint8_t right_open = (uint8_t)(in->r >= side_open && in->l >= near_min);
-    uint8_t left_asym = (uint8_t)(in->l >= asym_open
-        && in->l >= (uint16_t)(in->r + asymmetry) && in->r >= near_min);
-    uint8_t right_asym = (uint8_t)(in->r >= asym_open
-        && in->r >= (uint16_t)(in->l + asymmetry) && in->l >= near_min);
-
-    if (left_asym || (left_open && !right_open)) return 0;
-    if (right_asym || (right_open && !left_open)) return 1;
-    /* No wider-side fallback here: without strong side evidence the turn
-     * direction is decided in DS_BRAKE, from a wall firmly confirmed at
-     * FRONT_DECIDE_CM. The front reading spikes, and a rolling decision off
-     * a spiked front turned the car in the middle of straights. */
-    return -1;
-}
+/* ------------------------------------------------------------- state runs */
 
 static uint8_t side_emergency(const DriveInputs *in)
 {
     return (uint8_t)((in->left_valid && in->l < SIDE_AVOID_CM)
         || (in->right_valid && in->r < SIDE_AVOID_CM));
-}
-
-static uint8_t dead_end(const DriveInputs *in)
-{
-    return (uint8_t)(in->f_valid && in->f < FRONT_DANGER_CM
-        && in->left_valid && in->right_valid
-        && in->l < SIDE_BLOCK_CM && in->r < SIDE_BLOCK_CM);
-}
-
-/* No echo within the 6 ms budget means nothing within ~100 cm. A persistent
- * timeout therefore counts as open space; otherwise turn exits stay gated
- * shut whenever the car ends up facing an open corridor. */
-static uint8_t front_open_at(const DriveInputs *in, uint16_t cm)
-{
-    if (in->f_valid) return (uint8_t)(in->f >= cm);
-    return (uint8_t)(in->front_miss >= FRONT_FAIL_LIMIT);
 }
 
 static void cruise_run(const DriveInputs *in)
@@ -595,25 +884,24 @@ static void cruise_run(const DriveInputs *in)
         return;
     }
 
-    if (drive.launching)
+    /* IMU-independent launch window (inrush brownout kills imu_live) */
+    if (d.launching)
     {
-        if (drive.launch_since_ms == 0U) drive.launch_since_ms = in->now;
-        uint8_t in_window = (uint8_t)((in->now - drive.launch_since_ms) < LAUNCH_MS);
-        uint8_t front_warning = front_recent_below(in, FRONT_TURN_CM);
-        if (in_window && !front_warning && !side_emergency(in))
+        if (d.launch_since_ms == 0U) d.launch_since_ms = in->now;
+        uint8_t in_window = (uint8_t)((in->now - d.launch_since_ms) < LAUNCH_MS);
+        if (in_window && !front_recent_below(in, FRONT_TURN_CM) && !side_emergency(in))
         {
             if (in->imu_live)
             {
-                drive.heading_ref = course_axis_snap(in->heading);
-                DriveControl_PrimeHeading(in->heading);
+                d.heading_ref = course_axis_snap(in->heading);
+                centering_reset(in);
             }
-            motion_command((int16_t)CENTER_SETTLE_SPEED_PCT,
-                           (int16_t)CENTER_SETTLE_SPEED_PCT, in->now);
+            motion_command((int16_t)SPEED_SETTLE_PCT, (int16_t)SPEED_SETTLE_PCT, in->now);
             dbg.launch = 1U;
             dbg.steer = 0.0f;
             return;
         }
-        drive.launching = 0U;
+        d.launching = 0U;
         dbg.launch = 0U;
     }
 
@@ -623,315 +911,243 @@ static void cruise_run(const DriveInputs *in)
         return;
     }
 
-    uint8_t front_near = front_recent_below(in, FRONT_ARC_CM);
-    uint8_t graze = (uint8_t)(front_near ? front_graze_suspected(in) : 0U);
-    dbg.graze = graze;
+    /* -- corner detection: confirmed approaching wall AND sustained side
+     * asymmetry. A weaving straight fakes neither for long (§5.10/§5.11). */
+    uint8_t front_wall_now = (uint8_t)(in->f_valid && in->f < FRONT_TURN_CM);
+    d.front_wall_n = front_wall_now ? inc_u8(d.front_wall_n) : 0U;
+    uint8_t front_wall = (uint8_t)(d.front_wall_n >= FRONT_WALL_CONFIRM_N);
 
-    /* A real corner always presents an approaching front wall (measured 20 to
-     * 26 cm at the entries) that STAYS close. A weaving car sees the far wall
-     * at an angle, which dips the front reading for a frame or two and, with
-     * the off-center side asymmetry, forged corners in the long straight.
-     * Demand the wall for consecutive frames before any corner may confirm. */
-    /* Confirmation is fresh-only.  A close sample followed by HC-SR04
-     * dropouts must not become three apparently consecutive wall samples. */
-    uint8_t front_wall_now = (uint8_t)(in->f_valid
-        && in->f < FRONT_TURN_CM && !graze);
-    drive.front_wall_count = front_wall_now
-        ? increment_u8(drive.front_wall_count) : 0U;
-    uint8_t front_wall = (uint8_t)(drive.front_wall_count >= FRONT_WALL_CONFIRM_N);
-
-    int8_t direction = corner_direction(in);
-    uint8_t symmetric_course_corner = 0U;
-    if (direction < 0)
+    int8_t direction = -1;
+    if (in->left_valid && in->right_valid)
     {
-        direction = symmetric_course_direction(in);
-        symmetric_course_corner = (uint8_t)(direction >= 0);
+        uint8_t left_open = (uint8_t)(in->l >= SIDE_OPEN_CM
+            && in->l >= (uint16_t)(in->r + SIDE_ASYM_CM)
+            && in->r >= SIDE_NEAR_SAFE_CM);
+        uint8_t right_open = (uint8_t)(in->r >= SIDE_OPEN_CM
+            && in->r >= (uint16_t)(in->l + SIDE_ASYM_CM)
+            && in->l >= SIDE_NEAR_SAFE_CM);
+        if (left_open) direction = 0;
+        else if (right_open) direction = 1;
     }
-    uint8_t side_only_corner = (uint8_t)(!front_wall
-        && in->front_miss >= FRONT_FAIL_LIMIT
-        && strong_side_corner(in, direction));
-    if (direction >= 0 && (front_wall || side_only_corner))
+
+    if (front_wall && direction >= 0)
     {
-        if (drive.corner_candidate != direction)
+        if (d.corner_dir != direction)
         {
-            drive.corner_candidate = direction;
-            drive.corner_count = 1U;
+            d.corner_dir = direction;
+            d.corner_n = 1U;
         }
         else
         {
-            drive.corner_count = increment_u8(drive.corner_count);
+            d.corner_n = inc_u8(d.corner_n);
         }
-        drive.front_near_count = 0U;
-        uint8_t confirm_needed = symmetric_course_corner
-            ? CORNER_SYMMETRIC_CONFIRM_N
-            : (side_only_corner ? CORNER_SIDE_ONLY_CONFIRM_N : CORNER_CONFIRM_N);
-        if (drive.corner_count >= confirm_needed)
+        d.corner_dropout = 0U;
+        d.front_stop_n = 0U;
+        if (d.corner_n >= CORNER_CONFIRM_N)
         {
             corner_enter(in, (uint8_t)direction);
             return;
         }
-
-        /* A fresh wall plus strong side geometry is enough to begin a rolling
-         * arc while the final direction-confirmation frame arrives.  Keep the
-         * unseen-front side-only path stopped for safety. */
-        if (side_only_corner)
-            motion_brake(in->now);
-        else
-        {
-            drive.turn_right = (uint8_t)direction;
-            command_arc(ARC_OUTER, ARC_INNER, in->now);
-        }
+        /* roll the arc while the confirmation frame arrives */
+        d.turn_right = (uint8_t)direction;
+        command_arc(ARC_OUTER, ARC_INNER, in->now);
         return;
     }
-    drive.corner_count = 0U;
-    drive.corner_candidate = -1;
-
-    if (front_recent_below(in, FRONT_STOP_CM) && !graze)
+    /* one marginal frame at the open threshold must not restart the
+     * confirmation while the wall stays confirmed (§5.15) */
+    else if (d.corner_dir >= 0 && d.corner_n > 0U && front_wall
+        && d.corner_dropout < CORNER_DROPOUT_TOL_N)
     {
-        brake_enter(in);
+        d.corner_dropout++;
+        d.front_stop_n = 0U;
+        d.turn_right = (uint8_t)d.corner_dir;
+        command_arc(ARC_OUTER, ARC_INNER, in->now);
         return;
     }
+    d.corner_dir = -1;
+    d.corner_n = 0U;
+    d.corner_dropout = 0U;
 
-    if (front_recent_below(in, FRONT_TURN_CM) && !graze)
+    /* -- stop line: fresh confirmed only, then the brake-and-decide path */
+    if (in->f_valid && in->f < FRONT_STOP_CM)
     {
-        drive.front_near_count = increment_u8(drive.front_near_count);
-        if (drive.front_near_count >= FRONT_CONFIRM_N)
+        d.front_stop_n = inc_u8(d.front_stop_n);
+        if (d.front_stop_n >= FRONT_STOP_CONFIRM_N)
         {
-            dbg.front_near = drive.front_near_count;
+            dbg.front_near = d.front_stop_n;
             brake_enter(in);
             return;
         }
     }
     else
     {
-        drive.front_near_count = 0U;
+        d.front_stop_n = 0U;
     }
-    dbg.front_near = drive.front_near_count;
+    dbg.front_near = d.front_stop_n;
 
     if (side_emergency(in))
     {
         side_avoid_enter(in);
         return;
     }
-    apply_cruise_control(in);
+
+    centering_run(in);
 }
 
-static void brake_run(const DriveInputs *in)
+static void corner_run(const DriveInputs *in)
 {
-    if ((in->now - drive.state_since_ms) < BRAKE_MS) return;
-
-    if (in->f_valid && in->f < FRONT_DANGER_CM)
+    if (in->imu_live && !d.entry_heading_valid)
     {
-        motion_stop(in->now);
-        /* A turn direction must come from at least one current side sample. */
-        if (!in->left_valid && !in->right_valid) return;
-        if (drive.reverse_count < REV_MAX_CHUNKS)
-            reverse_enter(in);
-        else
-            spin_enter(in, 0U);
+        turn_progress_reset(in->heading);
+        d.entry_heading_valid = 1U;
+    }
+    float progress = (in->imu_live && d.entry_heading_valid)
+        ? turn_progress_update(in->heading)
+        : 0.0f;
+    dbg.spin_deg = progress;
+
+    if (side_emergency(in))
+    {
+        side_avoid_enter(in);
         return;
     }
 
-    /* The braking front reading may have been a spike (floor echo, bounce).
-     * If the wall evaporates, this was a false brake: resume cruising instead
-     * of committing a turn that has no wall. */
-    if (!front_recent_below(in, FRONT_TURN_CM))
+    /* the arc cannot tighten itself: a close front or a stalled/backward
+     * rotation hands the same turn to the pivot, progress preserved */
+    uint8_t escalate = front_recent_below(in, CORNER_TIGHTEN_CM);
+    if ((in->now - d.state_since_ms) > ARC_MAX_MS) escalate = 1U;
+    if (in->imu_live && d.entry_heading_valid
+        && (in->now - d.state_since_ms) >= SPIN_COMMIT_MS
+        && progress < -TURN_WRONG_DEG)
+        escalate = 1U;
+    if (escalate)
     {
-        drive.brake_clear_count = increment_u8(drive.brake_clear_count);
-        if (drive.brake_clear_count >= CLEAR_CONFIRM)
+        spin_begin(in, 1U);
+        return;
+    }
+
+    if (in->imu_live && d.entry_heading_valid && exit_course_ok(in))
+    {
+        if (progress >= TURN_TARGET_DEG && front_open_at(in, FRONT_TURN_CM))
+        {
+            cruise_enter(in);
+            return;
+        }
+        if (in->f_valid && in->f >= FRONT_CLEAR_CM)
+            d.clear_n = inc_u8(d.clear_n);
+        else if (in->f_valid)
+            d.clear_n = 0U;
+        if (progress >= TURN_MIN_DEG
+            && (axis_aligned(in->heading) || sides_open_wide(in))
+            && d.clear_n >= CLEAR_CONFIRM_N)
         {
             cruise_enter(in);
             return;
         }
     }
-    else
-    {
-        drive.brake_clear_count = 0U;
-    }
 
-    /* Only a wall firmly at FRONT_DECIDE_CM decides the turn: consecutive
-     * fresh samples, never the dropout latch. Hold still while confirming so
-     * the deciding left/right pair is read from a stable pose. */
-    if (in->f_valid && in->f <= FRONT_DECIDE_CM)
+    float remaining = TURN_TARGET_DEG - progress;
+    if (remaining < 0.0f) remaining = 0.0f;
+    float outer = (float)ARC_OUTER;
+    float inner = (float)ARC_INNER;
+    if (in->imu_live && d.entry_heading_valid && remaining <= ARC_APPROACH_DEG)
     {
-        drive.front_decide_count = increment_u8(drive.front_decide_count);
-        if (drive.front_decide_count >= FRONT_DECIDE_CONFIRM_N
-            && (in->left_valid || in->right_valid))
-        {
-            spin_enter(in, (uint8_t)(drive.reverse_count > 0U));
-            return;
-        }
-        motion_stop(in->now);
-        return;
+        float ratio = remaining / ARC_APPROACH_DEG;
+        outer = (float)ARC_APPROACH_OUTER
+              + (((float)ARC_OUTER - (float)ARC_APPROACH_OUTER) * ratio);
+        inner = (float)ARC_APPROACH_INNER
+              + (((float)ARC_INNER - (float)ARC_APPROACH_INNER) * ratio);
     }
-    drive.front_decide_count = 0U;
-
-    /* Wall confirmed but still beyond the decide line: creep up to it so the
-     * decision happens at a known distance. A wall that never resolves below
-     * the line (angled face, absorbing surface) falls back to deciding from
-     * where the car stands rather than parking forever. */
-    if ((in->now - drive.state_since_ms) >= (BRAKE_MS + BRAKE_CREEP_MAX_MS))
-    {
-        motion_stop(in->now);
-        if (!in->left_valid && !in->right_valid) return;
-        spin_enter(in, (uint8_t)(drive.reverse_count > 0U));
-        return;
-    }
-    motion_command(BRAKE_CREEP_PCT, BRAKE_CREEP_PCT, in->now);
-}
-
-static void spin_restart(const DriveInputs *in, uint8_t flip)
-{
-    if (flip)
-    {
-        drive.turn_right ^= 1U;
-        drive.swap_count = increment_u8(drive.swap_count);
-    }
-    drive.clear_count = 0U;
-    turn_progress_reset(in->heading);
-    drive.entry_heading_valid = in->imu_live;
-    drive.stuck_heading = in->heading;
-    drive.stuck_since_ms = in->now;
-    drive.spin_since_ms = in->now;
-    turn_pid_reset();
-    state_enter(DS_SPIN, in->now);
-    command_pivot(TURN_SPEED, TURN_INNER, in->now, 1U);
+    command_arc((uint8_t)(outer + 0.5f), (uint8_t)(inner + 0.5f), in->now);
 }
 
 static void spin_run(const DriveInputs *in)
 {
-    if (in->f_valid && in->f < FRONT_DANGER_CM
-        && (in->now - drive.state_since_ms) >= SPIN_COMMIT_MS)
-    {
-        brake_enter(in);
-        return;
-    }
-
-    if (dead_end(in) && drive.reverse_count < REV_MAX_CHUNKS)
-    {
-        reverse_enter(in);
-        return;
-    }
-
     float progress = 0.0f;
     uint8_t progress_valid = 0U;
     if (in->imu_live)
     {
-        if (!drive.entry_heading_valid)
+        if (!d.entry_heading_valid)
         {
             turn_progress_reset(in->heading);
-            drive.stuck_heading = in->heading;
-            drive.stuck_since_ms = in->now;
-            drive.entry_heading_valid = 1U;
+            d.stuck_heading = in->heading;
+            d.stuck_since_ms = in->now;
+            d.entry_heading_valid = 1U;
             turn_pid_reset();
         }
         progress = turn_progress_update(in->heading);
         progress_valid = 1U;
         dbg.spin_deg = progress;
 
-        if ((in->now - drive.state_since_ms) >= SPIN_COMMIT_MS && progress < -TURN_WRONG_DEG)
+        /* one flip per episode: a scrub rebound past that must not
+         * ping-pong mirrored half-turns (§5.15) */
+        if ((in->now - d.state_since_ms) >= SPIN_COMMIT_MS
+            && progress < -TURN_WRONG_DEG && !d.flip_used)
         {
-            spin_restart(in, 1U);
+            d.turn_right ^= 1U;
+            d.flip_used = 1U;
+            turn_progress_reset(in->heading);
+            d.stuck_heading = in->heading;
+            d.stuck_since_ms = in->now;
+            d.spin_since_ms = in->now;
+            turn_pid_reset();
+            state_enter(DS_SPIN, in->now);
+            command_pivot(TURN_SPEED, TURN_INNER, in->now, 1U);
             return;
         }
 
-        if ((in->now - drive.stuck_since_ms) >= ROT_STUCK_MS)
+        /* physically wedged: rotation frozen against a confirmed wall means
+         * backing is the only move that changes the pose (§5.15) */
+        if ((in->now - d.stuck_since_ms) >= ROT_STUCK_MS)
         {
-            if (fabsf(drive_wrap180(in->heading - drive.stuck_heading)) < ROT_STUCK_DEG
-                && drive.reverse_count < REV_MAX_CHUNKS)
+            if (fabsf(drive_wrap180(in->heading - d.stuck_heading)) < ROT_STUCK_DEG
+                && front_recent_below(in, FRONT_STOP_CM))
             {
-                reverse_enter(in);
+                back_enter(in, 1U);
                 return;
             }
-            drive.stuck_heading = in->heading;
-            drive.stuck_since_ms = in->now;
+            d.stuck_heading = in->heading;
+            d.stuck_since_ms = in->now;
         }
     }
 
-    if ((in->now - drive.state_since_ms) > SPIN_MAX_MS)
+    /* blocked nose or front/side pinch, fresh confirmed */
+    uint8_t min_side_close = 0U;
+    if (in->left_valid && in->right_valid)
     {
-        float course_deviation_now = in->imu_live
-            ? fabsf(drive_wrap180(in->heading - drive.course_heading))
-            : 0.0f;
-        if (progress_valid && progress >= TURN_MIN_DEG
-            && (course_deviation_now < COURSE_REV_DEG || progress >= 180.0f)
-            && front_open_at(in, FRONT_TURN_CM))
-        {
-            /* Turned far enough and the nose is clear — roll out instead of
-             * flipping direction and unwinding the turn we just made. */
-            cruise_enter(in);
-        }
-        else if (drive.reverse_count < REV_MAX_CHUNKS)
-        {
-            reverse_enter(in);
-        }
-        else
-        {
-            /* Keep the same direction once the swap budget is spent so the
-             * car cannot ping-pong between mirrored half-turns forever. */
-            spin_restart(in, (uint8_t)(drive.swap_count < SWAP_LIMIT));
-        }
+        uint16_t near_side = (in->l < in->r) ? in->l : in->r;
+        min_side_close = (uint8_t)(near_side < SIDE_AVOID_CM);
+    }
+    uint8_t blocked_now = (uint8_t)((in->f_valid && in->f < FRONT_DANGER_CM)
+        || (in->f_valid && in->f < FRONT_STOP_CM && min_side_close));
+    d.block_n = blocked_now ? inc_u8(d.block_n) : 0U;
+    if (d.block_n >= SPIN_BLOCK_CONFIRM_N
+        && (in->now - d.state_since_ms) >= SPIN_COMMIT_MS)
+    {
+        back_enter(in, 1U);
         return;
     }
 
-    if (in->left_valid && in->right_valid
-        && (in->now - drive.state_since_ms) >= SPIN_COMMIT_MS
-        && drive.swap_count < SWAP_LIMIT)
-    {
-        uint16_t selected = drive.turn_right ? in->r : in->l;
-        uint16_t other = drive.turn_right ? in->l : in->r;
-        if (selected < SIDE_BLOCK_CM && other > (uint16_t)(selected + SIDE_HYST))
-        {
-            spin_restart(in, 1U);
-            return;
-        }
-    }
-
-    /* course_heading is only trustworthy within a half revolution: needing to
-     * rotate past 180 deg proves the pocket demanded a course reversal, so the
-     * stale reference must not keep every exit gated shut. */
-    float course_deviation = in->imu_live
-        ? fabsf(drive_wrap180(in->heading - drive.course_heading))
-        : 0.0f;
-    uint8_t forward_ok = (uint8_t)(!in->imu_live
-        || course_deviation < COURSE_REV_DEG
-        || (progress_valid && progress >= 180.0f));
-    dbg.course_dev = course_deviation;
-    dbg.reverse = (uint8_t)(in->imu_live && !forward_ok);
-
-    if (front_open_at(in, FRONT_CLEAR_CM))
-    {
-        drive.clear_count = increment_u8(drive.clear_count);
-        if (drive.clear_count >= CLEAR_CONFIRM && forward_ok
-            && (!drive.entry_heading_valid
-                || (progress_valid && progress >= TURN_MIN_DEG)))
-        {
-            cruise_enter(in);
-            return;
-        }
-    }
-    else if (in->f_valid)
-    {
-        drive.clear_count = 0U;
-    }
-
-    if (progress_valid && forward_ok
-        && progress >= TURN_TARGET_DEG && front_open_at(in, FRONT_TURN_CM))
+    /* exit: enough rotation, axis-aligned (or no corridor to align to),
+     * open nose, course gate */
+    if (progress_valid && progress >= TURN_MIN_DEG
+        && (axis_aligned(in->heading) || sides_open_wide(in))
+        && front_open_at(in, FRONT_TURN_CM)
+        && exit_course_ok(in))
     {
         cruise_enter(in);
         return;
     }
-    /* Past the cutoff angle the pivot becomes a search: keep rotating at the
-     * controller floor until the nose actually faces open space — exiting
-     * blind here just re-enters BRAKE on the next frame. */
-    if (progress_valid && forward_ok && progress >= TURN_CUTOFF_DEG
-        && front_open_at(in, FRONT_TURN_CM))
+
+    if ((in->now - d.state_since_ms) > SPIN_MAX_MS)
     {
-        cruise_enter(in);
+        back_enter(in, 1U);
         return;
     }
-    if (!drive.entry_heading_valid
-        && (in->now - drive.spin_since_ms) >= SPIN_BLIND_MS
+
+    /* IMU-independent backstop */
+    if (!d.entry_heading_valid
+        && (in->now - d.spin_since_ms) >= SPIN_BLIND_MS
         && front_open_at(in, FRONT_TURN_CM)
         && (in->left_valid || in->right_valid))
     {
@@ -943,129 +1159,157 @@ static void spin_run(const DriveInputs *in)
     else command_pivot(TURN_SPEED, TURN_INNER, in->now, 0U);
 }
 
-static void corner_run(const DriveInputs *in)
+static void brake_run(const DriveInputs *in)
 {
-    if (in->imu_live && !drive.entry_heading_valid)
+    if ((in->now - d.state_since_ms) < BRAKE_MS) return;
+
+    if (in->f_valid && in->f < FRONT_DANGER_CM)
     {
-        turn_progress_reset(in->heading);
-        drive.entry_heading_valid = 1U;
-    }
-    if (front_recent_below(in, CORNER_ABORT_CM))
-    {
-        brake_enter(in);
-        return;
-    }
-    if (side_emergency(in))
-    {
-        side_avoid_enter(in);
-        return;
-    }
-    if ((in->now - drive.state_since_ms) > ARC_MAX_MS)
-    {
-        brake_enter(in);
+        motion_stop(in->now);
+        if (!in->left_valid && !in->right_valid) return;
+        if (d.retry_count <= RECOVER_RETRY_MAX)
+        {
+            back_enter(in, 0U);
+        }
+        else
+        {
+            /* budget exhausted: pivot from where the car stands rather than
+             * cycling brake/back forever */
+            decide_turn_direction(in);
+            spin_begin(in, 0U);
+        }
         return;
     }
 
-    float progress = (in->imu_live && drive.entry_heading_valid)
-        ? turn_progress_update(in->heading)
-        : 0.0f;
-    uint32_t corner_elapsed_ms = in->now - drive.state_since_ms;
-    uint8_t front_tight = front_recent_below(in, CORNER_TIGHTEN_CM);
-    uint8_t rescue_immediate = 0U;
-    if (front_tight)
+    /* the braking front reading may have been a spike: if the wall
+     * evaporates this was a false brake — resume cruising */
+    if (!front_recent_below(in, FRONT_TURN_CM))
     {
-        rescue_immediate = (uint8_t)(!drive.corner_tight);
-        drive.corner_tight = 1U;
-    }
-    if (in->imu_live && drive.entry_heading_valid
-        && corner_elapsed_ms > CORNER_PROGRESS_GRACE_MS)
-    {
-        float minimum_progress = ((float)(corner_elapsed_ms - CORNER_PROGRESS_GRACE_MS)
-            * CORNER_MIN_PROGRESS_DPS) / 1000.0f;
-        if ((progress + CORNER_PROGRESS_SLACK_DEG) < minimum_progress)
-            drive.corner_tight = 1U;
-        if (progress >= CORNER_TIGHT_RELEASE_DEG && !front_tight)
-            drive.corner_tight = 0U;
-    }
-    else if (!drive.entry_heading_valid && front_open_at(in, FRONT_CLEAR_CM))
-    {
-        drive.corner_tight = 0U;
-    }
-    if (in->imu_live && drive.entry_heading_valid
-        && (in->now - drive.state_since_ms) >= SPIN_COMMIT_MS
-        && progress < -TURN_WRONG_DEG)
-    {
-        brake_enter(in);
-        return;
-    }
-
-    if (in->imu_live && drive.entry_heading_valid
-        && progress >= TURN_TARGET_DEG && front_open_at(in, FRONT_TURN_CM))
-    {
-        cruise_enter(in);
-        return;
-    }
-
-    if (front_open_at(in, CORNER_GRID_EXIT_CM))
-        drive.grid_clear_count = increment_u8(drive.grid_clear_count);
-    else if (in->f_valid)
-        drive.grid_clear_count = 0U;
-    if (in->imu_live && drive.entry_heading_valid
-        && drive.grid_clear_count >= CLEAR_CONFIRM
-        && progress >= CORNER_GRID_EXIT_MIN_DEG
-        && progress <= CORNER_GRID_EXIT_MAX_DEG
-        && fabsf(drive_wrap180(in->heading - course_grid_snap(in->heading))) <= CORNER_GRID_ALIGN_DEG)
-    {
-        cruise_enter(in);
-        return;
-    }
-
-    if (front_open_at(in, FRONT_CLEAR_CM))
-    {
-        drive.clear_count = increment_u8(drive.clear_count);
-        if (drive.clear_count >= CLEAR_CONFIRM
-            && (!drive.entry_heading_valid
-                || (in->imu_live && progress >= CORNER_EXIT_MIN_DEG)))
+        d.wall_gone_n = inc_u8(d.wall_gone_n);
+        if (d.wall_gone_n >= CLEAR_CONFIRM_N)
         {
             cruise_enter(in);
             return;
         }
     }
-    else if (in->f_valid)
+    else
     {
-        drive.clear_count = 0U;
+        d.wall_gone_n = 0U;
     }
 
-    float remaining = TURN_TARGET_DEG - progress;
-    if (remaining < 0.0f) remaining = 0.0f;
-    if (drive.corner_tight)
+    /* user spec §5.9: the direction is decided from a wall firmly at the
+     * 20 cm line, consecutive fresh samples, read from a stable pose */
+    if (in->f_valid && in->f <= FRONT_DECIDE_CM)
     {
-        command_pivot(CORNER_RESCUE_OUTER, CORNER_RESCUE_INNER,
-            in->now, rescue_immediate);
+        d.decide_n = inc_u8(d.decide_n);
+        if (d.decide_n >= FRONT_DECIDE_CONFIRM_N
+            && (in->left_valid || in->right_valid))
+        {
+            decide_turn_direction(in);
+            spin_begin(in, 0U);
+            return;
+        }
+        motion_stop(in->now);
         return;
     }
+    d.decide_n = 0U;
 
-    float outer = (float)ARC_OUTER;
-    float inner = (float)ARC_INNER;
-    if (in->imu_live && drive.entry_heading_valid && remaining <= ARC_APPROACH_DEG)
+    /* wall confirmed but above the decide line: creep to it; a wall that
+     * never resolves decides from where the car stands */
+    if ((in->now - d.state_since_ms) >= (BRAKE_MS + BRAKE_CREEP_MAX_MS))
     {
-        float ratio = remaining / ARC_APPROACH_DEG;
-        outer = (float)ARC_APPROACH_OUTER
-              + (((float)ARC_OUTER - (float)ARC_APPROACH_OUTER) * ratio);
-        inner = (float)ARC_APPROACH_INNER
-              + (((float)ARC_INNER - (float)ARC_APPROACH_INNER) * ratio);
+        motion_stop(in->now);
+        if (!in->left_valid && !in->right_valid) return;
+        decide_turn_direction(in);
+        spin_begin(in, 0U);
+        return;
     }
-    command_arc((uint8_t)(outer + 0.5f), (uint8_t)(inner + 0.5f), in->now);
+    motion_command(BRAKE_CREEP_PCT, BRAKE_CREEP_PCT, in->now);
 }
 
 static void reverse_run(const DriveInputs *in)
 {
-    if ((in->now - drive.state_since_ms) >= BACK_CHUNK_MS)
+    if ((in->now - d.state_since_ms) >= BACK_CHUNK_MS)
+    {
+        if (d.back_from_turn)
+        {
+            /* resume the interrupted pivot: same direction, no re-decision,
+             * rotation gained while backing folds into the total; the leg
+             * restarts because the sweep was interrupted (§5.16) */
+            d.back_from_turn = 0U;
+            if (in->imu_live && d.entry_heading_valid)
+            {
+                turn_progress_update(in->heading);
+                d.turn_leg = 0.0f;
+                spin_begin(in, 1U);
+            }
+            else
+            {
+                spin_begin(in, 0U);
+            }
+        }
+        else
+        {
+            brake_enter(in);
+        }
+        return;
+    }
+    if (d.back_from_turn) command_back_turn(in->now, 0U);
+    else motion_command(-DRIVE_SPEED, -DRIVE_SPEED, in->now);
+}
+
+static void side_avoid_run(const DriveInputs *in)
+{
+    if (in->f_valid && in->f < FRONT_STOP_CM)
     {
         brake_enter(in);
         return;
     }
-    motion_command(-DRIVE_SPEED, -DRIVE_SPEED, in->now);
+
+    uint8_t wall_valid = d.turn_right ? in->left_valid : in->right_valid;
+    uint16_t wall_distance = d.turn_right ? in->l : in->r;
+    if (wall_valid && wall_distance >= SIDE_AVOID_CLEAR_CM)
+    {
+        d.side_clear_n = inc_u8(d.side_clear_n);
+        if (d.side_clear_n >= SIDE_AVOID_CLEAR_CONFIRM_N)
+        {
+            cruise_enter(in);
+            return;
+        }
+    }
+    else
+    {
+        d.side_clear_n = 0U;
+    }
+
+    if ((in->now - d.state_since_ms) > SIDE_AVOID_MAX_MS)
+    {
+        brake_enter(in);
+        return;
+    }
+
+    float progress = 0.0f;
+    uint8_t progress_valid = 0U;
+    if (in->imu_live)
+    {
+        if (!d.entry_heading_valid)
+        {
+            turn_progress_reset(in->heading);
+            d.entry_heading_valid = 1U;
+        }
+        progress = turn_progress_update(in->heading);
+        progress_valid = 1U;
+    }
+
+    /* past the useful escape angle, roll straight until clearance is proven:
+     * continuing the skid pivot leaves a large heading step (§5.13) */
+    if (progress_valid && progress >= SIDE_AVOID_PIVOT_MAX_DEG)
+    {
+        motion_command(SIDE_AVOID_ESCAPE_PCT, SIDE_AVOID_ESCAPE_PCT, in->now);
+        dbg.steer = 0.0f;
+        return;
+    }
+    command_pivot(RESCUE_OUTER, RESCUE_INNER, in->now, 0U);
 }
 
 static void hold_run(const DriveInputs *in)
@@ -1078,57 +1322,27 @@ static void hold_run(const DriveInputs *in)
     }
     if (in->left_valid || in->right_valid)
     {
-        /* Side sensing is back; a silent front just means open corridor. */
         cruise_enter(in);
         return;
     }
     motion_stop(in->now);
 }
 
-static void side_avoid_run(const DriveInputs *in)
-{
-    if (in->f_valid && in->f < FRONT_STOP_CM)
-    {
-        brake_enter(in);
-        return;
-    }
-
-    uint8_t wall_valid = drive.turn_right ? in->left_valid : in->right_valid;
-    uint16_t wall_distance = drive.turn_right ? in->l : in->r;
-    if (wall_valid && wall_distance >= SIDE_AVOID_CLEAR_CM)
-    {
-        drive.side_clear_count = increment_u8(drive.side_clear_count);
-        if (drive.side_clear_count >= SIDE_AVOID_CLEAR_CONFIRM)
-        {
-            cruise_enter(in);
-            return;
-        }
-    }
-    else
-    {
-        drive.side_clear_count = 0U;
-    }
-
-    if ((in->now - drive.state_since_ms) > SIDE_AVOID_MAX_MS)
-    {
-        brake_enter(in);
-        return;
-    }
-    command_pivot(CORNER_RESCUE_OUTER, CORNER_RESCUE_INNER, in->now, 0U);
-}
+/* -------------------------------------------------------------- public API */
 
 void Drive_Init(void)
 {
-    drive = (DriveContext){
+    d = (DriveContext){
         .state = DS_CRUISE,
         .launching = 1U,
-        .corner_candidate = -1,
+        .corner_dir = -1,
     };
-    DriveControl_Reset();
     dbg.state = DS_CRUISE;
     dbg.turn_dir = 0U;
     dbg.rev_cnt = 0U;
     dbg.launch = 0U;
+    dbg.graze = 0U;
+    dbg.reverse = 0U;
 }
 
 void Drive_Update(const DriveInputs *in)
@@ -1139,48 +1353,45 @@ void Drive_Update(const DriveInputs *in)
         return;
     }
 
-    if (!drive.course_latched && in->imu_live)
+    if (!d.course_latched && in->imu_live)
     {
-        drive.course_zero = in->heading;
-        drive.course_heading = in->heading;
-        drive.heading_ref = in->heading;
-        drive.course_latched = 1U;
+        d.course_zero = in->heading;
+        d.course_heading = in->heading;
+        d.heading_ref = in->heading;
+        d.course_latched = 1U;
     }
 
-    /* Front-only messages are safety events, never normal control frames. */
+    /* front-only messages are safety events, never control frames */
     if (!in->side_valid)
     {
-        uint8_t spin_committed = (uint8_t)(drive.state == DS_SPIN
-            && (in->now - drive.state_since_ms) >= SPIN_COMMIT_MS);
         if (in->f_valid && in->f < FRONT_DANGER_CM
-            && (drive.state == DS_CRUISE
-                || drive.state == DS_CORNER
-                || drive.state == DS_SIDE_AVOID
-                || spin_committed))
+            && (d.state == DS_CRUISE
+                || d.state == DS_CORNER
+                || d.state == DS_SIDE_AVOID))
         {
             brake_enter(in);
         }
-        dbg.state = (uint8_t)drive.state;
+        dbg.state = (uint8_t)d.state;
         return;
     }
 
-    if (drive.state == DS_CRUISE && in->imu_live && !drive.last_full_imu_live)
+    /* IMU returned after a brownout while cruising: re-base the axis */
+    if (d.state == DS_CRUISE && in->imu_live && !d.last_imu_live)
     {
-        if (drive.course_reacquire_pending)
+        if (d.reacquire_pending)
         {
-            drive.heading_ref = course_axis_snap(in->heading);
-            drive.course_heading = drive.heading_ref;
+            d.heading_ref = course_axis_snap(in->heading);
+            d.course_heading = d.heading_ref;
+            d.reacquire_pending = 0U;
         }
         else
         {
-            drive.heading_ref = drive.course_heading;
+            d.heading_ref = d.course_heading;
         }
-        drive.course_reacquire_pending = 0U;
-        DriveControl_Reset();
-        DriveControl_PrimeHeading(in->heading);
+        centering_reset(in);
     }
 
-    switch (drive.state)
+    switch (d.state)
     {
     case DS_CRUISE:     cruise_run(in); break;
     case DS_BRAKE:      brake_run(in); break;
@@ -1191,12 +1402,12 @@ void Drive_Update(const DriveInputs *in)
     case DS_CORNER:     corner_run(in); break;
     default:
         motion_stop(in->now);
-        drive.state = DS_CRUISE;
+        d.state = DS_CRUISE;
         break;
     }
 
-    dbg.state = (uint8_t)drive.state;
-    dbg.turn_dir = drive.turn_right;
-    dbg.rev_cnt = drive.reverse_count;
-    drive.last_full_imu_live = in->imu_live;
+    dbg.state = (uint8_t)d.state;
+    dbg.turn_dir = d.turn_right;
+    dbg.rev_cnt = d.retry_count;
+    d.last_imu_live = in->imu_live;
 }

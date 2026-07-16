@@ -60,6 +60,17 @@
                                       반응지연 병목(64% duty서 지연당 3~4.5cm 이동 = 반발존 3cm 초과 → 벽 hug).
                                       20ms(ST 고속 프로파일)로 루프당 새 샘플 1개 확보 (IMG_2977 대응) */
 #define TOF_STALE_MS        150U   /* 새 샘플 무갱신 상한. 버짓 20ms의 ~7배 초과 = 센서 정체 → 트임 만료 */
+
+/* ---- 측면 ToF 초근접 신뢰 게이트 (§5.21) ----
+ * VL53L0X 실효 사거리(~1.2m, 20ms 버짓·판지 사면은 그 이하) 밖 = "타깃 없음"인데,
+ * 칩이 status=valid인 0~40mm 쓰레기값을 간헐 반환한다 (광장 정지 재현: L218 안정
+ * vs R 0→37→20→32mm 플리커). 실타깃 초근접은 (a) 접근 연속(직전 median이 이미
+ * 근거리)이거나 (b) 표본이 안정(연속 지터 ≤12mm)이다 — 어느 쪽도 아닌 고립·불안정
+ * 초근접은 "옆에 아무것도 없음"으로 공표한다. */
+#define TOF_NEAR_TRUST_MM    60U   /* 이 미만 초근접값은 맥락/안정성 검증 대상 */
+#define TOF_NEAR_CTX_CM      12U   /* 직전 median이 이 안이면 접근 연속 — 즉시 신뢰 */
+#define TOF_NEAR_JITTER_MM   12U   /* 연속 suspect 표본 간 허용 지터 */
+#define TOF_NEAR_CONFIRM_N    3U   /* 고립 초근접이 실타깃으로 인정될 안정 연속 표본 수 */
 #define TOF_LOOP_DELAY_MS   5U     /* SensorTask 루프 양보. 측면이 논블로킹化돼 사라진 대기 보상(CPU 독점 방지) */
 
 /* ---- 텔레메트리 (아키텍처 §4 / dash_board.html 프로토콜) ----
@@ -191,6 +202,8 @@ static void Init_ToF_Sensors(void)
     if (tof_right_ok) tof_right_ok = VL53L0X_StartContinuous(&tof_right);
 }
 
+static uint8_t inc_sat_u8(uint8_t v) { return (v < 255U) ? (uint8_t)(v + 1U) : v; }
+
 /* 측면 ToF 1회 폴링 → mm 미러/cm hist 갱신.
  * 반환값 3상 처리: 1=새 샘플(캡 후 기록), 0=아직(버짓 ~33ms vs 루프 ~20ms — 정상, 직전값 유지),
  * -1=I2C 에러(연속 SIDE_FAIL_LIMIT회 → 트임 만료: stale 근접값이 조향을 오래 붙드는 것 차단).
@@ -201,6 +214,8 @@ static void tof_record_side(VL53L0X *dev,
                             uint8_t *miss,
                             uint8_t *has_sample,
                             uint32_t *t_fresh,
+                            uint8_t *susp_n,
+                            uint16_t *susp_mm,
                             volatile uint16_t *out_mm,
                             uint32_t now)
 {
@@ -219,6 +234,37 @@ static void tof_record_side(VL53L0X *dev,
         *has_sample = 1U;
         *t_fresh = now;
         if (mm > TOF_CAP_MM) mm = TOF_CAP_MM;           /* ceiling: out-of-range(8190) 지터 캡 */
+
+        /* §5.21 초근접 신뢰 게이트: status를 통과한 잔존 쓰레기(고립·불안정 초근접)를
+         * "타깃 없음"으로 공표. 실타깃은 접근 연속 or 안정 연속으로 즉시/60ms 내 통과. */
+        if (mm < TOF_NEAR_TRUST_MM)
+        {
+            uint8_t continuous = (uint8_t)(median_n(hist, SIDE_MED_WIN) < TOF_NEAR_CTX_CM);
+            if (!continuous)
+            {
+                uint16_t jump = (mm > *susp_mm) ? (uint16_t)(mm - *susp_mm)
+                                                : (uint16_t)(*susp_mm - mm);
+                uint8_t stable = (uint8_t)(*susp_n > 0U && jump <= TOF_NEAR_JITTER_MM);
+                *susp_n = stable ? inc_sat_u8(*susp_n) : 1U;
+                *susp_mm = mm;
+                if (*susp_n < TOF_NEAR_CONFIRM_N)
+                {
+                    *out_mm = TOF_CAP_MM;
+                    for (int i = SIDE_MED_WIN - 1; i > 0; i--) hist[i] = hist[i - 1];
+                    hist[0] = ULTRA_MAX_CM;
+                    return;
+                }
+            }
+            else
+            {
+                *susp_n = 0U;
+            }
+        }
+        else
+        {
+            *susp_n = 0U;
+        }
+
         *out_mm = mm;
         uint16_t cm = mm / 10U;
         if (cm > ULTRA_MAX_CM) cm = ULTRA_MAX_CM;       /* drive 계층 스케일(cm, 80 상한) 정합 */
@@ -640,6 +686,8 @@ void StartTask02(void *argument)
   static uint8_t  front_miss = 0;   /* 정면 에코 연속 미회신 (stale front 제거 및 전 센서 상실 판정 입력) */
   static uint8_t  tof_miss[2]  = {0, 0};   /* 좌/우 ToF I2C 에러 연속 카운트 (SIDE_FAIL_LIMIT 만료) */
   static uint8_t  tof_has_sample[2] = {0U, 0U};  /* 좌/우 PollRangeMM 성공 샘플 수신 여부 */
+  static uint8_t  tof_susp_n[2] = {0U, 0U};      /* 좌/우 고립 초근접 연속 안정 카운트 (§5.21) */
+  static uint16_t tof_susp_mm[2] = {0U, 0U};     /* 좌/우 마지막 suspect mm (지터 비교 기준) */
   static uint32_t tof_fresh[2] = {0, 0};   /* 좌/우 마지막 새 샘플 시각 (TOF_STALE_MS 정체 만료) */
   static uint8_t  imu_live = 0;     /* IMU 생존 게이트 */
   static uint8_t  imu_fail = 0;     /* 읽기 연속 실패 카운트 */
@@ -649,8 +697,11 @@ void StartTask02(void *argument)
   static BNO055_Euler imu;          /* 최근 융합값 (read 실패 시 직전값 유지) */
 
   uint16_t f = ULTRA_MAX_CM, l = ULTRA_MAX_CM, r = ULTRA_MAX_CM;  /* 필터 출력 */
-  uint16_t d_front;
-  uint8_t  v_front;
+  uint16_t d_front_first;
+  uint16_t d_front_second;
+  uint16_t d_front_cycle;
+  uint8_t  v_front_first;
+  uint8_t  v_front_second;
 
   Ultra_Init(osThreadGetId());      /* TIM3 IC start(전방 CH1) + 측정 완료 flag 수신자 등록 */
   Encoder_Init();                   /* SG-207 휠 엔코더: TIM2 전체 런타임 구성 (CubeMX 미사용, 독립 타이머) */
@@ -665,29 +716,40 @@ void StartTask02(void *argument)
       dbg.loop_ms = now - t_loop;   /* 사이클 주기 미러 (front-left-front-right 반응지연 감시) */
       t_loop = now;
 
-      uint8_t front_cycle_valid = 0U;
-      uint8_t danger_event_sent = 0U;
-
-      /* Front is sampled twice around the left ToF poll for low brake latency. */
-      v_front = Ultra_Measure(MEAS_WAIT_MS, &d_front);           /* front (TRIG PA5, ECHO TIM3_CH1) */
-      front_cycle_valid |= v_front;
-      sensor_record_front(v_front, d_front, hist_f, &front_miss, &f);
-      danger_event_sent = sensor_put_front_danger_event(f, v_front, front_miss, imu.heading);
+      /* Front is sampled twice around the left ToF poll for low brake latency.
+       * Give the temporal median exactly one vote per SensorTask cycle: pushing
+       * both echoes independently let one short floor-reflection episode fill
+       * two of the three slots and issue a false danger brake.  The nearer of
+       * two valid echoes represents the cycle so real obstacles remain the
+       * conservative choice. */
+      v_front_first = Ultra_Measure(MEAS_WAIT_MS, &d_front_first); /* front (TRIG PA5, ECHO TIM3_CH1) */
       /* Poll each continuously ranging ToF around the second front sample. */
       tof_record_side(&tof_left, tof_left_ok, hist_l, &tof_miss[0], &tof_has_sample[0],
-                      &tof_fresh[0], &dist_left, now);
-      v_front = Ultra_Measure(MEAS_WAIT_MS, &d_front);
-      front_cycle_valid |= v_front;
-      sensor_record_front(v_front, d_front, hist_f, &front_miss, &f);
-      if (!danger_event_sent)
-          (void)sensor_put_front_danger_event(f, v_front, front_miss, imu.heading);
+                      &tof_fresh[0], &tof_susp_n[0], &tof_susp_mm[0], &dist_left, now);
+      v_front_second = Ultra_Measure(MEAS_WAIT_MS, &d_front_second);
+
+      uint8_t front_cycle_valid = (uint8_t)(v_front_first || v_front_second);
+      d_front_cycle = ULTRA_MAX_CM;
+      if (v_front_first && v_front_second)
+          d_front_cycle = (d_front_first < d_front_second) ? d_front_first : d_front_second;
+      else if (v_front_first)
+          d_front_cycle = d_front_first;
+      else if (v_front_second)
+          d_front_cycle = d_front_second;
+
+      sensor_record_front(front_cycle_valid, d_front_cycle,
+                          hist_f, &front_miss, &f);
+      (void)sensor_put_front_danger_event(f, front_cycle_valid,
+                                          front_miss, imu.heading);
 
       tof_record_side(&tof_right, tof_right_ok, hist_r, &tof_miss[1], &tof_has_sample[1],
-                      &tof_fresh[1], &dist_right, now);
+                      &tof_fresh[1], &tof_susp_n[1], &tof_susp_mm[1], &dist_right, now);
 
       l = median_n(hist_l, SIDE_MED_WIN);   /* 측면 median 필터 계층 유지 (단발 outlier 방어) */
       r = median_n(hist_r, SIDE_MED_WIN);
       dbg.front = f; dbg.left = l; dbg.right = r;
+      dbg.tof_st_l = tof_left.last_code;    /* SWD 진단: 개활 측면 쓰레기값 status 판별 (§5.20) */
+      dbg.tof_st_r = tof_right.last_code;
 
       /* 3) IMU 샘플 (생존 게이트): 정상 시 매 사이클 heading 갱신. 연속 IMU_FAIL_LIMIT회 실패 →
        *    사망 선언 후 IMU_RETRY_MS 주기로만 재시도 — 죽은 IMU가 사이클마다 I2C timeout(10ms×2)을

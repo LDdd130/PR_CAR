@@ -53,7 +53,6 @@ Core/Src/delay.c \
 Core/Src/motor.c \
 Core/Src/bno055.c \
 Core/Src/drive.c \
-Core/Src/drive_control.c \
 Core/Src/ultra.c \
 Core/Src/vl53l0x.c \
 Core/Src/encoder.c \
