@@ -30,6 +30,9 @@ typedef struct
     I2C_HandleTypeDef *hi2c;      /* 공유 버스 핸들 (hi2c1) */
     uint8_t            addr;      /* 8-bit I2C 주소 (HAL 규약) */
     uint8_t            stop_variable; /* init 때 칩에서 읽는 내부값 — StartContinuous 시퀀스에 필요 */
+    uint8_t            last_code;    /* 마지막 샘플의 device range status code (0x14 bits[6:3]).
+                                        11=valid 7=sigma 4=signal 6/9=phase(wrap) 8/10=min-range.
+                                        SWD 진단용 미러 (dbg.tof_st_l/r) */
 } VL53L0X;
 
 /* 전체 초기화 (XSHUT high + 부팅 ~1.2ms 후 호출). 반환 1=성공 0=실패(I2C 무응답/ID 불일치) */
@@ -47,7 +50,8 @@ uint8_t VL53L0X_SetTimingBudget(VL53L0X *dev, uint32_t budget_us);
 uint8_t VL53L0X_StartContinuous(VL53L0X *dev);
 
 /* 논블로킹 폴링: 새 측정치 있으면 *out_mm에 쓰고 1, 아직이면 0, I2C 에러면 -1.
- * out-of-range는 칩이 8190/8191mm를 반환 — 상한 처리(캡)는 호출측 몫 */
+ * RESULT_RANGE_STATUS를 함께 읽어 phase/signal fail(사거리 밖 wraparound가 만드는
+ * 가짜 초근접 값)은 8190으로, min-range clip은 30mm로 정규화 — 상한 캡은 호출측 몫 */
 int8_t VL53L0X_PollRangeMM(VL53L0X *dev, uint16_t *out_mm);
 
 #ifdef __cplusplus

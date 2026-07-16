@@ -18,6 +18,7 @@
 #define REG_SYSTEM_INTERRUPT_CONFIG_GPIO 0x0AU
 #define REG_SYSTEM_INTERRUPT_CLEAR       0x0BU
 #define REG_RESULT_INTERRUPT_STATUS      0x13U
+#define REG_RESULT_RANGE_STATUS          0x14U  /* bits[6:3] = device range status code */
 #define REG_RESULT_RANGE_MM              0x1EU  /* RESULT_RANGE_STATUS(0x14) + 10: 16-bit mm */
 #define REG_FINAL_RANGE_MIN_CNT_RATE     0x44U
 #define REG_MSRC_CONFIG_TIMEOUT_MACROP   0x46U
@@ -294,9 +295,28 @@ int8_t VL53L0X_PollRangeMM(VL53L0X *dev, uint16_t *out_mm)
     if (!rd8(dev, REG_RESULT_INTERRUPT_STATUS, &s)) return -1;
     if ((s & 0x07U) == 0U) return 0;            /* 아직 새 샘플 없음 (버짓 ~33ms 진행 중) */
 
+    uint8_t status;
+    if (!rd8(dev, REG_RESULT_RANGE_STATUS, &status)) return -1;
     uint16_t mm;
     if (!rd16(dev, REG_RESULT_RANGE_MM, &mm)) return -1;
     if (!wr8(dev, REG_SYSTEM_INTERRUPT_CLEAR, 0x01)) return -1;
+
+    /* 타깃이 언앰비규어스 사거리(~1.2m) 밖이면 칩은 8190이 아니라 wraparound된
+     * "가짜 초근접 mm"(2~6cm)를 status=phase/signal fail과 함께 내보낸다.
+     * 광장(곡선) 구간처럼 측벽이 사거리 밖일 때 이 값이 그대로 통과하면
+     * 열린 쪽이 초근접 벽으로 뒤집혀 읽힌다 — status로 반드시 거른다.
+     *   11 = valid만 실측으로 통과.
+     *   7 = sigma fail: §5.18에서 통과시켰더니 개활 측면에서 0~37mm 쓰레기가
+     *       그대로 새어나옴(§5.20, 20ms 버짓의 저신호 한계). 근접 실벽은 신호가
+     *       강해 sigma fail이 뜨지 않으므로 out-of-range 처리가 안전하다.
+     *   8/10 = min-range clip(초근접 실타깃, mm은 신뢰 불가 → 30mm 고정)
+     *   그 외(phase/signal/HW fail) = 신뢰 타깃 없음 → out-of-range로 정규화 */
+    uint8_t code = (uint8_t)((status >> 3) & 0x0FU);
+    dev->last_code = code;
+    if (code == 8U || code == 10U)
+        mm = 30U;
+    else if (code != 11U)
+        mm = 8190U;
 
     *out_mm = mm;   /* out-of-range = 8190/8191 — 상한 캡은 호출측 */
     return 1;
