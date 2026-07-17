@@ -5,7 +5,8 @@
  * PR_CAR drive core v2 configuration.
  *
  * Rewritten together with drive.c (§5.17): three logical layers — CRUISE
- * (centering + speed governor), TURN (arc primary, pivot fallback) and
+ * (centering + speed governor), TURN (§5.24: pivot only, armed exclusively
+ * by the brake-and-decide path at the front decide line) and
  * RECOVER (brake / back / side rescue) — reported through the unchanged
  * seven-state telemetry enum.
  *
@@ -21,20 +22,12 @@
  * breakaway sits far above that floor, and an inner pair commanded below
  * the floor stalls and drags the rotation centre onto the stopped side. */
 #define DRIVE_SPEED                     32
-#define TURN_SPEED                      56
-#define TURN_INNER                      34
+#define TURN_SPEED                      62    /* §5.27 스냅턴: 56→62 */
+#define TURN_INNER                      36
 #define MOTOR_MIN_PCT                   30
 #define MOTOR_TRIM_PCT                   0
 #define DRIVE_NOMINAL_UPDATE_MS         20U
 #define DRIVE_WHEEL_SLEW_PCT_PER_S    600.0f
-
-/* Forward arc (rolling corner). */
-#define ARC_OUTER                       72
-#define ARC_INNER                       30
-#define ARC_APPROACH_OUTER              56
-#define ARC_APPROACH_INNER              30
-#define ARC_APPROACH_DEG                18.0f
-#define ARC_MAX_MS                     850U
 
 /* Rescue pivot (side escape) and three-point-turn backing. */
 #define RESCUE_OUTER                    48
@@ -43,24 +36,26 @@
 #define REV_TURN_INNER                  32
 
 /* ---- Front distance ladder (cm, HC-SR04 — hardware unchanged). ----------
- * DANGER < DECIDE < STOP < TURN < CLEAR < ARC, guarded below.
- * DECIDE 20 is a user-mandated spec: a pivot direction is only decided from
- * a wall firmly confirmed at 20 cm by consecutive fresh samples (§5.9). */
+ * DANGER < DECIDE < STOP < TURN < CLEAR, guarded below.
+ * DECIDE 17 is a user-mandated spec (§5.9 20cm -> §5.24 16~17cm): a pivot
+ * direction is only decided from a wall firmly confirmed at the decide line
+ * by consecutive fresh AND stable samples. Turns start nowhere else. */
 #define FRONT_DANGER_CM                 12
-#define FRONT_DECIDE_CM                 20
-#define FRONT_STOP_CM                   34
+#define FRONT_DECIDE_CM                 16
+#define FRONT_STOP_CM                   30    /* §5.27: 34→30 — 코너 접근 36cm 호버링이 만드는 경계선 브레이크(멈칫) 컷 */
 #define FRONT_TURN_CM                   44
 #define FRONT_CLEAR_CM                  52
-#define FRONT_ARC_CM                    68
-#define CORNER_TIGHTEN_CM               30
 
 /* Fresh-confirm counts (frames). Front reading spikes (floor echo, bounce):
  * no single sample may brake, open a corner or decide a direction (§5.9). */
-#define FRONT_WALL_CONFIRM_N             3U
 #define FRONT_STOP_CONFIRM_N             3U
 #define FRONT_DECIDE_CONFIRM_N           2U
+/* §5.23: confirm samples must also AGREE — a head-on wall closes a few cm
+ * per frame, floor/bump echoes teleport (mapp_v2: 3->30->16). Consecutive
+ * samples differing more than this restart the confirm chain. The danger
+ * ladder (FRONT_DANGER_CM) stays ungated: safety beats phantom rejection. */
+#define FRONT_STABLE_CM                  4U
 #define CLEAR_CONFIRM_N                  3U
-#define SPIN_BLOCK_CONFIRM_N             2U
 
 /* ---- Side geometry (cm, perpendicular ToF). [REMEASURE] ------------------
  * Centered lateral clearance by corridor: 10.5 (37 cm) .. 25.5 (67 cm).
@@ -69,17 +64,25 @@
  * readings, which is why corner detection additionally REQUIRES the
  * confirmed approaching front wall above. */
 #define SIDE_PAIR_MAX_CM                52.0f
-#define SIDE_OPEN_CM                    30
-#define SIDE_ASYM_CM                    12
-#define SIDE_NEAR_SAFE_CM                6
 #define SIDE_HYST_CM                     5
-#define CORNER_CONFIRM_N                 2U
-#define CORNER_DROPOUT_TOL_N             1U
 
 /* Wall proximity bands. [REMEASURE] */
 #define SIDE_SOFT_CM                    10.0f
 #define SIDE_HARD_CM                     7.0f
 #define SIDE_AVOID_CM                    5
+/* §5.26: at high duty the flank must fire earlier — an oblique wall gives
+ * the front ultrasonic no echo, so the side ToF is the only warning. */
+#define SIDE_FAST_DUTY_PCT              52
+#define SIDE_AVOID_FAST_CM               9
+
+/* §5.26 cruise ram/stall backstop (left encoder only; right reads 0 —
+ * hardware). Duty high + wheel collapsed for the window = nose in a wall
+ * the ultrasonic cannot see (specular) — back off and decide. Grace skips
+ * spin-up after launch/state entry. */
+#define CRUISE_STALL_DUTY_PCT           42
+#define CRUISE_STALL_SPEED_CMS           6.0f
+#define CRUISE_STALL_MS                350U
+#define CRUISE_STALL_GRACE_MS          400U
 #define SIDE_AVOID_CLEAR_CM              7
 #define SIDE_AVOID_CLEAR_CONFIRM_N       3U
 #define SIDE_AVOID_MAX_MS              360U
@@ -104,8 +107,19 @@
 /* Wide/curve zone (§5.19): with both sides at least this open the track is
  * not a 90 deg corridor (octagon plaza facets sit at 45 deg), so a turn may
  * exit off-axis as soon as the nose opens — the axis-align gate only binds
- * where a corridor exists to align to. 30 == SIDE_OPEN_CM by design. */
+ * where a corridor exists to align to. */
 #define TURN_WIDE_EXIT_SIDE_CM          30
+/* §5.22 guards on the §5.19 wide-zone exit (mapp_v1 32-36s wrong-way run):
+ * OVER  — one uninterrupted sweep past this with no exit = the nose chases a
+ *         phantom front; back out instead of grinding on toward a reversal.
+ * DEV   — off-axis exits get a tighter course leash than the 115 deg
+ *         reversal gate (a 154 deg overshoot passed it and cruised backwards).
+ * Both keep the turn_leg >= 180 uninterrupted-sweep reversal escape. */
+#define TURN_WIDE_OVER_DEG             110.0f
+#define WIDE_EXIT_COURSE_DEV_DEG        60.0f
+/* §5.27: 강개방(F>=CLEAR) 조기 exit의 축근접 허용오차 — 코너 포켓의 대각선
+ * 개구도 "열림"으로 읽히므로, 축에서 이 이상 벗어난 강개방 exit은 턴 미완성. */
+#define TURN_EXIT_ALIGN_LOOSE_DEG       25.0f
 #define COURSE_REV_DEG                 115.0f
 #define TURN_LEG_REVERSAL_DEG          180.0f
 #define SPIN_COMMIT_MS                 100U
@@ -119,8 +133,8 @@
 #define TURN_PID_KI                      0.018f
 #define TURN_PID_KD                      0.14f
 #define TURN_PID_I_MAX                 130.0f
-#define TURN_PID_MIN_PCT                44
-#define TURN_PID_FINE_MIN_PCT           40
+#define TURN_PID_MIN_PCT                48    /* §5.27 스냅턴: 마무리 구간도 빠르게 */
+#define TURN_PID_FINE_MIN_PCT           44
 #define TURN_PID_FINE_DEG               14.0f
 #define TURN_PID_INNER_RATIO             0.48f
 
@@ -131,7 +145,7 @@
  * to straight + a fresh direction decision instead of deadlocking (§5.15). */
 #define BRAKE_MS                        80U
 #define BRAKE_CREEP_PCT                 32
-#define BRAKE_CREEP_MAX_MS             700U
+#define BRAKE_CREEP_MAX_MS             900U   /* §5.24: decide 20->17cm, 크립 예산 +200ms */
 #define BACK_CHUNK_MS                  220U
 #define RECOVER_RETRY_MAX                3U
 #define LAUNCH_MS                      120U
@@ -197,20 +211,28 @@
  * alone guarantees the car arrives at the stop line slow enough to brake,
  * creep and decide instead of nosing the wall (the v1 instability root).
  * Every cap is a single linear ramp; the lowest one wins. */
-#define SPEED_TOP_PCT                   60.0f
+#define SPEED_TOP_PCT                   63.0f   /* §5.23 +5%: 완주 확인 후 소폭 상향 (§8-2 규칙) */
 #define SPEED_MIN_PCT                   32.0f
 #define SPEED_FRONT_FAST_CM             75.0f
 #define SPEED_FRONT_SLOW_CM             30.0f
 #define SPEED_FRONT_MIN_PCT             34.0f
 #define SPEED_SIDE_MIN_PCT              32.0f
-#define SPEED_HDG_FAST_DEG               5.0f
-#define SPEED_HDG_SLOW_DEG              14.0f
-#define SPEED_HDG_MIN_PCT               40.0f
-#define SPEED_YAW_FAST_DPS              12.0f
-#define SPEED_YAW_SLOW_DPS              45.0f
-#define SPEED_YAW_MIN_PCT               38.0f
-#define SPEED_SETTLE_MS                650U
-#define SPEED_SETTLE_PCT                46.0f
+/* Single-wall regime (§5.22): one reference wall = no drift warning from the
+ * far flank; speed follows the wall distance so a slow convergence never
+ * outruns the repel band (SIDE_SOFT..SLOW ramp). */
+#define SPEED_SINGLE_SLOW_CM            25.0f
+#define SPEED_SINGLE_MIN_PCT            42.0f
+/* §5.27 직진 멈칫 완화: 주행 중 좌우 보정은 "가면서" 잡는다 — 보정 중 감속
+ * 램프가 너무 일찍 물리면 매 보정마다 출렁임(멈칫). §5.19 조향 권한 상향이
+ * 보정 자체를 빠르게 끝내므로 감속 개입은 더 큰 오차/요레이트로 미룬다. */
+#define SPEED_HDG_FAST_DEG               6.0f
+#define SPEED_HDG_SLOW_DEG              18.0f
+#define SPEED_HDG_MIN_PCT               44.0f
+#define SPEED_YAW_FAST_DPS              15.0f
+#define SPEED_YAW_SLOW_DPS              60.0f
+#define SPEED_YAW_MIN_PCT               44.0f
+#define SPEED_SETTLE_MS                450U    /* §5.27 펀치아웃: 650→450 */
+#define SPEED_SETTLE_PCT                52.0f   /* §5.27: 48→52 */
 
 /* ---- Corridor classes (drive_math.h). [REMEASURE] */
 #define COURSE_CAR_WIDTH_CM             16.0f
@@ -231,17 +253,12 @@
 
 /* ---- Invariants (break these and it fails silently). */
 #if !(FRONT_DANGER_CM < FRONT_DECIDE_CM && FRONT_DECIDE_CM < FRONT_STOP_CM && \
-      FRONT_STOP_CM < FRONT_TURN_CM && FRONT_TURN_CM < FRONT_CLEAR_CM && \
-      FRONT_CLEAR_CM < FRONT_ARC_CM)
+      FRONT_STOP_CM < FRONT_TURN_CM && FRONT_TURN_CM < FRONT_CLEAR_CM)
 #error "Front distance ladder must remain strictly ordered"
 #endif
 
 #if BRAKE_CREEP_PCT < MOTOR_MIN_PCT
 #error "Brake creep duty must stay above the motor stall floor"
-#endif
-
-#if ARC_INNER < MOTOR_MIN_PCT || ARC_APPROACH_INNER < MOTOR_MIN_PCT
-#error "Arc inner duties must stay above the motor stall floor"
 #endif
 
 #if TURN_INNER < MOTOR_MIN_PCT || \
