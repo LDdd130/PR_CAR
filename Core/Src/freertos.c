@@ -71,6 +71,13 @@
 #define TOF_NEAR_CTX_CM      12U   /* 직전 median이 이 안이면 접근 연속 — 즉시 신뢰 */
 #define TOF_NEAR_JITTER_MM   12U   /* 연속 suspect 표본 간 허용 지터 */
 #define TOF_NEAR_CONFIRM_N    3U   /* 고립 초근접이 실타깃으로 인정될 안정 연속 표본 수 */
+
+/* §5.23 방지턱 피치 게이트: 턱에서 노즈가 들리거나 처박히면 저장착 초음파가 바닥/
+ * 허공을 벽으로 읽는다 (mapp_v2 18~24s 검정테이프 구간 F3~16 폭풍 → 가짜 판정턴).
+ * 피치가 이 트림을 벗어난 프레임의 전방 에코는 무효 — FRONT_FAIL_LIMIT 연속이면
+ * 기존 규칙대로 open 처리. IMU 사망 시 게이트 자동 비활성 (백스톱 불변식). 전방이
+ * 자주 먹통이면 dbg.pitch 평지 오프셋부터 확인 후 문턱 상향. */
+#define FRONT_PITCH_MAX_DEG   6.0f
 #define TOF_LOOP_DELAY_MS   5U     /* SensorTask 루프 양보. 측면이 논블로킹化돼 사라진 대기 보상(CPU 독점 방지) */
 
 /* ---- 텔레메트리 (아키텍처 §4 / dash_board.html 프로토콜) ----
@@ -736,6 +743,12 @@ void StartTask02(void *argument)
           d_front_cycle = d_front_first;
       else if (v_front_second)
           d_front_cycle = d_front_second;
+
+      /* §5.23: 직전 사이클 피치(~20ms 지연, 턱 이벤트 수백 ms 대비 무시 가능)로
+       * 턱 위 전방 에코를 무효화. imu_live=0이면 게이트 없음. */
+      if (imu_live && (imu.pitch > FRONT_PITCH_MAX_DEG
+                    || imu.pitch < -FRONT_PITCH_MAX_DEG))
+          front_cycle_valid = 0U;
 
       sensor_record_front(front_cycle_valid, d_front_cycle,
                           hist_f, &front_miss, &f);

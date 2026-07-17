@@ -6,8 +6,9 @@
  *   CRUISE  — corridor centering (perpendicular ToF pair) + heading hold on
  *             the 90 deg course axis + a speed governor that keeps the car
  *             inside its sensing/braking budget at all times.
- *   TURN    — DS_CORNER rolling arc as the primary corner, DS_SPIN pivot as
- *             the fallback and the decide-at-20cm path (user spec §5.9).
+ *   TURN    — DS_SPIN pivot only, armed exclusively by a close confirmed
+ *             front wall via DS_BRAKE decide (user spec §5.9/§5.24: sides
+ *             never start a turn; direction is read from L/R at the line).
  *   RECOVER — DS_BRAKE (stop, verify, creep, decide), DS_REVERSE (backing:
  *             three-point-turn chunk from a blocked pivot, straight
  *             otherwise), DS_SIDE_AVOID (side rescue), DS_HOLD (sensors dead).
@@ -79,18 +80,17 @@ typedef struct
     /* recover */
     uint8_t back_from_turn;
     uint8_t retry_count;
+    uint32_t stall_since_ms;    /* cruise ram/stall window (§5.26) */
 
     /* fresh-confirm counters */
-    uint8_t front_wall_n;
+    uint8_t front_stable;    /* this frame's f agrees with the previous (§5.23) */
+    uint8_t f_prev_valid;
+    uint16_t f_prev;
     uint8_t front_stop_n;
     uint8_t decide_n;
     uint8_t wall_gone_n;
     uint8_t clear_n;
-    uint8_t block_n;
     uint8_t side_clear_n;
-    int8_t corner_dir;
-    uint8_t corner_n;
-    uint8_t corner_dropout;
 
     /* centering filters */
     uint8_t lp_valid;
@@ -119,7 +119,6 @@ typedef struct
 static DriveContext d = {
     .state = DS_CRUISE,
     .launching = 1U,
-    .corner_dir = -1,
 };
 
 /* ---------------------------------------------------------------- helpers */
@@ -232,21 +231,6 @@ static void motion_brake(uint32_t now)
     dbg.steer = 0.0f;
 }
 
-static void command_arc(uint8_t outer, uint8_t inner, uint32_t now)
-{
-    int16_t delta = (int16_t)((outer - inner) / 2U);
-    if (d.turn_right)
-    {
-        motion_command((int16_t)outer, (int16_t)inner, now);
-        dbg.steer = -(float)delta;
-    }
-    else
-    {
-        motion_command((int16_t)inner, (int16_t)outer, now);
-        dbg.steer = (float)delta;
-    }
-}
-
 static void command_pivot(uint8_t outer, uint8_t inner, uint32_t now, uint8_t immediate)
 {
     int16_t left = d.turn_right ? (int16_t)outer : -(int16_t)inner;
@@ -287,10 +271,15 @@ static float course_axis_snap(float heading)
     return drive_wrap360(d.course_zero + (index * 90.0f));
 }
 
-static uint8_t axis_aligned(float heading)
+static uint8_t axis_near(float heading, float tol_deg)
 {
     return (uint8_t)(fabsf(drive_wrap180(heading - course_axis_snap(heading)))
-        <= TURN_AXIS_ALIGN_DEG);
+        <= tol_deg);
+}
+
+static uint8_t axis_aligned(float heading)
+{
+    return axis_near(heading, TURN_AXIS_ALIGN_DEG);
 }
 
 /* Both flanks open (or dead) means there is no corridor whose axis a turn
@@ -322,6 +311,11 @@ static float turn_progress_update(float heading)
     return d.turn_accum;
 }
 
+static float course_dev_now(const DriveInputs *in)
+{
+    return fabsf(drive_wrap180(in->heading - d.course_heading));
+}
+
 /* course_heading is only trustworthy within a half revolution. A single
  * uninterrupted 180 deg sweep (turn_leg) proves the pocket demanded a course
  * reversal; the episode total must never unlock this — totals preserved
@@ -329,9 +323,20 @@ static float turn_progress_update(float heading)
 static uint8_t exit_course_ok(const DriveInputs *in)
 {
     if (!in->imu_live) return 1U;
-    float dev = fabsf(drive_wrap180(in->heading - d.course_heading));
+    float dev = course_dev_now(in);
     dbg.course_dev = dev;
     return (uint8_t)(dev < COURSE_REV_DEG || d.turn_leg >= TURN_LEG_REVERSAL_DEG);
+}
+
+/* Wide-zone exits skip the axis gate (§5.19), so they need a tighter course
+ * leash of their own: a 154 deg overshoot still passes the 115 deg reversal
+ * gate and gets committed as a wrong-way cruise (§5.22, mapp_v1 32-36s).
+ * The uninterrupted-sweep reversal escape stays available. */
+static uint8_t wide_exit_course_ok(const DriveInputs *in)
+{
+    if (!in->imu_live) return 1U;
+    return (uint8_t)(course_dev_now(in) < WIDE_EXIT_COURSE_DEV_DEG
+        || d.turn_leg >= TURN_LEG_REVERSAL_DEG);
 }
 
 /* --------------------------------------------------------------- turn PID */
@@ -670,6 +675,27 @@ static void centering_run(const DriveInputs *in)
                 + ((SPEED_TOP_PCT - SPEED_SIDE_MIN_PCT)
                    * (side_min - SIDE_HARD_CM) / (SIDE_SOFT_CM - SIDE_HARD_CM));
         if (speed > cap) speed = cap;
+
+        /* single-wall regime (§5.22): only one reference wall means the far
+         * flank gives no drift warning — a slow convergence at top speed
+         * reaches the wall before the repel band can act (mapp_v1 38-40s:
+         * 22 cm at 54% duty -> contact). Budget the speed to the wall distance. */
+        if (!(left_track && right_track) && pair_valid == 0U)
+        {
+            float wd = left_track ? d.l_lp : d.r_lp;
+            if (wd <= SPEED_SINGLE_SLOW_CM)
+            {
+                float scap;
+                if (wd <= SIDE_SOFT_CM)
+                    scap = SPEED_SINGLE_MIN_PCT;
+                else
+                    scap = SPEED_SINGLE_MIN_PCT
+                         + ((SPEED_TOP_PCT - SPEED_SINGLE_MIN_PCT)
+                            * (wd - SIDE_SOFT_CM)
+                            / (SPEED_SINGLE_SLOW_CM - SIDE_SOFT_CM));
+                if (speed > scap) speed = scap;
+            }
+        }
     }
     if (in->imu_live)
     {
@@ -716,20 +742,16 @@ static void state_enter(DriveState state, uint32_t now)
 {
     d.state = state;
     d.state_since_ms = now;
+    d.stall_since_ms = 0U;
 }
 
 static void reset_confirm_counters(void)
 {
-    d.front_wall_n = 0U;
     d.front_stop_n = 0U;
     d.decide_n = 0U;
     d.wall_gone_n = 0U;
     d.clear_n = 0U;
-    d.block_n = 0U;
     d.side_clear_n = 0U;
-    d.corner_dir = -1;
-    d.corner_n = 0U;
-    d.corner_dropout = 0U;
 }
 
 static void cruise_enter(const DriveInputs *in)
@@ -795,19 +817,6 @@ static void spin_begin(const DriveInputs *in, uint8_t keep_progress)
     command_pivot(TURN_SPEED, TURN_INNER, in->now, 1U);
 }
 
-static void corner_enter(const DriveInputs *in, uint8_t turn_right)
-{
-    reset_confirm_counters();
-    d.turn_right = turn_right;
-    d.flip_used = 0U;
-    d.retry_count = 0U;    /* a confirmed corner is forward progress */
-    turn_progress_reset(in->heading);
-    d.entry_heading_valid = in->imu_live;
-    turn_pid_reset();
-    state_enter(DS_CORNER, in->now);
-    command_arc(ARC_OUTER, ARC_INNER, in->now);
-}
-
 static void back_enter(const DriveInputs *in, uint8_t from_turn)
 {
     reset_confirm_counters();
@@ -870,10 +879,18 @@ static void decide_turn_direction(const DriveInputs *in)
 
 /* ------------------------------------------------------------- state runs */
 
+/* At speed the 5 cm trigger fires with the nose already in the wall — an
+ * oblique wall is specular to the ultrasonic (front reads OPEN while
+ * closing, mapp_v4 18s: F80/L31mm), so the flank is the only pre-impact
+ * signal and it must fire earlier the faster the car pushes (§5.26). */
 static uint8_t side_emergency(const DriveInputs *in)
 {
-    return (uint8_t)((in->left_valid && in->l < SIDE_AVOID_CM)
-        || (in->right_valid && in->r < SIDE_AVOID_CM));
+    int16_t duty_avg = (int16_t)((d.motion_left + d.motion_right) / 2);
+    uint16_t limit = (duty_avg >= SIDE_FAST_DUTY_PCT)
+        ? SIDE_AVOID_FAST_CM
+        : SIDE_AVOID_CM;
+    return (uint8_t)((in->left_valid && in->l < limit)
+        || (in->right_valid && in->r < limit));
 }
 
 static void cruise_run(const DriveInputs *in)
@@ -911,65 +928,43 @@ static void cruise_run(const DriveInputs *in)
         return;
     }
 
-    /* -- corner detection: confirmed approaching wall AND sustained side
-     * asymmetry. A weaving straight fakes neither for long (§5.10/§5.11). */
-    uint8_t front_wall_now = (uint8_t)(in->f_valid && in->f < FRONT_TURN_CM);
-    d.front_wall_n = front_wall_now ? inc_u8(d.front_wall_n) : 0U;
-    uint8_t front_wall = (uint8_t)(d.front_wall_n >= FRONT_WALL_CONFIRM_N);
-
-    int8_t direction = -1;
-    if (in->left_valid && in->right_valid)
+    /* §5.26 ram/stall backstop: an oblique wall returns no ultrasonic echo,
+     * so the first sensor to see a nose-first ram is the LEFT ENCODER — duty
+     * held high with the wheel speed collapsed is physical contact whatever
+     * the front claims (mapp_v4 18s: F=80 "open", duty ~70, spd 4 cm/s).
+     * Back straight off the wall, then brake-and-decide picks the turn.
+     * Right encoder reads 0 permanently (hardware) — left only. */
     {
-        uint8_t left_open = (uint8_t)(in->l >= SIDE_OPEN_CM
-            && in->l >= (uint16_t)(in->r + SIDE_ASYM_CM)
-            && in->r >= SIDE_NEAR_SAFE_CM);
-        uint8_t right_open = (uint8_t)(in->r >= SIDE_OPEN_CM
-            && in->r >= (uint16_t)(in->l + SIDE_ASYM_CM)
-            && in->l >= SIDE_NEAR_SAFE_CM);
-        if (left_open) direction = 0;
-        else if (right_open) direction = 1;
-    }
-
-    if (front_wall && direction >= 0)
-    {
-        if (d.corner_dir != direction)
+        int16_t duty_avg = (int16_t)((d.motion_left + d.motion_right) / 2);
+        if (duty_avg >= CRUISE_STALL_DUTY_PCT
+            && dbg.v_l < CRUISE_STALL_SPEED_CMS
+            && (in->now - d.state_since_ms) >= CRUISE_STALL_GRACE_MS)
         {
-            d.corner_dir = direction;
-            d.corner_n = 1U;
+            if (d.stall_since_ms == 0U)
+            {
+                d.stall_since_ms = in->now;
+            }
+            else if ((in->now - d.stall_since_ms) >= CRUISE_STALL_MS)
+            {
+                back_enter(in, 0U);
+                return;
+            }
         }
         else
         {
-            d.corner_n = inc_u8(d.corner_n);
+            d.stall_since_ms = 0U;
         }
-        d.corner_dropout = 0U;
-        d.front_stop_n = 0U;
-        if (d.corner_n >= CORNER_CONFIRM_N)
-        {
-            corner_enter(in, (uint8_t)direction);
-            return;
-        }
-        /* roll the arc while the confirmation frame arrives */
-        d.turn_right = (uint8_t)direction;
-        command_arc(ARC_OUTER, ARC_INNER, in->now);
-        return;
     }
-    /* one marginal frame at the open threshold must not restart the
-     * confirmation while the wall stays confirmed (§5.15) */
-    else if (d.corner_dir >= 0 && d.corner_n > 0U && front_wall
-        && d.corner_dropout < CORNER_DROPOUT_TOL_N)
-    {
-        d.corner_dropout++;
-        d.front_stop_n = 0U;
-        d.turn_right = (uint8_t)d.corner_dir;
-        command_arc(ARC_OUTER, ARC_INNER, in->now);
-        return;
-    }
-    d.corner_dir = -1;
-    d.corner_n = 0U;
-    d.corner_dropout = 0U;
+
+    /* §5.24 (user spec): a turn may only START from a close front wall — the
+     * brake-and-decide path below. Side asymmetry alone must never initiate
+     * a turn; outside the near-wall deadzone the sides only center/repel.
+     * The rolling side-asymmetry corner arc (DS_CORNER) is deleted: with the
+     * stop line at 34 cm it was reachable only from far side readings, and
+     * those turns are what kept committing wrong-way runs. */
 
     /* -- stop line: fresh confirmed only, then the brake-and-decide path */
-    if (in->f_valid && in->f < FRONT_STOP_CM)
+    if (in->f_valid && in->f < FRONT_STOP_CM && d.front_stable)
     {
         d.front_stop_n = inc_u8(d.front_stop_n);
         if (d.front_stop_n >= FRONT_STOP_CONFIRM_N)
@@ -992,73 +987,6 @@ static void cruise_run(const DriveInputs *in)
     }
 
     centering_run(in);
-}
-
-static void corner_run(const DriveInputs *in)
-{
-    if (in->imu_live && !d.entry_heading_valid)
-    {
-        turn_progress_reset(in->heading);
-        d.entry_heading_valid = 1U;
-    }
-    float progress = (in->imu_live && d.entry_heading_valid)
-        ? turn_progress_update(in->heading)
-        : 0.0f;
-    dbg.spin_deg = progress;
-
-    if (side_emergency(in))
-    {
-        side_avoid_enter(in);
-        return;
-    }
-
-    /* the arc cannot tighten itself: a close front or a stalled/backward
-     * rotation hands the same turn to the pivot, progress preserved */
-    uint8_t escalate = front_recent_below(in, CORNER_TIGHTEN_CM);
-    if ((in->now - d.state_since_ms) > ARC_MAX_MS) escalate = 1U;
-    if (in->imu_live && d.entry_heading_valid
-        && (in->now - d.state_since_ms) >= SPIN_COMMIT_MS
-        && progress < -TURN_WRONG_DEG)
-        escalate = 1U;
-    if (escalate)
-    {
-        spin_begin(in, 1U);
-        return;
-    }
-
-    if (in->imu_live && d.entry_heading_valid && exit_course_ok(in))
-    {
-        if (progress >= TURN_TARGET_DEG && front_open_at(in, FRONT_TURN_CM))
-        {
-            cruise_enter(in);
-            return;
-        }
-        if (in->f_valid && in->f >= FRONT_CLEAR_CM)
-            d.clear_n = inc_u8(d.clear_n);
-        else if (in->f_valid)
-            d.clear_n = 0U;
-        if (progress >= TURN_MIN_DEG
-            && (axis_aligned(in->heading) || sides_open_wide(in))
-            && d.clear_n >= CLEAR_CONFIRM_N)
-        {
-            cruise_enter(in);
-            return;
-        }
-    }
-
-    float remaining = TURN_TARGET_DEG - progress;
-    if (remaining < 0.0f) remaining = 0.0f;
-    float outer = (float)ARC_OUTER;
-    float inner = (float)ARC_INNER;
-    if (in->imu_live && d.entry_heading_valid && remaining <= ARC_APPROACH_DEG)
-    {
-        float ratio = remaining / ARC_APPROACH_DEG;
-        outer = (float)ARC_APPROACH_OUTER
-              + (((float)ARC_OUTER - (float)ARC_APPROACH_OUTER) * ratio);
-        inner = (float)ARC_APPROACH_INNER
-              + (((float)ARC_INNER - (float)ARC_APPROACH_INNER) * ratio);
-    }
-    command_arc((uint8_t)(outer + 0.5f), (uint8_t)(inner + 0.5f), in->now);
 }
 
 static void spin_run(const DriveInputs *in)
@@ -1111,27 +1039,49 @@ static void spin_run(const DriveInputs *in)
         }
     }
 
-    /* blocked nose or front/side pinch, fresh confirmed */
-    uint8_t min_side_close = 0U;
-    if (in->left_valid && in->right_valid)
-    {
-        uint16_t near_side = (in->l < in->r) ? in->l : in->r;
-        min_side_close = (uint8_t)(near_side < SIDE_AVOID_CM);
-    }
-    uint8_t blocked_now = (uint8_t)((in->f_valid && in->f < FRONT_DANGER_CM)
-        || (in->f_valid && in->f < FRONT_STOP_CM && min_side_close));
-    d.block_n = blocked_now ? inc_u8(d.block_n) : 0U;
-    if (d.block_n >= SPIN_BLOCK_CONFIRM_N
-        && (in->now - d.state_since_ms) >= SPIN_COMMIT_MS)
+    /* §5.25: the old blocked-nose backout (front danger or front/side pinch,
+     * 2 frames -> REVERSE) is deleted. A pivoting 27 cm car in a 37-45 cm
+     * corridor swings its nose within 5-12 cm of the walls as a matter of
+     * geometry, so that path kept cutting healthy turns into backing chunks
+     * (mapp_v3 28s). A truly jammed pivot freezes its rotation and the wedge
+     * check above catches it in 400 ms; everything else finishes the sweep. */
+
+    /* wide-zone over-rotation budget (§5.22): a blocked or phantom nose must
+     * not keep the pivot grinding past the target until it faces backwards —
+     * past the budget in one uninterrupted sweep, back out and re-approach.
+     * Close-walled pockets keep the unlimited sweep (the §5.16 reversal path
+     * needs an uninterrupted 180). */
+    if (progress_valid && sides_open_wide(in) && d.turn_leg > TURN_WIDE_OVER_DEG)
     {
         back_enter(in, 1U);
         return;
     }
 
-    /* exit: enough rotation, axis-aligned (or no corridor to align to),
-     * open nose, course gate */
+    /* §5.25 (user spec): the turn IS the heading change — reaching the
+     * target completes it unconditionally, whatever the nose reads. A close
+     * front after a finished 90 is cruise's job (it brakes and decides from
+     * a stable pose); holding the exit hostage to "front open + axis pose"
+     * is what ground past the target into reversals and wall hits. */
+    if (progress_valid && progress >= TURN_TARGET_DEG && exit_course_ok(in))
+    {
+        cruise_enter(in);
+        return;
+    }
+
+    /* early exit: enough rotation, open nose, course gate. Alignment may come
+     * from the course axis, from having no corridor to align to (§5.19), or —
+     * per user spec §5.24 (over-turn guard) — from a STRONGLY opened nose.
+     * §5.27: the strong-open exit additionally demands a NEAR-axis pose — in
+     * a corner pocket the diagonal across the opening also reads "clear", and
+     * exiting there 40 deg short punched the car into the outer wall
+     * (mapp_v5 20-21s: exit at +143 vs axis 180 -> L45mm hit -> second
+     * pivot). Every non-axis exit keeps the tighter §5.22 course leash. */
     if (progress_valid && progress >= TURN_MIN_DEG
-        && (axis_aligned(in->heading) || sides_open_wide(in))
+        && (axis_aligned(in->heading)
+            || (sides_open_wide(in) && wide_exit_course_ok(in))
+            || (front_open_at(in, FRONT_CLEAR_CM)
+                && axis_near(in->heading, TURN_EXIT_ALIGN_LOOSE_DEG)
+                && wide_exit_course_ok(in)))
         && front_open_at(in, FRONT_TURN_CM)
         && exit_course_ok(in))
     {
@@ -1199,7 +1149,7 @@ static void brake_run(const DriveInputs *in)
 
     /* user spec §5.9: the direction is decided from a wall firmly at the
      * 20 cm line, consecutive fresh samples, read from a stable pose */
-    if (in->f_valid && in->f <= FRONT_DECIDE_CM)
+    if (in->f_valid && in->f <= FRONT_DECIDE_CM && d.front_stable)
     {
         d.decide_n = inc_u8(d.decide_n);
         if (d.decide_n >= FRONT_DECIDE_CONFIRM_N
@@ -1335,7 +1285,6 @@ void Drive_Init(void)
     d = (DriveContext){
         .state = DS_CRUISE,
         .launching = 1U,
-        .corner_dir = -1,
     };
     dbg.state = DS_CRUISE;
     dbg.turn_dir = 0U;
@@ -1375,6 +1324,16 @@ void Drive_Update(const DriveInputs *in)
         return;
     }
 
+    /* Front stability chain (§5.23): a real wall approached head-on moves a
+     * few cm per frame; floor/bump echoes teleport (3->30->16). Confirm
+     * counters that arm brakes, corners and direction decisions only count
+     * consecutive agreeing samples — the danger ladder stays ungated. */
+    d.front_stable = (uint8_t)(in->f_valid && d.f_prev_valid
+        && ((in->f > d.f_prev) ? (in->f - d.f_prev) : (d.f_prev - in->f))
+           <= FRONT_STABLE_CM);
+    d.f_prev_valid = in->f_valid;
+    if (in->f_valid) d.f_prev = in->f;
+
     /* IMU returned after a brownout while cruising: re-base the axis */
     if (d.state == DS_CRUISE && in->imu_live && !d.last_imu_live)
     {
@@ -1399,7 +1358,6 @@ void Drive_Update(const DriveInputs *in)
     case DS_REVERSE:    reverse_run(in); break;
     case DS_HOLD:       hold_run(in); break;
     case DS_SIDE_AVOID: side_avoid_run(in); break;
-    case DS_CORNER:     corner_run(in); break;
     default:
         motion_stop(in->now);
         d.state = DS_CRUISE;

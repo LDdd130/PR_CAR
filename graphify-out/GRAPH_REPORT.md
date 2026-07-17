@@ -1,12 +1,12 @@
-# Graph Report - C:\Users\user\STM\PR_CAR  (2026-07-16)
+# Graph Report - C:\Users\user\STM\PR_CAR  (2026-07-17)
 
 ## Corpus Check
-- 158 files · ~1,073,869 words
+- 158 files · ~1,075,390 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3182 nodes · 4256 edges · 130 communities detected
-- Extraction: 87% EXTRACTED · 13% INFERRED · 0% AMBIGUOUS · INFERRED: 571 edges (avg confidence: 0.8)
+- 3182 nodes · 4238 edges · 130 communities detected
+- Extraction: 87% EXTRACTED · 13% INFERRED · 0% AMBIGUOUS · INFERRED: 570 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
@@ -149,9 +149,9 @@
 5. `HAL_DMA_Start_IT()` - 24 edges
 6. `vTaskSuspendAll()` - 23 edges
 7. `HAL_DMA_Abort_IT()` - 21 edges
-8. `StartDefaultTask()` - 20 edges
-9. `spin_run()` - 19 edges
-10. `corner_run()` - 18 edges
+8. `spin_run()` - 20 edges
+9. `StartDefaultTask()` - 20 edges
+10. `main()` - 18 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `HAL_GetTick()` --calls--> `HAL_RCC_OscConfig()`  [INFERRED]
@@ -209,11 +209,11 @@ Nodes (71): HAL_GetTick(), HAL_I2C_AbortCpltCallback(), HAL_I2C_AddrCallback(), 
 
 ### Community 10 - "Community 10"
 Cohesion: 0.03
-Nodes (51): osKernelInitialize(), NVIC_DecodePriority(), NVIC_EncodePriority(), SysTick_Config(), Drive_Init(), MX_GPIO_Init(), HAL_I2C_MspDeInit(), HAL_I2C_MspInit() (+43 more)
+Nodes (50): osKernelInitialize(), NVIC_DecodePriority(), NVIC_EncodePriority(), SysTick_Config(), Drive_Init(), MX_GPIO_Init(), HAL_I2C_MspDeInit(), HAL_I2C_MspInit() (+42 more)
 
 ### Community 11 - "Community 11"
-Cohesion: 0.08
-Nodes (76): approach_f(), approach_i16(), axis_aligned(), back_enter(), brake_enter(), brake_run(), centering_reset(), centering_run() (+68 more)
+Cohesion: 0.07
+Nodes (76): approach_f(), approach_i16(), axis_aligned(), axis_near(), back_enter(), brake_enter(), brake_run(), centering_reset() (+68 more)
 
 ### Community 12 - "Community 12"
 Cohesion: 0.02
@@ -237,7 +237,7 @@ Nodes (0):
 
 ### Community 17 - "Community 17"
 Cohesion: 0.07
-Nodes (50): BNO055_HardReset(), BNO055_Init(), BNO055_ReadCalibStatus(), BNO055_ReadEuler(), bno_bus_recover(), bno_rd(), bno_wr8(), osDelay() (+42 more)
+Nodes (51): BNO055_HardReset(), BNO055_Init(), BNO055_ReadCalibStatus(), BNO055_ReadEuler(), bno_bus_recover(), bno_rd(), bno_wr8(), osDelay() (+43 more)
 
 ### Community 18 - "Community 18"
 Cohesion: 0.04
@@ -835,11 +835,11 @@ Nodes (0):
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `HAL_GetTick()` connect `Community 9` to `Community 0`, `Community 1`, `Community 10`, `Community 11`, `Community 13`, `Community 17`, `Community 25`?**
-  _High betweenness centrality (0.032) - this node is a cross-community bridge._
+  _High betweenness centrality (0.045) - this node is a cross-community bridge._
 - **Why does `main()` connect `Community 10` to `Community 0`, `Community 1`, `Community 17`?**
-  _High betweenness centrality (0.020) - this node is a cross-community bridge._
+  _High betweenness centrality (0.019) - this node is a cross-community bridge._
 - **Why does `StartDefaultTask()` connect `Community 11` to `Community 0`, `Community 17`, `Community 10`, `Community 9`?**
-  _High betweenness centrality (0.018) - this node is a cross-community bridge._
+  _High betweenness centrality (0.017) - this node is a cross-community bridge._
 - **Are the 48 inferred relationships involving `HAL_GetTick()` (e.g. with `Encoder_OnCapture()` and `sensor_put_front_danger_event()`) actually correct?**
   _`HAL_GetTick()` has 48 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 10 inferred relationships involving `TIM_CCxChannelCmd()` (e.g. with `HAL_TIMEx_HallSensor_Start()` and `HAL_TIMEx_HallSensor_Stop()`) actually correct?**
