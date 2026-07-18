@@ -100,7 +100,10 @@
  * turn_accum survives backing chunks so exit gates need no re-rotation;
  * turn_leg resets at every interruption and is the ONLY value allowed to
  * unlock a course reversal (>=180 in one uninterrupted sweep, §5.16). */
-#define TURN_TARGET_DEG                 88.0f
+/* §5.30: 풀레이트 피벗(테이퍼 없음)의 스키드 관성 리드 — 컷 후 관성으로 수 °
+ * 더 돈다. §5.31 실차: 85 컷도 과회전 체감 → 80으로. 잔여 ~10°는 크루즈
+ * 축유지가 흡수. 덜 돌면 85로 복귀, 더 줄일 땐 TURN_MIN(30)과 간격 유지. */
+#define TURN_TARGET_DEG                 70.0f
 #define TURN_MIN_DEG                    30.0f
 #define TURN_WRONG_DEG                  20.0f
 #define TURN_AXIS_ALIGN_DEG             10.0f
@@ -128,23 +131,13 @@
 #define ROT_STUCK_MS                   400U
 #define ROT_STUCK_DEG                    8.0f
 
-/* Pivot heading PID. Floors sit above skid breakaway, not the stall floor. */
-#define TURN_PID_KP                      0.62f
-#define TURN_PID_KI                      0.018f
-#define TURN_PID_KD                      0.14f
-#define TURN_PID_I_MAX                 130.0f
-#define TURN_PID_MIN_PCT                52    /* §5.28 스냅턴 2차 */
-#define TURN_PID_FINE_MIN_PCT           48
-#define TURN_PID_FINE_DEG               14.0f
-#define TURN_PID_INNER_RATIO             0.48f
-
 /* ---- Recover. -------------------------------------------------------------
  * A blocked pivot backs out with a three-point-turn chunk (yaw preserved)
  * and resumes; straight backing is reserved for brake-line walls and dead
  * ends. The retry budget is per turn episode; when spent, backing degrades
  * to straight + a fresh direction decision instead of deadlocking (§5.15). */
 #define BRAKE_MS                        80U
-#define BRAKE_CREEP_PCT                 32
+#define BRAKE_CREEP_PCT                 36    /* §5.32: 32→36 — 정지선→판정선(16cm) 크립 단축 */
 #define BRAKE_CREEP_MAX_MS             900U   /* §5.24: decide 20->17cm, 크립 예산 +200ms */
 #define BACK_CHUNK_MS                  220U
 #define RECOVER_RETRY_MAX                3U
@@ -211,14 +204,18 @@
  * alone guarantees the car arrives at the stop line slow enough to brake,
  * creep and decide instead of nosing the wall (the v1 instability root).
  * Every cap is a single linear ramp; the lowest one wins. */
-/* §5.29 +5% (무충돌 23s 완주 확인, §8-2 규칙): TOP 66→69. 속도 연동 보정 —
- * 전방 감속 램프 시작을 75→78cm로 당겨(센서 캡 80cm 안) 늘어난 제동 예산 확보,
- * 접근/보정 바닥도 +2%p씩 동반 상향 (DANGER/STOP/DECIDE 사다리 불변). */
-#define SPEED_TOP_PCT                   69.0f
-#define SPEED_MIN_PCT                   34.0f
+/* §5.30 (user spec): 전방 거리만이 주 감속 게이트 — 전방이 FAST(78cm) 안으로
+ * 들어오기 전엔 최고속으로 달린다. 감속 램프(78→30cm, TOP%→38%)가 제동 예산의
+ * 전부이므로 FRONT_FAIL/timeout-open 구간의 과속은 §5.26 스톨 백스톱과
+ * DANGER(12) 사다리가 받친다.
+ * §5.32 랩타임 공략(21s→19s 목표): TOP 78→85. 램프 양끝(78cm 시작, 정지선
+ * 도달속도)은 검증값 유지 — 중간 구간만 가팔라짐. 회귀 롤백 순서:
+ * TOP 85→78→69 → FRONT_MIN 38→36. */
+#define SPEED_TOP_PCT                   85.0f
+#define SPEED_MIN_PCT                   36.0f
 #define SPEED_FRONT_FAST_CM             78.0f
 #define SPEED_FRONT_SLOW_CM             30.0f
-#define SPEED_FRONT_MIN_PCT             36.0f
+#define SPEED_FRONT_MIN_PCT             38.0f
 #define SPEED_SIDE_MIN_PCT              34.0f
 /* Single-wall regime (§5.22): one reference wall = no drift warning from the
  * far flank; speed follows the wall distance so a slow convergence never
@@ -230,12 +227,12 @@
  * 보정 자체를 빠르게 끝내므로 감속 개입은 더 큰 오차/요레이트로 미룬다. */
 #define SPEED_HDG_FAST_DEG               6.0f
 #define SPEED_HDG_SLOW_DEG              18.0f
-#define SPEED_HDG_MIN_PCT               46.0f   /* §5.29 */
+#define SPEED_HDG_MIN_PCT               48.0f   /* §5.32 */
 #define SPEED_YAW_FAST_DPS              15.0f
 #define SPEED_YAW_SLOW_DPS              60.0f
-#define SPEED_YAW_MIN_PCT               46.0f   /* §5.29 */
-#define SPEED_SETTLE_MS                350U    /* §5.28 펀치아웃 2차: 450→350 */
-#define SPEED_SETTLE_PCT                58.0f   /* §5.29: 56→58 */
+#define SPEED_YAW_MIN_PCT               48.0f   /* §5.32 */
+#define SPEED_SETTLE_MS                200U    /* §5.32 펀치아웃 4차: 250→200 */
+#define SPEED_SETTLE_PCT                66.0f   /* §5.32: 62→66 */
 
 /* ---- Corridor classes (drive_math.h). [REMEASURE] */
 #define COURSE_CAR_WIDTH_CM             16.0f
@@ -264,8 +261,7 @@
 #error "Brake creep duty must stay above the motor stall floor"
 #endif
 
-#if TURN_INNER < MOTOR_MIN_PCT || \
-    TURN_PID_MIN_PCT < MOTOR_MIN_PCT || TURN_PID_FINE_MIN_PCT < MOTOR_MIN_PCT
+#if TURN_INNER < MOTOR_MIN_PCT
 #error "Pivot duties must stay above the skid breakaway floor"
 #endif
 
