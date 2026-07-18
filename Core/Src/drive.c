@@ -43,14 +43,6 @@ volatile DebugMonitor_t dbg;
 
 typedef struct
 {
-    float integral;
-    float previous_progress;
-    uint32_t previous_ms;
-    uint8_t previous_valid;
-} TurnPid;
-
-typedef struct
-{
     DriveState state;
     uint32_t state_since_ms;
 
@@ -75,7 +67,6 @@ typedef struct
     float stuck_heading;
     uint32_t stuck_since_ms;
     uint32_t spin_since_ms;
-    TurnPid pid;
 
     /* recover */
     uint8_t back_from_turn;
@@ -337,50 +328,6 @@ static uint8_t wide_exit_course_ok(const DriveInputs *in)
     if (!in->imu_live) return 1U;
     return (uint8_t)(course_dev_now(in) < WIDE_EXIT_COURSE_DEV_DEG
         || d.turn_leg >= TURN_LEG_REVERSAL_DEG);
-}
-
-/* --------------------------------------------------------------- turn PID */
-
-static void turn_pid_reset(void) { d.pid = (TurnPid){0}; }
-
-static void turn_pid_run(const DriveInputs *in, float progress)
-{
-    float dt = 0.02f;
-    if (d.pid.previous_ms != 0U && in->now > d.pid.previous_ms)
-        dt = drive_clampf((float)(in->now - d.pid.previous_ms) / 1000.0f, 0.005f, 0.100f);
-
-    float error = TURN_TARGET_DEG - progress;
-    if (error < 0.0f) error = 0.0f;
-    if (error < 45.0f)
-    {
-        d.pid.integral += error * dt;
-        d.pid.integral = drive_clampf(d.pid.integral, -TURN_PID_I_MAX, TURN_PID_I_MAX);
-    }
-    else
-    {
-        d.pid.integral = 0.0f;
-    }
-
-    float rate = d.pid.previous_valid
-        ? (progress - d.pid.previous_progress) / dt
-        : 0.0f;
-    float command = (TURN_PID_KP * error)
-                  + (TURN_PID_KI * d.pid.integral)
-                  - (TURN_PID_KD * rate);
-    float minimum = (error <= TURN_PID_FINE_DEG)
-        ? (float)TURN_PID_FINE_MIN_PCT
-        : (float)TURN_PID_MIN_PCT;
-    command = drive_clampf(command, minimum, (float)TURN_SPEED);
-
-    uint8_t outer = (uint8_t)(command + 0.5f);
-    uint8_t inner = (uint8_t)((command * TURN_PID_INNER_RATIO) + 0.5f);
-    if (inner < MOTOR_MIN_PCT) inner = MOTOR_MIN_PCT;
-    if (inner > TURN_INNER) inner = TURN_INNER;
-    command_pivot(outer, inner, in->now, 0U);
-
-    d.pid.previous_progress = progress;
-    d.pid.previous_valid = 1U;
-    d.pid.previous_ms = in->now;
 }
 
 /* ---------------------------------------------------------------- centering */
@@ -812,7 +759,6 @@ static void spin_begin(const DriveInputs *in, uint8_t keep_progress)
     d.stuck_heading = in->heading;
     d.stuck_since_ms = in->now;
     d.spin_since_ms = in->now;
-    turn_pid_reset();
     state_enter(DS_SPIN, in->now);
     command_pivot(TURN_SPEED, TURN_INNER, in->now, 1U);
 }
@@ -1001,7 +947,6 @@ static void spin_run(const DriveInputs *in)
             d.stuck_heading = in->heading;
             d.stuck_since_ms = in->now;
             d.entry_heading_valid = 1U;
-            turn_pid_reset();
         }
         progress = turn_progress_update(in->heading);
         progress_valid = 1U;
@@ -1018,7 +963,6 @@ static void spin_run(const DriveInputs *in)
             d.stuck_heading = in->heading;
             d.stuck_since_ms = in->now;
             d.spin_since_ms = in->now;
-            turn_pid_reset();
             state_enter(DS_SPIN, in->now);
             command_pivot(TURN_SPEED, TURN_INNER, in->now, 1U);
             return;
@@ -1105,8 +1049,11 @@ static void spin_run(const DriveInputs *in)
         return;
     }
 
-    if (progress_valid) turn_pid_run(in, progress);
-    else command_pivot(TURN_SPEED, TURN_INNER, in->now, 0U);
+    /* §5.30 (user spec): no taper — the pivot runs at full turn duty until
+     * the target sweep is reached, then cruise takes over instantly. The
+     * gradual PID convergence is what read as "slowly settling into the
+     * angle"; skid carry-through is absorbed by TURN_TARGET_DEG's lead. */
+    command_pivot(TURN_SPEED, TURN_INNER, in->now, 0U);
 }
 
 static void brake_run(const DriveInputs *in)
