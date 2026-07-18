@@ -22,8 +22,8 @@
  * breakaway sits far above that floor, and an inner pair commanded below
  * the floor stalls and drags the rotation centre onto the stopped side. */
 #define DRIVE_SPEED                     32
-#define TURN_SPEED                      62    /* §5.27 스냅턴: 56→62 */
-#define TURN_INNER                      36
+#define TURN_SPEED                      68    /* §5.28 스냅턴 2차: 62→68 (휙 돌고 치고나가기) */
+#define TURN_INNER                      38
 #define MOTOR_MIN_PCT                   30
 #define MOTOR_TRIM_PCT                   0
 #define DRIVE_NOMINAL_UPDATE_MS         20U
@@ -133,8 +133,8 @@
 #define TURN_PID_KI                      0.018f
 #define TURN_PID_KD                      0.14f
 #define TURN_PID_I_MAX                 130.0f
-#define TURN_PID_MIN_PCT                48    /* §5.27 스냅턴: 마무리 구간도 빠르게 */
-#define TURN_PID_FINE_MIN_PCT           44
+#define TURN_PID_MIN_PCT                52    /* §5.28 스냅턴 2차 */
+#define TURN_PID_FINE_MIN_PCT           48
 #define TURN_PID_FINE_DEG               14.0f
 #define TURN_PID_INNER_RATIO             0.48f
 
@@ -164,14 +164,14 @@
 #define CENTER_HDG_ERR_LPF_ALPHA         0.25f
 
 #define CENTER_DEADZONE_CM               3.0f
-#define CENTER_LATERAL_KP_DEG_PER_CM     0.45f
+#define CENTER_LATERAL_KP_DEG_PER_CM     0.52f  /* §5.28: 0.45→0.52 — 고속 오프센터 평형(좌 10cm 고착) 해소 */
 #define CENTER_LATERAL_KD_DEG_PER_CMS    0.045f
 #define CENTER_LATERAL_KNEE_CM          10.0f
 #define CENTER_LATERAL_KNEE_GAIN         1.0f
 /* §5.19: the old 12 deg graze/entry band died with the 45-deg mount; the
  * bound is now the recovery authority vs SPEED_HDG_SLOW_DEG budget (the
  * governor is already at its floor before the lateral command saturates). */
-#define CENTER_LATERAL_CMD_MAX_DEG      15.0f
+#define CENTER_LATERAL_CMD_MAX_DEG      17.0f  /* §5.28: 15→17 */
 #define CENTER_LATERAL_CMD_SLEW_DPS    110.0f
 
 #define CENTER_HDG_KP_PCT_PER_DEG        0.80f
@@ -182,7 +182,7 @@
 #define CENTER_YAW_RATE_DEADBAND_DPS     8.0f
 #define CENTER_YAW_DAMP_MAX_PCT          9.0f
 
-#define CENTER_SIDE_REPEL_KP             1.9f
+#define CENTER_SIDE_REPEL_KP             2.3f   /* §5.28: 1.9→2.3 — 커브 안쪽벽 조기 밀어내기 */
 #define CENTER_SINGLE_TARGET_CM         13.0f
 #define CENTER_SINGLE_KP                 0.22f
 #define CENTER_SINGLE_MAX_CM            30.0f
@@ -211,28 +211,31 @@
  * alone guarantees the car arrives at the stop line slow enough to brake,
  * creep and decide instead of nosing the wall (the v1 instability root).
  * Every cap is a single linear ramp; the lowest one wins. */
-#define SPEED_TOP_PCT                   63.0f   /* §5.23 +5%: 완주 확인 후 소폭 상향 (§8-2 규칙) */
-#define SPEED_MIN_PCT                   32.0f
-#define SPEED_FRONT_FAST_CM             75.0f
+/* §5.29 +5% (무충돌 23s 완주 확인, §8-2 규칙): TOP 66→69. 속도 연동 보정 —
+ * 전방 감속 램프 시작을 75→78cm로 당겨(센서 캡 80cm 안) 늘어난 제동 예산 확보,
+ * 접근/보정 바닥도 +2%p씩 동반 상향 (DANGER/STOP/DECIDE 사다리 불변). */
+#define SPEED_TOP_PCT                   69.0f
+#define SPEED_MIN_PCT                   34.0f
+#define SPEED_FRONT_FAST_CM             78.0f
 #define SPEED_FRONT_SLOW_CM             30.0f
-#define SPEED_FRONT_MIN_PCT             34.0f
-#define SPEED_SIDE_MIN_PCT              32.0f
+#define SPEED_FRONT_MIN_PCT             36.0f
+#define SPEED_SIDE_MIN_PCT              34.0f
 /* Single-wall regime (§5.22): one reference wall = no drift warning from the
  * far flank; speed follows the wall distance so a slow convergence never
  * outruns the repel band (SIDE_SOFT..SLOW ramp). */
 #define SPEED_SINGLE_SLOW_CM            25.0f
-#define SPEED_SINGLE_MIN_PCT            42.0f
+#define SPEED_SINGLE_MIN_PCT            44.0f
 /* §5.27 직진 멈칫 완화: 주행 중 좌우 보정은 "가면서" 잡는다 — 보정 중 감속
  * 램프가 너무 일찍 물리면 매 보정마다 출렁임(멈칫). §5.19 조향 권한 상향이
  * 보정 자체를 빠르게 끝내므로 감속 개입은 더 큰 오차/요레이트로 미룬다. */
 #define SPEED_HDG_FAST_DEG               6.0f
 #define SPEED_HDG_SLOW_DEG              18.0f
-#define SPEED_HDG_MIN_PCT               44.0f
+#define SPEED_HDG_MIN_PCT               46.0f   /* §5.29 */
 #define SPEED_YAW_FAST_DPS              15.0f
 #define SPEED_YAW_SLOW_DPS              60.0f
-#define SPEED_YAW_MIN_PCT               44.0f
-#define SPEED_SETTLE_MS                450U    /* §5.27 펀치아웃: 650→450 */
-#define SPEED_SETTLE_PCT                52.0f   /* §5.27: 48→52 */
+#define SPEED_YAW_MIN_PCT               46.0f   /* §5.29 */
+#define SPEED_SETTLE_MS                350U    /* §5.28 펀치아웃 2차: 450→350 */
+#define SPEED_SETTLE_PCT                58.0f   /* §5.29: 56→58 */
 
 /* ---- Corridor classes (drive_math.h). [REMEASURE] */
 #define COURSE_CAR_WIDTH_CM             16.0f
