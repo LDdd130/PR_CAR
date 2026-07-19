@@ -103,6 +103,34 @@
 /* §5.30: 풀레이트 피벗(테이퍼 없음)의 스키드 관성 리드 — 컷 후 관성으로 수 °
  * 더 돈다. §5.31 실차: 85 컷도 과회전 체감 → 80으로. 잔여 ~10°는 크루즈
  * 축유지가 흡수. 덜 돌면 85로 복귀, 더 줄일 땐 TURN_MIN(30)과 간격 유지. */
+/* §5.39 rolling corner (user spec: goals.mp4 — steer while moving, real-car
+ * feel). When the stop-line confirm lands with a CLEAR L/R direction and a
+ * live IMU, the car skips the brake+creep stop and rolls straight into the
+ * turn. Ambiguous direction, dead IMU or any recovery re-entry still uses
+ * the stop-and-decide path — §5.24 front-primary arming is unchanged (same
+ * confirmed stop line, direction from L/R there).
+ * §5.40 inner semantics (measured: driver duty 0 = both IN pins low = COAST):
+ * a freewheeling inner gives almost no yaw moment and the car plows straight
+ * (first-track ram). The inner must carry REVERSE torque BELOW the breakaway
+ * floor: the wheel stalls into a drag brake, the rotation centre lands on
+ * the inner track and the car turns hard while still rolling. -1..-29 = drag
+ * regime (more negative = stronger drag); <= -30 spins the pair backwards =
+ * full pivot, no longer rolling. Positive values are forbidden. */
+#define TURN_ROLL_OUTER                 70
+#define TURN_ROLL_INNER                -20   /* §5.41: -24→-20 — 실차 "과하게 돎" 미세 인하 */
+#define TURN_ROLL_GAP_CM                 6
+/* §5.42 (IMG_3149/mappf): a rolling turn TRANSLATES while it sweeps, so it
+ * needs headroom to spend — committing with the wall already close plowed the
+ * nose to 8 cm / 2 cm (fast approach: F collapsed 42->8 within the confirm
+ * window). Rolling entry requires at least this much front room at commit;
+ * anything closer stops and pivots in place (§5.24 path). Mid-roll the same
+ * budget is watched: front inside the decide line or a flank at the hard
+ * band demotes the roll to an in-place pivot (profile swap only — never a
+ * backout, §5.25).
+ * §5.43(정지선 무브레이크 통과 후 20cm 커밋)은 실차에서 악화 — 롤백됨. 재시도 금지:
+ * 30→20cm 무브레이크 접근은 확정 지연/관성과 겹쳐 커밋 창을 자주 건너뛴다. */
+#define TURN_ROLL_MIN_F_CM              20
+
 #define TURN_TARGET_DEG                 65.0f
 #define TURN_MIN_DEG                    30.0f
 #define TURN_WRONG_DEG                  20.0f
@@ -137,8 +165,8 @@
  * and resumes; straight backing is reserved for brake-line walls and dead
  * ends. The retry budget is per turn episode; when spent, backing degrades
  * to straight + a fresh direction decision instead of deadlocking (§5.15). */
-#define BRAKE_MS                        80U
-#define BRAKE_CREEP_PCT                 36    /* §5.32: 32→36 — 정지선→판정선(16cm) 크립 단축 */
+#define BRAKE_MS                        60U   /* §5.38: 80→60 — 턴 arming 지연 단축 (진입속도는 §5.35 바닥 34%라 여유) */
+#define BRAKE_CREEP_PCT                 40    /* §5.32: 32→36, §5.38: 36→40 — 정지선→판정선(16cm) 크립 단축 */
 #define BRAKE_CREEP_MAX_MS             900U   /* §5.24: decide 20->17cm, 크립 예산 +200ms */
 #define BACK_CHUNK_MS                  220U
 #define RECOVER_RETRY_MAX                3U
@@ -163,7 +191,7 @@
  * stops the gate chattering at the threshold. The narrow corridor (37 cm,
  * 10.5 cm centered clearance) sits inside the gate permanently, so its
  * behaviour is unchanged; only wider zones gain the free-running band. */
-#define CENTER_ACT_SIDE_CM              14.0f
+#define CENTER_ACT_SIDE_CM              13.0f  /* §5.38: 14→13 사용자 재튜닝 (130mm) */
 #define CENTER_ACT_HYST_CM               2.0f
 /* §5.37: the gate must LEAD, not lag — at speed a curve facet closes a flank
  * tens of cm/s, and waiting for the raw 14 cm crossing leaves no reaction
@@ -195,7 +223,7 @@
 #define CENTER_YAW_DAMP_MAX_PCT          9.0f
 
 #define CENTER_SIDE_REPEL_KP             2.3f   /* §5.28: 1.9→2.3 — 커브 안쪽벽 조기 밀어내기 */
-#define CENTER_SINGLE_TARGET_CM         14.0f  /* §5.36: 13→14 — 단일벽 repel도 140mm 게이트에 정렬 */
+#define CENTER_SINGLE_TARGET_CM         13.0f  /* §5.36/§5.38: 단일벽 repel = ACT 게이트와 정렬 (130mm) */
 #define CENTER_SINGLE_KP                 0.22f
 #define CENTER_SINGLE_MAX_CM            30.0f
 #define CENTER_SINGLE_HDG_BLEND          0.42f
@@ -253,8 +281,8 @@
 #define SPEED_YAW_FAST_DPS              15.0f
 #define SPEED_YAW_SLOW_DPS              60.0f
 #define SPEED_YAW_MIN_PCT               48.0f   /* §5.32 */
-#define SPEED_SETTLE_MS                200U    /* §5.32 펀치아웃 4차: 250→200 */
-#define SPEED_SETTLE_PCT                66.0f   /* §5.32: 62→66 */
+#define SPEED_SETTLE_MS                150U    /* §5.32: 250→200, §5.38: →150 — 턴 직후 직진 체결 단축 */
+#define SPEED_SETTLE_PCT                72.0f   /* §5.32: 62→66, §5.38: →72 (launch 듀티 겸용) */
 
 /* ---- Corridor classes (drive_math.h). [REMEASURE] */
 #define COURSE_CAR_WIDTH_CM             16.0f
@@ -285,6 +313,14 @@
 
 #if TURN_INNER < MOTOR_MIN_PCT
 #error "Pivot duties must stay above the skid breakaway floor"
+#endif
+
+#if TURN_ROLL_INNER > 0 || TURN_ROLL_INNER <= -(MOTOR_MIN_PCT)
+#error "Rolling-turn inner must sit in the drag-brake regime: 0 .. -(MOTOR_MIN_PCT-1)"
+#endif
+
+#if !(FRONT_DECIDE_CM < TURN_ROLL_MIN_F_CM && TURN_ROLL_MIN_F_CM < FRONT_STOP_CM)
+#error "Roll headroom floor must sit between the pivot decide line and the stop line"
 #endif
 
 #if RESCUE_OUTER < MOTOR_MIN_PCT || RESCUE_INNER < MOTOR_MIN_PCT || \
