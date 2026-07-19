@@ -98,6 +98,7 @@ typedef struct
     float previous_heading;
     float lateral_cmd;
     float previous_steer;
+    uint8_t center_act;
     uint32_t center_prev_ms;
 
     /* motion ramp */
@@ -454,6 +455,23 @@ static void centering_run(const DriveInputs *in)
     if (left_track && d.l_lp > CENTER_SINGLE_MAX_CM) left_track = 0U;
     if (right_track && d.r_lp > CENTER_SINGLE_MAX_CM) right_track = 0U;
 
+    /* §5.36 proximity gate: pair centering only acts once a flank is inside
+     * CENTER_ACT_SIDE_CM; released with hysteresis when both flanks clear.
+     * Above the gate the axis hold alone keeps the line — the corridor
+     * position is intentionally unregulated there (user spec). */
+    if (!d.center_act)
+    {
+        if ((left_seen && d.l_lp < CENTER_ACT_SIDE_CM)
+            || (right_seen && d.r_lp < CENTER_ACT_SIDE_CM))
+            d.center_act = 1U;
+    }
+    else
+    {
+        float rel = CENTER_ACT_SIDE_CM + CENTER_ACT_HYST_CM;
+        if ((!left_seen || d.l_lp > rel) && (!right_seen || d.r_lp > rel))
+            d.center_act = 0U;
+    }
+
     float err_cm = d.l_lp - d.r_lp;
     float raw_derr = (pair_valid && d.err_valid) ? (err_cm - d.err_prev) / dt : 0.0f;
     if (pair_valid && d.err_valid)
@@ -503,10 +521,16 @@ static void centering_run(const DriveInputs *in)
     uint8_t mode;
     if (pair_valid)
     {
-        float lateral_target = (CENTER_LATERAL_KP_DEG_PER_CM * shaped_center_error(err_cm))
-                             + (CENTER_LATERAL_KD_DEG_PER_CMS * derr);
-        lateral_target = drive_clampf(lateral_target,
-            -CENTER_LATERAL_CMD_MAX_DEG, CENTER_LATERAL_CMD_MAX_DEG);
+        /* §5.36: outside the proximity gate the target decays to zero and the
+         * heading path degenerates to a pure axis hold */
+        float lateral_target = 0.0f;
+        if (d.center_act)
+        {
+            lateral_target = (CENTER_LATERAL_KP_DEG_PER_CM * shaped_center_error(err_cm))
+                           + (CENTER_LATERAL_KD_DEG_PER_CMS * derr);
+            lateral_target = drive_clampf(lateral_target,
+                -CENTER_LATERAL_CMD_MAX_DEG, CENTER_LATERAL_CMD_MAX_DEG);
+        }
         d.lateral_cmd = approach_f(d.lateral_cmd, lateral_target,
             CENTER_LATERAL_CMD_SLEW_DPS * dt);
 
@@ -990,17 +1014,6 @@ static void spin_run(const DriveInputs *in)
      * (mapp_v3 28s). A truly jammed pivot freezes its rotation and the wedge
      * check above catches it in 400 ms; everything else finishes the sweep. */
 
-    /* wide-zone over-rotation budget (§5.22): a blocked or phantom nose must
-     * not keep the pivot grinding past the target until it faces backwards —
-     * past the budget in one uninterrupted sweep, back out and re-approach.
-     * Close-walled pockets keep the unlimited sweep (the §5.16 reversal path
-     * needs an uninterrupted 180). */
-    if (progress_valid && sides_open_wide(in) && d.turn_leg > TURN_WIDE_OVER_DEG)
-    {
-        back_enter(in, 1U);
-        return;
-    }
-
     /* §5.25 (user spec): the turn IS the heading change — reaching the
      * target completes it unconditionally, whatever the nose reads. A close
      * front after a finished 90 is cruise's job (it brakes and decides from
@@ -1009,6 +1022,20 @@ static void spin_run(const DriveInputs *in)
     if (progress_valid && progress >= TURN_TARGET_DEG && exit_course_ok(in))
     {
         cruise_enter(in);
+        return;
+    }
+
+    /* §5.33 uniform sweep (user spec: every section turns like TARGET):
+     * when the target exit stays gated — a recovery chain rotated the course
+     * frame, so exit_course_ok holds the door shut — grinding on only lands
+     * a deeper angle into the next wall (late-course rams). Past the slack,
+     * back out and re-approach instead. Replaces the §5.22 wide-only budget
+     * with an every-zone cap; the §5.16 true-reversal pocket now resolves
+     * via the retry budget (3 chunks -> straight back + fresh decide). */
+    if (progress_valid
+        && d.turn_leg > (TURN_TARGET_DEG + TURN_OVER_SLACK_DEG))
+    {
+        back_enter(in, 1U);
         return;
     }
 

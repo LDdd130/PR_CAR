@@ -22,8 +22,8 @@
  * breakaway sits far above that floor, and an inner pair commanded below
  * the floor stalls and drags the rotation centre onto the stopped side. */
 #define DRIVE_SPEED                     32
-#define TURN_SPEED                      68    /* §5.28 스냅턴 2차: 62→68 (휙 돌고 치고나가기) */
-#define TURN_INNER                      38
+#define TURN_SPEED                      64    /* §5.34: 68→64 — 풀레이트 관성 오버슈트 미세 완화 (TARGET 65 사용자 튜닝과 짝) */
+#define TURN_INNER                      36
 #define MOTOR_MIN_PCT                   30
 #define MOTOR_TRIM_PCT                   0
 #define DRIVE_NOMINAL_UPDATE_MS         20U
@@ -103,7 +103,7 @@
 /* §5.30: 풀레이트 피벗(테이퍼 없음)의 스키드 관성 리드 — 컷 후 관성으로 수 °
  * 더 돈다. §5.31 실차: 85 컷도 과회전 체감 → 80으로. 잔여 ~10°는 크루즈
  * 축유지가 흡수. 덜 돌면 85로 복귀, 더 줄일 땐 TURN_MIN(30)과 간격 유지. */
-#define TURN_TARGET_DEG                 70.0f
+#define TURN_TARGET_DEG                 65.0f
 #define TURN_MIN_DEG                    30.0f
 #define TURN_WRONG_DEG                  20.0f
 #define TURN_AXIS_ALIGN_DEG             10.0f
@@ -112,14 +112,15 @@
  * exit off-axis as soon as the nose opens — the axis-align gate only binds
  * where a corridor exists to align to. */
 #define TURN_WIDE_EXIT_SIDE_CM          30
-/* §5.22 guards on the §5.19 wide-zone exit (mapp_v1 32-36s wrong-way run):
- * OVER  — one uninterrupted sweep past this with no exit = the nose chases a
- *         phantom front; back out instead of grinding on toward a reversal.
- * DEV   — off-axis exits get a tighter course leash than the 115 deg
- *         reversal gate (a 154 deg overshoot passed it and cruised backwards).
- * Both keep the turn_leg >= 180 uninterrupted-sweep reversal escape. */
-#define TURN_WIDE_OVER_DEG             110.0f
+/* §5.22 course leash on off-axis exits (mapp_v1 wrong-way run): tighter than
+ * the 115 deg reversal gate — a 154 deg overshoot passed 115 and cruised
+ * backwards. §5.33: the §5.22 wide-only over-rotation budget is replaced by
+ * the every-zone sweep cap below (uniform turns, user spec). */
 #define WIDE_EXIT_COURSE_DEV_DEG        60.0f
+/* §5.33: 한 sweep이 TARGET+slack을 넘도록 exit이 안 열리면(복구 연쇄로 코스
+ * 프레임이 돌아간 구간) 더 돌지 말고 후진 재접근 — 후반 구간 "더 꺾고 박기"의
+ * 상한. 진짜 반전 포켓은 retry 예산(3회 → 직후진+재판정)으로 풀린다. */
+#define TURN_OVER_SLACK_DEG             22.0f
 /* §5.27: 강개방(F>=CLEAR) 조기 exit의 축근접 허용오차 — 코너 포켓의 대각선
  * 개구도 "열림"으로 읽히므로, 축에서 이 이상 벗어난 강개방 exit은 턴 미완성. */
 #define TURN_EXIT_ALIGN_LOOSE_DEG       25.0f
@@ -156,6 +157,15 @@
 #define CENTER_YAW_RATE_MAX_DPS         90.0f
 #define CENTER_HDG_ERR_LPF_ALPHA         0.25f
 
+/* §5.36 (user spec): straight-line lateral correction is proximity-gated —
+ * pair centering only engages once a flank drops inside ~14 cm (135-140 mm);
+ * above that the car just holds the course axis and keeps running. Hysteresis
+ * stops the gate chattering at the threshold. The narrow corridor (37 cm,
+ * 10.5 cm centered clearance) sits inside the gate permanently, so its
+ * behaviour is unchanged; only wider zones gain the free-running band. */
+#define CENTER_ACT_SIDE_CM              14.0f
+#define CENTER_ACT_HYST_CM               2.0f
+
 #define CENTER_DEADZONE_CM               3.0f
 #define CENTER_LATERAL_KP_DEG_PER_CM     0.52f  /* §5.28: 0.45→0.52 — 고속 오프센터 평형(좌 10cm 고착) 해소 */
 #define CENTER_LATERAL_KD_DEG_PER_CMS    0.045f
@@ -176,7 +186,7 @@
 #define CENTER_YAW_DAMP_MAX_PCT          9.0f
 
 #define CENTER_SIDE_REPEL_KP             2.3f   /* §5.28: 1.9→2.3 — 커브 안쪽벽 조기 밀어내기 */
-#define CENTER_SINGLE_TARGET_CM         13.0f
+#define CENTER_SINGLE_TARGET_CM         14.0f  /* §5.36: 13→14 — 단일벽 repel도 140mm 게이트에 정렬 */
 #define CENTER_SINGLE_KP                 0.22f
 #define CENTER_SINGLE_MAX_CM            30.0f
 #define CENTER_SINGLE_HDG_BLEND          0.42f
@@ -212,10 +222,13 @@
  * 도달속도)은 검증값 유지 — 중간 구간만 가팔라짐. 회귀 롤백 순서:
  * TOP 85→78→69 → FRONT_MIN 38→36. */
 #define SPEED_TOP_PCT                   85.0f
-#define SPEED_MIN_PCT                   36.0f
+#define SPEED_MIN_PCT                   34.0f
+/* §5.35 (user spec): 전방 ~30cm대 진입 시 확실히 한 김 죽인다 — 바닥 도달을
+ * 30→34cm로 당기고 바닥을 38→34%로. 85% 관성 때문에 30cm 시점 실속도가 높아
+ * 정지선을 뚫던 것 보정. 긴 직선(>60cm)은 영향 미미. */
 #define SPEED_FRONT_FAST_CM             78.0f
-#define SPEED_FRONT_SLOW_CM             30.0f
-#define SPEED_FRONT_MIN_PCT             38.0f
+#define SPEED_FRONT_SLOW_CM             34.0f
+#define SPEED_FRONT_MIN_PCT             34.0f
 #define SPEED_SIDE_MIN_PCT              34.0f
 /* Single-wall regime (§5.22): one reference wall = no drift warning from the
  * far flank; speed follows the wall distance so a slow convergence never

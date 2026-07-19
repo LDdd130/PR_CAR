@@ -1,7 +1,7 @@
-# Graph Report - C:\Users\user\STM\PR_CAR  (2026-07-18)
+# Graph Report - C:\Users\user\STM\PR_CAR  (2026-07-19)
 
 ## Corpus Check
-- 158 files · ~1,075,733 words
+- 158 files · ~1,076,336 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -830,11 +830,11 @@ Nodes (0):
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `HAL_GetTick()` connect `Community 7` to `Community 0`, `Community 10`, `Community 11`, `Community 13`, `Community 14`, `Community 24`?**
-  _High betweenness centrality (0.030) - this node is a cross-community bridge._
+  _High betweenness centrality (0.044) - this node is a cross-community bridge._
 - **Why does `StartDefaultTask()` connect `Community 13` to `Community 0`, `Community 11`, `Community 7`?**
-  _High betweenness centrality (0.016) - this node is a cross-community bridge._
-- **Why does `main()` connect `Community 11` to `Community 0`, `Community 1`, `Community 10`?**
-  _High betweenness centrality (0.016) - this node is a cross-community bridge._
+  _High betweenness centrality (0.018) - this node is a cross-community bridge._
+- **Why does `StartTask02()` connect `Community 11` to `Community 0`, `Community 7`?**
+  _High betweenness centrality (0.017) - this node is a cross-community bridge._
 - **Are the 48 inferred relationships involving `HAL_GetTick()` (e.g. with `Encoder_OnCapture()` and `sensor_put_front_danger_event()`) actually correct?**
   _`HAL_GetTick()` has 48 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 10 inferred relationships involving `TIM_CCxChannelCmd()` (e.g. with `HAL_TIMEx_HallSensor_Start()` and `HAL_TIMEx_HallSensor_Stop()`) actually correct?**
