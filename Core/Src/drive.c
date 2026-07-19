@@ -91,6 +91,7 @@ typedef struct
     uint8_t hdg_lp_valid;
     uint8_t imu_prev_live;
     float l_lp, r_lp;
+    float l_rate_lp, r_rate_lp;
     float err_prev;
     float derr_lp;
     float yaw_lp;
@@ -420,6 +421,9 @@ static void centering_run(const DriveInputs *in)
     /* -- side pair conditioning (perpendicular ToF: l/r are true lateral) */
     float l_raw = sanitize_distance(in->l, in->left_valid);
     float r_raw = sanitize_distance(in->r, in->right_valid);
+    uint8_t lp_was_valid = d.lp_valid;
+    float l_lp_before = d.l_lp;
+    float r_lp_before = d.r_lp;
     if (!d.lp_valid)
     {
         d.l_lp = l_raw;
@@ -437,8 +441,24 @@ static void centering_run(const DriveInputs *in)
         else if (!d.r_prev_valid) d.r_lp = r_raw;
         else d.r_lp += CENTER_LPF_ALPHA * (r_raw - d.r_lp);
     }
+    /* §5.37 per-flank closing rate (cm/s, negative = wall approaching).
+     * Only accumulated across continuous valid frames — a reseed (§7-4)
+     * would otherwise read as a huge fake step. */
+    uint8_t l_cont = (uint8_t)(lp_was_valid && in->left_valid && d.l_prev_valid);
+    uint8_t r_cont = (uint8_t)(lp_was_valid && in->right_valid && d.r_prev_valid);
     d.l_prev_valid = in->left_valid;
     d.r_prev_valid = in->right_valid;
+
+    if (l_cont)
+        d.l_rate_lp += CENTER_ACT_RATE_LPF_ALPHA
+            * (((d.l_lp - l_lp_before) / dt) - d.l_rate_lp);
+    else
+        d.l_rate_lp = 0.0f;
+    if (r_cont)
+        d.r_rate_lp += CENTER_ACT_RATE_LPF_ALPHA
+            * (((d.r_lp - r_lp_before) / dt) - d.r_rate_lp);
+    else
+        d.r_rate_lp = 0.0f;
 
     uint8_t left_seen = (uint8_t)(in->left_valid && d.l_lp < (float)CENTER_SENSOR_MAX_CM);
     uint8_t right_seen = (uint8_t)(in->right_valid && d.r_lp < (float)CENTER_SENSOR_MAX_CM);
@@ -458,18 +478,27 @@ static void centering_run(const DriveInputs *in)
     /* §5.36 proximity gate: pair centering only acts once a flank is inside
      * CENTER_ACT_SIDE_CM; released with hysteresis when both flanks clear.
      * Above the gate the axis hold alone keeps the line — the corridor
-     * position is intentionally unregulated there (user spec). */
-    if (!d.center_act)
+     * position is intentionally unregulated there (user spec).
+     * §5.37: engage on the PREDICTED distance so a closing curve facet is
+     * met with steering before the raw 14 cm crossing; a parallel straight
+     * predicts ~unchanged and keeps the free-running band. */
     {
-        if ((left_seen && d.l_lp < CENTER_ACT_SIDE_CM)
-            || (right_seen && d.r_lp < CENTER_ACT_SIDE_CM))
+        float l_pred = d.l_lp + drive_clampf(d.l_rate_lp,
+            -CENTER_ACT_RATE_MAX_CMS, 0.0f) * CENTER_ACT_LOOKAHEAD_S;
+        float r_pred = d.r_lp + drive_clampf(d.r_rate_lp,
+            -CENTER_ACT_RATE_MAX_CMS, 0.0f) * CENTER_ACT_LOOKAHEAD_S;
+        uint8_t act_near = (uint8_t)((left_seen && l_pred < CENTER_ACT_SIDE_CM)
+            || (right_seen && r_pred < CENTER_ACT_SIDE_CM));
+        if (act_near)
+        {
             d.center_act = 1U;
-    }
-    else
-    {
-        float rel = CENTER_ACT_SIDE_CM + CENTER_ACT_HYST_CM;
-        if ((!left_seen || d.l_lp > rel) && (!right_seen || d.r_lp > rel))
-            d.center_act = 0U;
+        }
+        else if (d.center_act)
+        {
+            float rel = CENTER_ACT_SIDE_CM + CENTER_ACT_HYST_CM;
+            if ((!left_seen || d.l_lp > rel) && (!right_seen || d.r_lp > rel))
+                d.center_act = 0U;
+        }
     }
 
     float err_cm = d.l_lp - d.r_lp;
