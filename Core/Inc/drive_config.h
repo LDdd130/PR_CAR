@@ -27,7 +27,7 @@
 #define MOTOR_MIN_PCT                   30
 #define MOTOR_TRIM_PCT                   0
 #define DRIVE_NOMINAL_UPDATE_MS         20U
-#define DRIVE_WHEEL_SLEW_PCT_PER_S    600.0f
+#define DRIVE_WHEEL_SLEW_PCT_PER_S    800.0f  /* §5.37: 600→800 — 조향/피벗 체결 즉각화. 회귀(기동 브라운아웃·IMU 드랍 증가) 시 600 복귀 */
 
 /* Rescue pivot (side escape) and three-point-turn backing. */
 #define RESCUE_OUTER                    48
@@ -165,6 +165,15 @@
  * behaviour is unchanged; only wider zones gain the free-running band. */
 #define CENTER_ACT_SIDE_CM              14.0f
 #define CENTER_ACT_HYST_CM               2.0f
+/* §5.37: the gate must LEAD, not lag — at speed a curve facet closes a flank
+ * tens of cm/s, and waiting for the raw 14 cm crossing leaves no reaction
+ * time (curve-entry rams). The gate therefore engages on the PREDICTED
+ * distance (flank + closing_rate * lookahead); a parallel straight closes at
+ * ~0 cm/s so prediction changes nothing there. Release stays on the actual
+ * distance with hysteresis. */
+#define CENTER_ACT_LOOKAHEAD_S           0.35f
+#define CENTER_ACT_RATE_LPF_ALPHA        0.30f
+#define CENTER_ACT_RATE_MAX_CMS         60.0f
 
 #define CENTER_DEADZONE_CM               3.0f
 #define CENTER_LATERAL_KP_DEG_PER_CM     0.52f  /* §5.28: 0.45→0.52 — 고속 오프센터 평형(좌 10cm 고착) 해소 */
@@ -175,7 +184,7 @@
  * bound is now the recovery authority vs SPEED_HDG_SLOW_DEG budget (the
  * governor is already at its floor before the lateral command saturates). */
 #define CENTER_LATERAL_CMD_MAX_DEG      17.0f  /* §5.28: 15→17 */
-#define CENTER_LATERAL_CMD_SLEW_DPS    110.0f
+#define CENTER_LATERAL_CMD_SLEW_DPS    200.0f  /* §5.37: 110→200 — 즉각 반응 (풀권한 도달 155→85ms) */
 
 #define CENTER_HDG_KP_PCT_PER_DEG        0.80f
 #define CENTER_HDG_KNEE_DEG             10.0f
@@ -203,7 +212,7 @@
 #define CENTER_STEER_MAX_PCT            26.0f
 #define CENTER_STEER_MAX_ALIGN_PCT      36.0f
 #define CENTER_STEER_ALIGN_ERR_DEG      14.0f
-#define CENTER_STEER_SLEW_PCT_PER_S    240.0f
+#define CENTER_STEER_SLEW_PCT_PER_S    480.0f  /* §5.37: 240→480 — 풀조향 도달 ~110→54ms; 요 댐퍼가 오버슛 흡수 */
 
 /* Sub-stall mixing: both wheels above breakaway near a wall (§5.13). */
 #define CENTER_WALL_INNER_FLOOR_PCT     36.0f
