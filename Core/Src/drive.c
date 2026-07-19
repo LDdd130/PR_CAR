@@ -61,6 +61,7 @@ typedef struct
     uint8_t turn_right;
     uint8_t entry_heading_valid;
     uint8_t flip_used;
+    uint8_t roll_turn;
     float turn_last_heading;
     float turn_accum;       /* episode total, survives backing chunks */
     float turn_leg;         /* current uninterrupted sweep only (§5.16) */
@@ -234,6 +235,22 @@ static void command_pivot(uint8_t outer, uint8_t inner, uint32_t now, uint8_t im
     dbg.steer = d.turn_right
         ? -(float)(((int16_t)outer + (int16_t)inner) / 2)
         : (float)(((int16_t)outer + (int16_t)inner) / 2);
+}
+
+/* §5.39/§5.40 rolling corner: outer drives, inner drags (reverse torque under
+ * the breakaway floor = stalled wheel = brake) — the car sweeps the same
+ * heading target while still moving forward. Duty 0 would be a COAST (both
+ * IN pins low): no drag, no yaw, straight into the wall. */
+static void command_roll(uint8_t outer, uint32_t now, uint8_t immediate)
+{
+    int16_t left = d.turn_right ? (int16_t)outer : (int16_t)TURN_ROLL_INNER;
+    int16_t right = d.turn_right ? (int16_t)TURN_ROLL_INNER : (int16_t)outer;
+    if (immediate) motion_command_immediate(left, right, now);
+    else motion_command(left, right, now);
+
+    dbg.steer = d.turn_right
+        ? -(float)(((int16_t)outer - (int16_t)TURN_ROLL_INNER) / 2)
+        : (float)(((int16_t)outer - (int16_t)TURN_ROLL_INNER) / 2);
 }
 
 /* Reverse phase of a three-point turn: retreat while yaw keeps the committed
@@ -762,6 +779,13 @@ static void cruise_enter(const DriveInputs *in)
     uint8_t reacquire = (uint8_t)(in->imu_live && d.reacquire_pending);
 
     centering_reset(in);
+    /* §5.42: a roll turn translates through the corner and lands
+     * wall-adjacent (mappf 15s: exit at R43mm) — engage the centering gate
+     * immediately instead of free-running into the flank it drifted onto.
+     * Hysteresis releases it as soon as both flanks actually clear. */
+    if (previous == DS_SPIN && d.roll_turn)
+        d.center_act = 1U;
+    d.roll_turn = 0U;
     if (in->imu_live)
     {
         if (from_turn || reacquire)
@@ -799,8 +823,10 @@ static void brake_enter(const DriveInputs *in)
 }
 
 /* keep_progress: arc->pivot escalation and post-backing resume keep the
- * episode accumulation; a fresh decide starts from zero. */
-static void spin_begin(const DriveInputs *in, uint8_t keep_progress)
+ * episode accumulation; a fresh decide starts from zero.
+ * roll: §5.39 rolling entry (clean stop-line commit only) — every recovery
+ * or re-decide path pivots in place for precision. */
+static void spin_begin(const DriveInputs *in, uint8_t keep_progress, uint8_t roll)
 {
     reset_confirm_counters();
     if (!keep_progress)
@@ -808,12 +834,14 @@ static void spin_begin(const DriveInputs *in, uint8_t keep_progress)
         turn_progress_reset(in->heading);
         d.flip_used = 0U;
     }
+    d.roll_turn = roll;
     d.entry_heading_valid = in->imu_live;
     d.stuck_heading = in->heading;
     d.stuck_since_ms = in->now;
     d.spin_since_ms = in->now;
     state_enter(DS_SPIN, in->now);
-    command_pivot(TURN_SPEED, TURN_INNER, in->now, 1U);
+    if (roll) command_roll(TURN_ROLL_OUTER, in->now, 1U);
+    else command_pivot(TURN_SPEED, TURN_INNER, in->now, 1U);
 }
 
 static void back_enter(const DriveInputs *in, uint8_t from_turn)
@@ -962,13 +990,28 @@ static void cruise_run(const DriveInputs *in)
      * stop line at 34 cm it was reachable only from far side readings, and
      * those turns are what kept committing wrong-way runs. */
 
-    /* -- stop line: fresh confirmed only, then the brake-and-decide path */
+    /* -- stop line: fresh confirmed only, then the brake-and-decide path.
+     * §5.39: a confirmed wall with an unambiguous L/R gap and a live IMU
+     * commits to a ROLLING turn right here — no stop, no creep; direction is
+     * still read from the sides at a front-confirmed line (§5.24 arming
+     * unchanged; this is NOT the deleted side-initiated DS_CORNER arc).
+     * Ties, single-flank reads and dead-IMU cases keep the stop path.
+     * (§5.43 "무브레이크 통과 후 20cm 커밋"은 실차 악화로 롤백 — 재시도 금지.) */
     if (in->f_valid && in->f < FRONT_STOP_CM && d.front_stable)
     {
         d.front_stop_n = inc_u8(d.front_stop_n);
         if (d.front_stop_n >= FRONT_STOP_CONFIRM_N)
         {
             dbg.front_near = d.front_stop_n;
+            if (in->imu_live && in->left_valid && in->right_valid
+                && in->f >= TURN_ROLL_MIN_F_CM
+                && (in->l > (uint16_t)(in->r + TURN_ROLL_GAP_CM)
+                    || in->r > (uint16_t)(in->l + TURN_ROLL_GAP_CM)))
+            {
+                d.turn_right = (uint8_t)(in->r > in->l);
+                spin_begin(in, 0U, 1U);
+                return;
+            }
             brake_enter(in);
             return;
         }
@@ -990,6 +1033,19 @@ static void cruise_run(const DriveInputs *in)
 
 static void spin_run(const DriveInputs *in)
 {
+    /* §5.42: the rolling profile only while there is room to roll — a front
+     * inside the decide line or a flank at the hard band means the
+     * translation budget is spent (mappf 18s: F 23->2 mid-roll). Finish the
+     * sweep as an in-place pivot; profile swap only, never a backout. */
+    if (d.roll_turn
+        && (front_recent_below(in, FRONT_DECIDE_CM)
+            || (in->left_valid && in->l < (uint16_t)SIDE_HARD_CM)
+            || (in->right_valid && in->r < (uint16_t)SIDE_HARD_CM)))
+    {
+        d.roll_turn = 0U;
+        command_pivot(TURN_SPEED, TURN_INNER, in->now, 1U);
+    }
+
     float progress = 0.0f;
     uint8_t progress_valid = 0U;
     if (in->imu_live)
@@ -1012,6 +1068,7 @@ static void spin_run(const DriveInputs *in)
         {
             d.turn_right ^= 1U;
             d.flip_used = 1U;
+            d.roll_turn = 0U;      /* §5.39: recovery flips pivot in place */
             turn_progress_reset(in->heading);
             d.stuck_heading = in->heading;
             d.stuck_since_ms = in->now;
@@ -1108,8 +1165,10 @@ static void spin_run(const DriveInputs *in)
     /* §5.30 (user spec): no taper — the pivot runs at full turn duty until
      * the target sweep is reached, then cruise takes over instantly. The
      * gradual PID convergence is what read as "slowly settling into the
-     * angle"; skid carry-through is absorbed by TURN_TARGET_DEG's lead. */
-    command_pivot(TURN_SPEED, TURN_INNER, in->now, 0U);
+     * angle"; skid carry-through is absorbed by TURN_TARGET_DEG's lead.
+     * §5.39: a rolling entry keeps its rolling profile for the whole sweep. */
+    if (d.roll_turn) command_roll(TURN_ROLL_OUTER, in->now, 0U);
+    else command_pivot(TURN_SPEED, TURN_INNER, in->now, 0U);
 }
 
 static void brake_run(const DriveInputs *in)
@@ -1129,7 +1188,7 @@ static void brake_run(const DriveInputs *in)
             /* budget exhausted: pivot from where the car stands rather than
              * cycling brake/back forever */
             decide_turn_direction(in);
-            spin_begin(in, 0U);
+            spin_begin(in, 0U, 0U);
         }
         return;
     }
@@ -1159,7 +1218,7 @@ static void brake_run(const DriveInputs *in)
             && (in->left_valid || in->right_valid))
         {
             decide_turn_direction(in);
-            spin_begin(in, 0U);
+            spin_begin(in, 0U, 0U);
             return;
         }
         motion_stop(in->now);
@@ -1174,7 +1233,7 @@ static void brake_run(const DriveInputs *in)
         motion_stop(in->now);
         if (!in->left_valid && !in->right_valid) return;
         decide_turn_direction(in);
-        spin_begin(in, 0U);
+        spin_begin(in, 0U, 0U);
         return;
     }
     motion_command(BRAKE_CREEP_PCT, BRAKE_CREEP_PCT, in->now);
@@ -1194,11 +1253,11 @@ static void reverse_run(const DriveInputs *in)
             {
                 turn_progress_update(in->heading);
                 d.turn_leg = 0.0f;
-                spin_begin(in, 1U);
+                spin_begin(in, 1U, 0U);
             }
             else
             {
-                spin_begin(in, 0U);
+                spin_begin(in, 0U, 0U);
             }
         }
         else
