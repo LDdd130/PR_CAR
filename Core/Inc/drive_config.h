@@ -166,6 +166,12 @@
  * ends. The retry budget is per turn episode; when spent, backing degrades
  * to straight + a fresh direction decision instead of deadlocking (§5.15). */
 #define BRAKE_MS                        60U   /* §5.38: 80→60 — 턴 arming 지연 단축 (진입속도는 §5.35 바닥 34%라 여유) */
+/* IMG_3156/mappf_v2 15.8~16.2s: an oblique corner changed F=16cm to
+ * F=61cm while the chassis was still moving, so CLEAR_CONFIRM_N completed
+ * and CRUISE re-engaged just before F=2cm/L=2.7cm impact.  A disappearing
+ * echo must remain open for this long while active braking is held; normal
+ * corners that retain a near echo still use the short BRAKE_MS path. */
+#define BRAKE_CLEAR_MIN_MS             450U
 #define BRAKE_CREEP_PCT                 40    /* §5.32: 32→36, §5.38: 36→40 — 정지선→판정선(16cm) 크립 단축 */
 #define BRAKE_CREEP_MAX_MS             900U   /* §5.24: decide 20->17cm, 크립 예산 +200ms */
 #define BACK_CHUNK_MS                  220U
@@ -309,6 +315,10 @@
 
 #if BRAKE_CREEP_PCT < MOTOR_MIN_PCT
 #error "Brake creep duty must stay above the motor stall floor"
+#endif
+
+#if BRAKE_CLEAR_MIN_MS < BRAKE_MS
+#error "False-brake clear hold must not be shorter than the active brake pulse"
 #endif
 
 #if TURN_INNER < MOTOR_MIN_PCT
