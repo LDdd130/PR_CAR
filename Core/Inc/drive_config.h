@@ -166,12 +166,6 @@
  * ends. The retry budget is per turn episode; when spent, backing degrades
  * to straight + a fresh direction decision instead of deadlocking (§5.15). */
 #define BRAKE_MS                        60U   /* §5.38: 80→60 — 턴 arming 지연 단축 (진입속도는 §5.35 바닥 34%라 여유) */
-/* IMG_3156/mappf_v2 15.8~16.2s: an oblique corner changed F=16cm to
- * F=61cm while the chassis was still moving, so CLEAR_CONFIRM_N completed
- * and CRUISE re-engaged just before F=2cm/L=2.7cm impact.  A disappearing
- * echo must remain open for this long while active braking is held; normal
- * corners that retain a near echo still use the short BRAKE_MS path. */
-#define BRAKE_CLEAR_MIN_MS             450U
 #define BRAKE_CREEP_PCT                 40    /* §5.32: 32→36, §5.38: 36→40 — 정지선→판정선(16cm) 크립 단축 */
 #define BRAKE_CREEP_MAX_MS             900U   /* §5.24: decide 20->17cm, 크립 예산 +200ms */
 #define BACK_CHUNK_MS                  220U
@@ -230,7 +224,7 @@
 
 #define CENTER_SIDE_REPEL_KP             2.3f   /* §5.28: 1.9→2.3 — 커브 안쪽벽 조기 밀어내기 */
 #define CENTER_SINGLE_TARGET_CM         13.0f  /* §5.36/§5.38: 단일벽 repel = ACT 게이트와 정렬 (130mm) */
-#define CENTER_SINGLE_KP                 0.22f
+#define CENTER_SINGLE_KP                 0.40f  /* §5.44: 0.22→0.40 — 단일벽 peel-off 권한 (긁기 방어, §5.42 예고분) */
 #define CENTER_SINGLE_MAX_CM            30.0f
 #define CENTER_SINGLE_HDG_BLEND          0.42f
 #define CENTER_OPEN_HDG_KP_PCT_PER_DEG   0.58f
@@ -273,6 +267,14 @@
 #define SPEED_FRONT_SLOW_CM             34.0f
 #define SPEED_FRONT_MIN_PCT             34.0f
 #define SPEED_SIDE_MIN_PCT              34.0f
+/* §5.44 (IMG_3182/mappf_v4 긁기): the flank speed ramp used to start only at
+ * SIDE_SOFT_CM(10) — §5.36 free-running raised typical flank-approach speeds,
+ * and 85% inertia punches straight through a 3 cm ramp into the 7-10 cm band
+ * (sustained scraping, 24s: R61mm at speed). The governor band now starts at
+ * the steering gate line (13 cm): the moment the gate engages, speed bleeds
+ * with it, so the repel authority wins before contact. Thresholds themselves
+ * stay untouched (track-geometry rule: slow down, don't widen). */
+#define SPEED_SIDE_SLOW_CM              13.0f
 /* Single-wall regime (§5.22): one reference wall = no drift warning from the
  * far flank; speed follows the wall distance so a slow convergence never
  * outruns the repel band (SIDE_SOFT..SLOW ramp). */
@@ -315,10 +317,6 @@
 
 #if BRAKE_CREEP_PCT < MOTOR_MIN_PCT
 #error "Brake creep duty must stay above the motor stall floor"
-#endif
-
-#if BRAKE_CLEAR_MIN_MS < BRAKE_MS
-#error "False-brake clear hold must not be shorter than the active brake pulse"
 #endif
 
 #if TURN_INNER < MOTOR_MIN_PCT

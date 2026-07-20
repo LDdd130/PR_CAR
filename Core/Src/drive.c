@@ -682,15 +682,18 @@ static void centering_run(const DriveInputs *in)
     {
         float side_min = left_track ? d.l_lp : d.r_lp;
         if (right_track && d.r_lp < side_min) side_min = d.r_lp;
+        /* §5.44: the ramp starts at the steering gate line, not the repel
+         * band — arriving in the 7-10 cm band at 85% is what scraping is */
         float cap;
         if (side_min <= SIDE_HARD_CM)
             cap = SPEED_SIDE_MIN_PCT;
-        else if (side_min >= SIDE_SOFT_CM)
+        else if (side_min >= SPEED_SIDE_SLOW_CM)
             cap = SPEED_TOP_PCT;
         else
             cap = SPEED_SIDE_MIN_PCT
                 + ((SPEED_TOP_PCT - SPEED_SIDE_MIN_PCT)
-                   * (side_min - SIDE_HARD_CM) / (SIDE_SOFT_CM - SIDE_HARD_CM));
+                   * (side_min - SIDE_HARD_CM)
+                   / (SPEED_SIDE_SLOW_CM - SIDE_HARD_CM));
         if (speed > cap) speed = cap;
 
         /* single-wall regime (§5.22): only one reference wall means the far
@@ -1173,8 +1176,7 @@ static void spin_run(const DriveInputs *in)
 
 static void brake_run(const DriveInputs *in)
 {
-    uint32_t brake_elapsed = in->now - d.state_since_ms;
-    if (brake_elapsed < BRAKE_MS) return;
+    if ((in->now - d.state_since_ms) < BRAKE_MS) return;
 
     if (in->f_valid && in->f < FRONT_DANGER_CM)
     {
@@ -1194,30 +1196,19 @@ static void brake_run(const DriveInputs *in)
         return;
     }
 
-    /* A glancing wall can disappear from the ultrasonic beam while it is
-     * still physically ahead.  IMG_3156/mappf_v2 resumed CRUISE on exactly
-     * that F=16->61cm transition and hit the corner 0.2s later.  Prove open
-     * space while HOLDING the active brake; never creep during this proof. */
+    /* the braking front reading may have been a spike: if the wall
+     * evaporates this was a false brake — resume cruising. §5.44: an oblique
+     * corner can vanish from the beam while physically ahead (IMG_3156:
+     * F 16->61 resume -> impact 0.2s later) — a near flank at the resume
+     * moment vetoes the clear without holding the brake hostage. */
     if (!front_recent_below(in, FRONT_TURN_CM))
     {
         d.wall_gone_n = inc_u8(d.wall_gone_n);
-        motion_brake(in->now);
-
-        /* The side ToF sees some oblique corners only after the front echo
-         * has vanished.  Treat that fresh near flank as a failed clear proof
-         * and create room before making another decision. */
-        if (side_emergency(in))
-        {
-            back_enter(in, 0U);
-            return;
-        }
-
-        if (brake_elapsed >= BRAKE_CLEAR_MIN_MS
-            && d.wall_gone_n >= CLEAR_CONFIRM_N)
+        if (d.wall_gone_n >= CLEAR_CONFIRM_N && !side_emergency(in))
         {
             cruise_enter(in);
+            return;
         }
-        return;
     }
     else
     {
@@ -1226,19 +1217,9 @@ static void brake_run(const DriveInputs *in)
 
     /* user spec §5.9: the direction is decided from a wall firmly at the
      * 20 cm line, consecutive fresh samples, read from a stable pose */
-    uint8_t at_decide_line = in->f_valid
-        ? (uint8_t)(in->f <= FRONT_DECIDE_CM)
-        : front_recent_below(in, (uint16_t)(FRONT_DECIDE_CM + 1U));
-    if (at_decide_line)
+    if (in->f_valid && in->f <= FRONT_DECIDE_CM && d.front_stable)
     {
-        /* Stability gates the direction decision, not the brake.  The old
-         * fall-through commanded 40% forward creep on an unstable 16cm
-         * sample — precisely when an angled echo needs the most caution.
-         * A short timeout after that sample also holds the brake; only a
-         * current fresh+stable frame may advance the decision counter. */
-        if (in->f_valid && d.front_stable) d.decide_n = inc_u8(d.decide_n);
-        else d.decide_n = 0U;
-
+        d.decide_n = inc_u8(d.decide_n);
         if (d.decide_n >= FRONT_DECIDE_CONFIRM_N
             && (in->left_valid || in->right_valid))
         {
@@ -1246,7 +1227,7 @@ static void brake_run(const DriveInputs *in)
             spin_begin(in, 0U, 0U);
             return;
         }
-        motion_brake(in->now);
+        motion_stop(in->now);
         return;
     }
     d.decide_n = 0U;
