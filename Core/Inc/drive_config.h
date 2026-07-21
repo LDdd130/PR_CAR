@@ -116,9 +116,33 @@
  * the inner track and the car turns hard while still rolling. -1..-29 = drag
  * regime (more negative = stronger drag); <= -30 spins the pair backwards =
  * full pivot, no longer rolling. Positive values are forbidden. */
-#define TURN_ROLL_OUTER                 70
-#define TURN_ROLL_INNER                -20   /* §5.41: -24→-20 — 실차 "과하게 돎" 미세 인하 */
+#define TURN_ROLL_OUTER                 64   /* §5.50: 70→64 — 곡선 롤 관성/외측 드리프트 축소 (안정성 상향, 실차 곡선 접촉 지속) */
+/* §5.41: -24→-20. §5.47: -20→-14 — 롤 반경 확대. 드래그를 약하게 하면 회전중심이
+ * 안쪽 바퀴에서 차체 중앙 쪽으로 이동 → 회전반경↑ = 안쪽 벽에서 더 떨어져 돎(벽 긁힘
+ * 완화), 리어 스윙 반경↓, 각속도↓로 관성 오버런(22s 과회전)도 완화. 회전력은 스톨
+ * 드래그로 유지(가드 (-30,0]). 덜 돌아 코너 못 빠지면 -16, 여전히 붙으면 -12. */
+#define TURN_ROLL_INNER                -14
 #define TURN_ROLL_GAP_CM                 6
+/* §5.47 (mapp_v6 6s 오조향): a turn direction must not flip on a single-frame
+ * VL53L0X L<->R swap. cruise_run stabilizes the open-flank sign over this many
+ * consecutive frames; the roll commit uses that, not the raw instant. */
+#define TURN_DIR_STABLE_N                3U
+/* IMG_3188: the wide curve is made of consecutive facets. After one rolling
+ * sweep, the next front facet can make the OUTSIDE flank look more open and
+ * falsely request the opposite turn. Keep the proven rolling direction only
+ * across that short inter-facet cruise; a normal straight expires the latch. */
+#define TURN_ROLL_CONTINUE_MS          1100U
+/* Closed-loop radius trim during a roll. The outer command remains 70 (no
+ * speed reduction); only the sub-stall inner drag moves inside [-24, 0].
+ * Near the inside wall it approaches coast to widen the radius, while a near
+ * outside wall adds drag to tighten it. Deadband + slew reject ToF facet
+ * chatter instead of making the chassis wag through the curve. */
+#define TURN_ROLL_WALL_TARGET_CM        15.0f
+#define TURN_ROLL_WALL_DEADBAND_CM       2.0f
+#define TURN_ROLL_WALL_KP                2.0f
+#define TURN_ROLL_INNER_MIN            -24
+#define TURN_ROLL_INNER_MAX              0
+#define TURN_ROLL_INNER_SLEW_PCT_PER_S 160.0f
 /* §5.42 (IMG_3149/mappf): a rolling turn TRANSLATES while it sweeps, so it
  * needs headroom to spend — committing with the wall already close plowed the
  * nose to 8 cm / 2 cm (fast approach: F collapsed 42->8 within the confirm
@@ -129,7 +153,24 @@
  * backout, §5.25).
  * §5.43(정지선 무브레이크 통과 후 20cm 커밋)은 실차에서 악화 — 롤백됨. 재시도 금지:
  * 30→20cm 무브레이크 접근은 확정 지연/관성과 겹쳐 커밋 창을 자주 건너뛴다. */
-#define TURN_ROLL_MIN_F_CM              20
+#define TURN_ROLL_MIN_F_CM              24   /* §5.47: 20→24 — 벽에서 더 멀리서 롤 시작, 완만 진입 (거리 안정성) */
+/* §5.49 (user spec: "코너링에서도 딱 중앙쪽으로 안전하게"): mid-roll the flank
+ * demotion used the repel-band SIDE_HARD_CM(7) — by the time a rolling arc is
+ * 7 cm off a wall it is already scraping. Own threshold, set wider, so the
+ * roll degrades to an in-place pivot (centre rotation, small radius) while
+ * there is still clearance. Must stay under the steering gate so normal
+ * centering gets to act first. */
+#define TURN_ROLL_SIDE_MIN_CM           10.0f  /* §5.50: 9→10 — 롤 중 피벗 강등 더 일찍 (조향 게이트 13 미만 유지) */
+/* §5.45 (IMG_3185/mapp_v5 리어 긁힘 + 일관성): a rolling turn's rotation centre
+ * sits on the inner wheel (eccentric), so the REAR outer corner sweeps a
+ * ~31 cm radius — fine in the wide plaza curve (open flank 46-50 cm) but the
+ * rear scrapes the wall in a tight 37-cm right-angle corridor (open flank
+ * ~36 cm). A pivot's centre is the chassis middle (~16 cm max radius), safe
+ * in the corridor. So roll ONLY when the corner's open side proves a wide
+ * curve; every tighter corner pivots in place — which also removes the
+ * roll/pivot toss-up that made cornering inconsistent (user: "일관성 없음").
+ * Measured split: plaza 46-50 vs corridor 36 -> 42 cm boundary. */
+#define TURN_ROLL_OPEN_SIDE_CM          42
 
 #define TURN_TARGET_DEG                 65.0f
 #define TURN_MIN_DEG                    30.0f
@@ -186,13 +227,19 @@
 #define CENTER_HDG_ERR_LPF_ALPHA         0.25f
 
 /* §5.36 (user spec): straight-line lateral correction is proximity-gated —
- * pair centering only engages once a flank drops inside ~14 cm (135-140 mm);
- * above that the car just holds the course axis and keeps running. Hysteresis
- * stops the gate chattering at the threshold. The narrow corridor (37 cm,
- * 10.5 cm centered clearance) sits inside the gate permanently, so its
- * behaviour is unchanged; only wider zones gain the free-running band. */
-#define CENTER_ACT_SIDE_CM              13.0f  /* §5.38: 14→13 사용자 재튜닝 (130mm) */
-#define CENTER_ACT_HYST_CM               2.0f
+ * pair centering only engages once a flank drops inside the gate; above that
+ * the car holds the course axis and keeps running. Hysteresis stops the gate
+ * chattering at the threshold.
+ * §5.46 (user spec 전환): "최대한 좌우를 잡는 방향" — the free-running band is
+ * dropped. pair_valid means (L+R) <= SIDE_PAIR_MAX(52), so min(L,R) <= 26 by
+ * construction; setting the gate to 26 makes centering active for EVERY valid
+ * pair (both walls seen) — the car always trims toward centre instead of
+ * drifting to a flank. Wide single-wall zones still free-run (no pair, the
+ * §5.19 curve logic owns them). The §5.8 weave stays absent: heading LPF
+ * (0.25) + 0.6° deadband + 3 cm |L-R| deadzone still absorb the sensor
+ * jitter the user accepts ("가운데 둬도 좌우 떨림 있는 건 확인"). */
+#define CENTER_ACT_SIDE_CM              26.0f  /* §5.46: 13→26 — pair면 상시 센터링 (자유주행 밴드 제거) */
+#define CENTER_ACT_HYST_CM               3.0f  /* §5.46: 2→3 — 해제 29cm, pair 소멸점과 정합 */
 /* §5.37: the gate must LEAD, not lag — at speed a curve facet closes a flank
  * tens of cm/s, and waiting for the raw 14 cm crossing leaves no reaction
  * time (curve-entry rams). The gate therefore engages on the PREDICTED
@@ -203,8 +250,15 @@
 #define CENTER_ACT_RATE_LPF_ALPHA        0.30f
 #define CENTER_ACT_RATE_MAX_CMS         60.0f
 
-#define CENTER_DEADZONE_CM               3.0f
-#define CENTER_LATERAL_KP_DEG_PER_CM     0.52f  /* §5.28: 0.45→0.52 — 고속 오프센터 평형(좌 10cm 고착) 해소 */
+/* §5.49 (user spec): "데드존보다는 계속 좌우 값 비슷하게 밸런싱" — the 3 cm
+ * dead zone was a §5.8-era policy (ToF not trusted to 0.5 cm), but it lets the
+ * car settle anywhere inside a 3 cm offset band and drift onto a flank before
+ * anything acts. Narrowed to 1.5 cm so the pair trim runs continuously; the
+ * sensor jitter it used to mask is already handled upstream by the side LPF
+ * (0.45) and the 0.6° heading deadband, so this does NOT reopen §5.8 weaving
+ * (that failure was a HEADING deadband swallowing the command, not this). */
+#define CENTER_DEADZONE_CM               1.5f
+#define CENTER_LATERAL_KP_DEG_PER_CM     0.64f  /* IMG_3188: 0.52→0.64 — 3cm deadzone 밖 오프센터 복귀력만 상향 */
 #define CENTER_LATERAL_KD_DEG_PER_CMS    0.045f
 #define CENTER_LATERAL_KNEE_CM          10.0f
 #define CENTER_LATERAL_KNEE_GAIN         1.0f
@@ -223,7 +277,7 @@
 #define CENTER_YAW_DAMP_MAX_PCT          9.0f
 
 #define CENTER_SIDE_REPEL_KP             2.3f   /* §5.28: 1.9→2.3 — 커브 안쪽벽 조기 밀어내기 */
-#define CENTER_SINGLE_TARGET_CM         13.0f  /* §5.36/§5.38: 단일벽 repel = ACT 게이트와 정렬 (130mm) */
+#define CENTER_SINGLE_TARGET_CM         15.0f  /* §5.45: 13→15 — 곡선존 단일벽 추종 클리어런스 (7초 바깥벽 밀착). 좁은 복도는 pair라 무영향 */
 #define CENTER_SINGLE_KP                 0.40f  /* §5.44: 0.22→0.40 — 단일벽 peel-off 권한 (긁기 방어, §5.42 예고분) */
 #define CENTER_SINGLE_MAX_CM            30.0f
 #define CENTER_SINGLE_HDG_BLEND          0.42f
@@ -278,7 +332,7 @@
 /* Single-wall regime (§5.22): one reference wall = no drift warning from the
  * far flank; speed follows the wall distance so a slow convergence never
  * outruns the repel band (SIDE_SOFT..SLOW ramp). */
-#define SPEED_SINGLE_SLOW_CM            25.0f
+#define SPEED_SINGLE_SLOW_CM            30.0f  /* §5.50: 25→30 — 곡선(단일벽) 감속을 더 일찍 시작 (거리 문턱이 아니라 속도 예산, §트랙기하 원칙 부합) */
 #define SPEED_SINGLE_MIN_PCT            44.0f
 /* §5.27 직진 멈칫 완화: 주행 중 좌우 보정은 "가면서" 잡는다 — 보정 중 감속
  * 램프가 너무 일찍 물리면 매 보정마다 출렁임(멈칫). §5.19 조향 권한 상향이
@@ -325,6 +379,11 @@
 
 #if TURN_ROLL_INNER > 0 || TURN_ROLL_INNER <= -(MOTOR_MIN_PCT)
 #error "Rolling-turn inner must sit in the drag-brake regime: 0 .. -(MOTOR_MIN_PCT-1)"
+#endif
+
+#if TURN_ROLL_INNER_MIN <= -(MOTOR_MIN_PCT) || TURN_ROLL_INNER_MAX > 0 || \
+    TURN_ROLL_INNER < TURN_ROLL_INNER_MIN || TURN_ROLL_INNER > TURN_ROLL_INNER_MAX
+#error "Rolling radius trim must remain in the coast/sub-stall drag regime"
 #endif
 
 #if !(FRONT_DECIDE_CM < TURN_ROLL_MIN_F_CM && TURN_ROLL_MIN_F_CM < FRONT_STOP_CM)
