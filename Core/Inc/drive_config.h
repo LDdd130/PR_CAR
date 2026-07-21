@@ -137,12 +137,17 @@
  * Near the inside wall it approaches coast to widen the radius, while a near
  * outside wall adds drag to tighten it. Deadband + slew reject ToF facet
  * chatter instead of making the chassis wag through the curve. */
-#define TURN_ROLL_WALL_TARGET_CM        15.0f
+/* §5.53 (여전한 진입 긁힘, IMG_3190 대비 완화만): the closed-loop trim only
+ * engaged below TARGET-DEADBAND(13cm) and corrected at 160%/s (24-unit swing
+ * = 150ms) — at entry speed/heading momentum that window closes before the
+ * radius widens enough. Widen the target so avoidance starts with more
+ * buffer, and react harder/faster once it does. */
+#define TURN_ROLL_WALL_TARGET_CM        18.0f  /* §5.53: 15→18 — 여유 확보, 더 일찍 반응 시작 */
 #define TURN_ROLL_WALL_DEADBAND_CM       2.0f
-#define TURN_ROLL_WALL_KP                2.0f
+#define TURN_ROLL_WALL_KP                2.6f  /* §5.53: 2.0→2.6 — cm당 반경 보정력 상향 */
 #define TURN_ROLL_INNER_MIN            -24
 #define TURN_ROLL_INNER_MAX              0
-#define TURN_ROLL_INNER_SLEW_PCT_PER_S 160.0f
+#define TURN_ROLL_INNER_SLEW_PCT_PER_S 220.0f  /* §5.53: 160→220 — 보정 도달시간 150→109ms */
 /* §5.42 (IMG_3149/mappf): a rolling turn TRANSLATES while it sweeps, so it
  * needs headroom to spend — committing with the wall already close plowed the
  * nose to 8 cm / 2 cm (fast approach: F collapsed 42->8 within the confirm
@@ -154,6 +159,12 @@
  * §5.43(정지선 무브레이크 통과 후 20cm 커밋)은 실차에서 악화 — 롤백됨. 재시도 금지:
  * 30→20cm 무브레이크 접근은 확정 지연/관성과 겹쳐 커밋 창을 자주 건너뛴다. */
 #define TURN_ROLL_MIN_F_CM              24   /* §5.47: 20→24 — 벽에서 더 멀리서 롤 시작, 완만 진입 (거리 안정성) */
+/* §5.52 (IMG_3190: 벽 직전까지 직진 후 턴 → 진입 아크가 늦음): roll-eligible
+ * 코너는 확정 창을 정지선(30) 위 36cm에서 열어 미리 아크 진입. 비적격 전방은
+ * 이 창에선 계속 주행(거버너 감속)하고 30cm 정지선에서만 브레이크 — §5.27
+ * 경계선 멈칫 재발 없음. §5.43(정지선 지나 지연 커밋)과 반대 방향 = 허용.
+ * 36cm 확정도 fresh+stable ×3 + 피치 게이트라 §5.11류 원거리 오발은 차단. */
+#define TURN_ROLL_COMMIT_CM             36
 /* §5.49 (user spec: "코너링에서도 딱 중앙쪽으로 안전하게"): mid-roll the flank
  * demotion used the repel-band SIDE_HARD_CM(7) — by the time a rolling arc is
  * 7 cm off a wall it is already scraping. Own threshold, set wider, so the
@@ -312,13 +323,13 @@
  * §5.32 랩타임 공략(21s→19s 목표): TOP 78→85. 램프 양끝(78cm 시작, 정지선
  * 도달속도)은 검증값 유지 — 중간 구간만 가팔라짐. 회귀 롤백 순서:
  * TOP 85→78→69 → FRONT_MIN 38→36. */
-#define SPEED_TOP_PCT                   85.0f
+#define SPEED_TOP_PCT                   88.0f  /* §5.51: 85→88 — 직선 상향 (아래 SLOW 34→36과 짝: 정지선 도달속도 유지) */
 #define SPEED_MIN_PCT                   34.0f
 /* §5.35 (user spec): 전방 ~30cm대 진입 시 확실히 한 김 죽인다 — 바닥 도달을
  * 30→34cm로 당기고 바닥을 38→34%로. 85% 관성 때문에 30cm 시점 실속도가 높아
  * 정지선을 뚫던 것 보정. 긴 직선(>60cm)은 영향 미미. */
 #define SPEED_FRONT_FAST_CM             78.0f
-#define SPEED_FRONT_SLOW_CM             34.0f
+#define SPEED_FRONT_SLOW_CM             36.0f  /* §5.51: 34→36 — TOP +3% 관성 보상, 감속 바닥 2cm 선행 */
 #define SPEED_FRONT_MIN_PCT             34.0f
 #define SPEED_SIDE_MIN_PCT              34.0f
 /* §5.44 (IMG_3182/mappf_v4 긁기): the flank speed ramp used to start only at
@@ -344,7 +355,7 @@
 #define SPEED_YAW_SLOW_DPS              60.0f
 #define SPEED_YAW_MIN_PCT               48.0f   /* §5.32 */
 #define SPEED_SETTLE_MS                150U    /* §5.32: 250→200, §5.38: →150 — 턴 직후 직진 체결 단축 */
-#define SPEED_SETTLE_PCT                72.0f   /* §5.32: 62→66, §5.38: →72 (launch 듀티 겸용) */
+#define SPEED_SETTLE_PCT                76.0f   /* §5.32: 62→66, §5.38: →72, §5.51: →76 (launch 듀티 겸용) */
 
 /* ---- Corridor classes (drive_math.h). [REMEASURE] */
 #define COURSE_CAR_WIDTH_CM             16.0f
@@ -384,6 +395,10 @@
 #if TURN_ROLL_INNER_MIN <= -(MOTOR_MIN_PCT) || TURN_ROLL_INNER_MAX > 0 || \
     TURN_ROLL_INNER < TURN_ROLL_INNER_MIN || TURN_ROLL_INNER > TURN_ROLL_INNER_MAX
 #error "Rolling radius trim must remain in the coast/sub-stall drag regime"
+#endif
+
+#if !(FRONT_STOP_CM < TURN_ROLL_COMMIT_CM && TURN_ROLL_COMMIT_CM < FRONT_TURN_CM)
+#error "Roll commit window must sit between the stop line and the far-echo turn line"
 #endif
 
 #if !(FRONT_DECIDE_CM < TURN_ROLL_MIN_F_CM && TURN_ROLL_MIN_F_CM < FRONT_STOP_CM)

@@ -816,6 +816,19 @@ void StartTask02(void *argument)
                                    && tof_miss[1] < SIDE_FAIL_LIMIT
                                    && (frame_now - tof_fresh[1]) <= TOF_STALE_MS);
 
+      /* §5.51 (IMG_3189 17~18s): 방지턱 위에서 차체가 기울면 측면 ToF 빔도
+       * 바닥/허공을 찍는다 — §5.23은 전방만 게이트해서, 턱 통과 중 쓰레기
+       * 측면값으로 센터링이 조향해 착지 직후 벽에 박았다. 피치 초과 프레임은
+       * 측면도 무효 (drive.c는 헤딩 축유지만으로 직진 통과, side_bias도
+       * §5.49 규칙으로 자동 클리어 → 턱 위 롤 커밋 불가). IMU 사망 시 게이트
+       * 자동 비활성 (백스톱 불변식). */
+      if (imu_ctrl_live && (imu.pitch > FRONT_PITCH_MAX_DEG
+                         || imu.pitch < -FRONT_PITCH_MAX_DEG))
+      {
+          left_valid = 0U;
+          right_valid = 0U;
+      }
+
       /* 3.5) 텔레메트리 센서 미러 (아키텍처 D4 — 본 태스크 단일 작성자).
        *      heading은 ×10 정수화(float printf 회피). side_valid는 양쪽 ToF가 실제 샘플을
        *      수신했고 오류 한도와 stale 기한 안에 있을 때만 표시한다. */

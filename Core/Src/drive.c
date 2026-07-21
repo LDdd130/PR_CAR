@@ -1122,8 +1122,14 @@ static void cruise_run(const DriveInputs *in)
      * still read from the sides at a front-confirmed line (§5.24 arming
      * unchanged; this is NOT the deleted side-initiated DS_CORNER arc).
      * Ties, single-flank reads and dead-IMU cases keep the stop path.
-     * (§5.43 "무브레이크 통과 후 20cm 커밋"은 실차 악화로 롤백 — 재시도 금지.) */
-    if (in->f_valid && in->f < FRONT_STOP_CM && d.front_stable)
+     * (§5.43 "무브레이크 통과 후 20cm 커밋"은 실차 악화로 롤백 — 재시도 금지.)
+     * §5.52 (IMG_3190 — 벽 직전 직진 후 턴): the confirm window opens at
+     * TURN_ROLL_COMMIT_CM(36) so a roll-eligible corner ARCS IN EARLY, well
+     * before the wall; a non-eligible front inside the window keeps cruising
+     * (governor bleeds speed) and only brakes at the FRONT_STOP_CM(30) line —
+     * the §5.27 border-brake stutter cannot return. This ADVANCES the commit
+     * (§5.43 was the opposite: delaying past the stop line — still banned). */
+    if (in->f_valid && in->f < TURN_ROLL_COMMIT_CM && d.front_stable)
     {
         d.front_stop_n = inc_u8(d.front_stop_n);
         if (d.front_stop_n >= FRONT_STOP_CONFIRM_N)
@@ -1152,8 +1158,13 @@ static void cruise_run(const DriveInputs *in)
                 spin_begin(in, 0U, 1U);
                 return;
             }
-            brake_enter(in);
-            return;
+            /* §5.52: not roll-eligible above the stop line — keep cruising
+             * toward it; the brake-and-decide path owns everything below. */
+            if (in->f < FRONT_STOP_CM)
+            {
+                brake_enter(in);
+                return;
+            }
         }
     }
     else
