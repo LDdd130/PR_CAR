@@ -62,6 +62,16 @@ typedef struct
     uint8_t entry_heading_valid;
     uint8_t flip_used;
     uint8_t roll_turn;
+    /* §5.47: side-bias sign, stabilized over consecutive cruise frames — a
+     * single-frame L<->R swap (VL53L0X glitch in the plaza) must not decide a
+     * turn direction against the wall that has been open the whole approach. */
+    int8_t side_bias;        /* +1 right open, -1 left open, 0 undecided */
+    int8_t side_sign_last;
+    uint8_t side_sign_n;
+    int8_t roll_dir_hold;    /* +1 right, -1 left: short multi-facet curve latch */
+    uint32_t roll_exit_ms;
+    float roll_inner_cmd;
+    uint32_t roll_command_ms;
     float turn_last_heading;
     float turn_accum;       /* episode total, survives backing chunks */
     float turn_leg;         /* current uninterrupted sweep only (§5.16) */
@@ -241,16 +251,41 @@ static void command_pivot(uint8_t outer, uint8_t inner, uint32_t now, uint8_t im
  * the breakaway floor = stalled wheel = brake) — the car sweeps the same
  * heading target while still moving forward. Duty 0 would be a COAST (both
  * IN pins low): no drag, no yaw, straight into the wall. */
-static void command_roll(uint8_t outer, uint32_t now, uint8_t immediate)
+static void command_roll(const DriveInputs *in, uint8_t outer,
+                         uint32_t now, uint8_t immediate)
 {
-    int16_t left = d.turn_right ? (int16_t)outer : (int16_t)TURN_ROLL_INNER;
-    int16_t right = d.turn_right ? (int16_t)TURN_ROLL_INNER : (int16_t)outer;
+    float dt = (float)DRIVE_NOMINAL_UPDATE_MS / 1000.0f;
+    if (d.roll_command_ms != 0U && now > d.roll_command_ms)
+        dt = drive_clampf((float)(now - d.roll_command_ms) / 1000.0f,
+                          0.005f, 0.100f);
+
+    float inner_target = (float)TURN_ROLL_INNER;
+    float near_edge = TURN_ROLL_WALL_TARGET_CM - TURN_ROLL_WALL_DEADBAND_CM;
+    uint8_t inside_valid = d.turn_right ? in->right_valid : in->left_valid;
+    uint8_t outside_valid = d.turn_right ? in->left_valid : in->right_valid;
+    float inside = (float)(d.turn_right ? in->r : in->l);
+    float outside = (float)(d.turn_right ? in->l : in->r);
+
+    if (inside_valid && inside < near_edge)
+        inner_target += TURN_ROLL_WALL_KP * (near_edge - inside);
+    if (outside_valid && outside < near_edge)
+        inner_target -= TURN_ROLL_WALL_KP * (near_edge - outside);
+
+    inner_target = drive_clampf(inner_target,
+        (float)TURN_ROLL_INNER_MIN, (float)TURN_ROLL_INNER_MAX);
+    d.roll_inner_cmd = approach_f(d.roll_inner_cmd, inner_target,
+        TURN_ROLL_INNER_SLEW_PCT_PER_S * dt);
+    d.roll_command_ms = now;
+
+    int16_t inner = (int16_t)lroundf(d.roll_inner_cmd);
+    int16_t left = d.turn_right ? (int16_t)outer : inner;
+    int16_t right = d.turn_right ? inner : (int16_t)outer;
     if (immediate) motion_command_immediate(left, right, now);
     else motion_command(left, right, now);
 
     dbg.steer = d.turn_right
-        ? -(float)(((int16_t)outer - (int16_t)TURN_ROLL_INNER) / 2)
-        : (float)(((int16_t)outer - (int16_t)TURN_ROLL_INNER) / 2);
+        ? -(float)(((int16_t)outer - inner) / 2)
+        : (float)(((int16_t)outer - inner) / 2);
 }
 
 /* Reverse phase of a three-point turn: retreat while yaw keeps the committed
@@ -319,6 +354,73 @@ static float turn_progress_update(float heading)
     d.turn_accum += signed_delta;
     d.turn_leg += signed_delta;
     return d.turn_accum;
+}
+
+static void turn_hint_reset(void)
+{
+    d.side_bias = 0;
+    d.side_sign_last = 0;
+    d.side_sign_n = 0U;
+}
+
+/* Direction evidence belongs to one approaching front facet only. The old
+ * all-cruise latch survived previous corners indefinitely; IMG_3188 then
+ * reused that stale sign at the next facet and reversed a right-hand curve. */
+static void turn_hint_update(const DriveInputs *in)
+{
+    if (!in->f_valid || in->f >= FRONT_TURN_CM)
+    {
+        turn_hint_reset();
+        return;
+    }
+
+    if (!in->left_valid || !in->right_valid)
+    {
+        /* §5.49: a channel dropping out invalidates the DIRECTION too, not just
+         * the streak — a stale bias kept here would commit the old side the
+         * moment the channel returns. (The U bend's open flank is NOT this
+         * case: out-of-range normalizes to a valid 80 cm max reading.) */
+        d.side_bias = 0;
+        d.side_sign_last = 0;
+        d.side_sign_n = 0U;
+        return;
+    }
+
+    uint16_t open_side = (in->l > in->r) ? in->l : in->r;
+    if (open_side < TURN_ROLL_OPEN_SIDE_CM)
+    {
+        d.side_sign_last = 0;
+        d.side_sign_n = 0U;
+        return;
+    }
+
+    int8_t sign = (in->r > (uint16_t)(in->l + SIDE_HYST_CM)) ? (int8_t)1
+                : (in->l > (uint16_t)(in->r + SIDE_HYST_CM)) ? (int8_t)-1
+                : (int8_t)0;
+    if (sign == 0)
+    {
+        d.side_sign_last = 0;
+        d.side_sign_n = 0U;
+        return;
+    }
+
+    if (sign == d.side_sign_last)
+        d.side_sign_n = inc_u8(d.side_sign_n);
+    else
+    {
+        d.side_sign_last = sign;
+        d.side_sign_n = 1U;
+    }
+    if (d.side_sign_n >= TURN_DIR_STABLE_N) d.side_bias = sign;
+}
+
+static int8_t roll_continuation_direction(uint32_t now)
+{
+    if (d.roll_dir_hold != 0
+        && (now - d.roll_exit_ms) <= TURN_ROLL_CONTINUE_MS)
+        return d.roll_dir_hold;
+    d.roll_dir_hold = 0;
+    return 0;
 }
 
 static float course_dev_now(const DriveInputs *in)
@@ -779,6 +881,7 @@ static void cruise_enter(const DriveInputs *in)
     DriveState previous = d.state;
     uint8_t from_turn = (uint8_t)((previous == DS_SPIN || previous == DS_CORNER)
         && d.entry_heading_valid && in->imu_live);
+    uint8_t from_roll = (uint8_t)(previous == DS_SPIN && d.roll_turn);
     uint8_t reacquire = (uint8_t)(in->imu_live && d.reacquire_pending);
 
     centering_reset(in);
@@ -786,8 +889,17 @@ static void cruise_enter(const DriveInputs *in)
      * wall-adjacent (mappf 15s: exit at R43mm) — engage the centering gate
      * immediately instead of free-running into the flank it drifted onto.
      * Hysteresis releases it as soon as both flanks actually clear. */
-    if (previous == DS_SPIN && d.roll_turn)
+    if (from_roll)
+    {
         d.center_act = 1U;
+        d.roll_dir_hold = d.turn_right ? (int8_t)1 : (int8_t)-1;
+        d.roll_exit_ms = in->now;
+    }
+    else if (previous != DS_CRUISE)
+    {
+        d.roll_dir_hold = 0;
+    }
+    turn_hint_reset();
     d.roll_turn = 0U;
     if (in->imu_live)
     {
@@ -838,12 +950,14 @@ static void spin_begin(const DriveInputs *in, uint8_t keep_progress, uint8_t rol
         d.flip_used = 0U;
     }
     d.roll_turn = roll;
+    d.roll_inner_cmd = (float)TURN_ROLL_INNER;
+    d.roll_command_ms = 0U;
     d.entry_heading_valid = in->imu_live;
     d.stuck_heading = in->heading;
     d.stuck_since_ms = in->now;
     d.spin_since_ms = in->now;
     state_enter(DS_SPIN, in->now);
-    if (roll) command_roll(TURN_ROLL_OUTER, in->now, 1U);
+    if (roll) command_roll(in, TURN_ROLL_OUTER, in->now, 1U);
     else command_pivot(TURN_SPEED, TURN_INNER, in->now, 1U);
 }
 
@@ -887,6 +1001,13 @@ static void hold_enter(const DriveInputs *in)
  * the previous direction rather than inventing one from noise. */
 static void decide_turn_direction(const DriveInputs *in)
 {
+    int8_t continuation = roll_continuation_direction(in->now);
+    if (continuation != 0)
+    {
+        d.turn_right = (uint8_t)(continuation > 0);
+        return;
+    }
+
     if (in->left_valid && in->right_valid)
     {
         if (in->l > (uint16_t)(in->r + SIDE_HYST_CM)) { d.turn_right = 0U; return; }
@@ -930,6 +1051,8 @@ static void cruise_run(const DriveInputs *in)
         hold_enter(in);
         return;
     }
+
+    turn_hint_update(in);
 
     /* IMU-independent launch window (inrush brownout kills imu_live) */
     if (d.launching)
@@ -1006,12 +1129,26 @@ static void cruise_run(const DriveInputs *in)
         if (d.front_stop_n >= FRONT_STOP_CONFIRM_N)
         {
             dbg.front_near = d.front_stop_n;
+            /* §5.45: roll only in a proven WIDE corner (open flank large
+             * enough that the eccentric rolling rear clears the wall); every
+             * tighter corner pivots in place — rear-scrape fix + consistency.
+             * §5.47: direction from the stabilized side_bias, and the raw gap
+             * this frame must AGREE with it — a glitched frame that flips the
+             * gap falls through to brake-and-decide instead of rolling wrong. */
+            uint16_t open_side = (in->l > in->r) ? in->l : in->r;
+            uint8_t gap_right = (uint8_t)(in->r > (uint16_t)(in->l + TURN_ROLL_GAP_CM));
+            uint8_t gap_left  = (uint8_t)(in->l > (uint16_t)(in->r + TURN_ROLL_GAP_CM));
+            int8_t continuation = roll_continuation_direction(in->now);
+            int8_t roll_direction = (continuation != 0) ? continuation : d.side_bias;
+            uint8_t bias_ok = (continuation != 0)
+                           || (roll_direction > 0 && gap_right)
+                           || (roll_direction < 0 && gap_left);
             if (in->imu_live && in->left_valid && in->right_valid
                 && in->f >= TURN_ROLL_MIN_F_CM
-                && (in->l > (uint16_t)(in->r + TURN_ROLL_GAP_CM)
-                    || in->r > (uint16_t)(in->l + TURN_ROLL_GAP_CM)))
+                && open_side >= TURN_ROLL_OPEN_SIDE_CM
+                && bias_ok)
             {
-                d.turn_right = (uint8_t)(in->r > in->l);
+                d.turn_right = (uint8_t)(roll_direction > 0);
                 spin_begin(in, 0U, 1U);
                 return;
             }
@@ -1042,8 +1179,8 @@ static void spin_run(const DriveInputs *in)
      * sweep as an in-place pivot; profile swap only, never a backout. */
     if (d.roll_turn
         && (front_recent_below(in, FRONT_DECIDE_CM)
-            || (in->left_valid && in->l < (uint16_t)SIDE_HARD_CM)
-            || (in->right_valid && in->r < (uint16_t)SIDE_HARD_CM)))
+            || (in->left_valid && in->l < (uint16_t)TURN_ROLL_SIDE_MIN_CM)
+            || (in->right_valid && in->r < (uint16_t)TURN_ROLL_SIDE_MIN_CM)))
     {
         d.roll_turn = 0U;
         command_pivot(TURN_SPEED, TURN_INNER, in->now, 1U);
@@ -1170,7 +1307,7 @@ static void spin_run(const DriveInputs *in)
      * gradual PID convergence is what read as "slowly settling into the
      * angle"; skid carry-through is absorbed by TURN_TARGET_DEG's lead.
      * §5.39: a rolling entry keeps its rolling profile for the whole sweep. */
-    if (d.roll_turn) command_roll(TURN_ROLL_OUTER, in->now, 0U);
+    if (d.roll_turn) command_roll(in, TURN_ROLL_OUTER, in->now, 0U);
     else command_pivot(TURN_SPEED, TURN_INNER, in->now, 0U);
 }
 
