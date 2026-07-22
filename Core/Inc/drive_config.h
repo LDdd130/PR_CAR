@@ -160,11 +160,17 @@
  * 30→20cm 무브레이크 접근은 확정 지연/관성과 겹쳐 커밋 창을 자주 건너뛴다. */
 #define TURN_ROLL_MIN_F_CM              24   /* §5.47: 20→24 — 벽에서 더 멀리서 롤 시작, 완만 진입 (거리 안정성) */
 /* §5.52 (IMG_3190: 벽 직전까지 직진 후 턴 → 진입 아크가 늦음): roll-eligible
- * 코너는 확정 창을 정지선(30) 위 36cm에서 열어 미리 아크 진입. 비적격 전방은
+ * 코너는 확정 창을 정지선(30) 위에서 열어 미리 아크 진입. 비적격 전방은
  * 이 창에선 계속 주행(거버너 감속)하고 30cm 정지선에서만 브레이크 — §5.27
  * 경계선 멈칫 재발 없음. §5.43(정지선 지나 지연 커밋)과 반대 방향 = 허용.
- * 36cm 확정도 fresh+stable ×3 + 피치 게이트라 §5.11류 원거리 오발은 차단. */
-#define TURN_ROLL_COMMIT_CM             36
+ * 확정도 fresh+stable ×3 + 피치 게이트라 §5.11류 원거리 오발은 차단.
+ * §5.55 (사용자 명세: "더 멀리서 반응"): 36→40 — §5.54로 커브 접근 속도가
+ * 이미 올라간 상태(FRONT_MIN_ROLL 54%)라, 예전 36cm 창은 confirm(×3, 접근
+ * 중 프레임 소모)이 진행되는 동안 F가 MIN_F_CM(24) 바닥까지 빠르게 줄어
+ * 커밋이 24~28cm 근처로 밀렸다 — 그게 "아슬아슬한 진입"의 실제 원인. 창을
+ * 40cm로 넓혀 confirm이 더 먼 거리(대략 36~40cm)에서 끝나도록 여유 확보.
+ * FRONT_TURN_CM(44) 미만 가드 유지 — 44에 너무 붙지 않도록 40에서 멈춤. */
+#define TURN_ROLL_COMMIT_CM             40
 /* §5.49 (user spec: "코너링에서도 딱 중앙쪽으로 안전하게"): mid-roll the flank
  * demotion used the repel-band SIDE_HARD_CM(7) — by the time a rolling arc is
  * 7 cm off a wall it is already scraping. Own threshold, set wider, so the
@@ -182,8 +188,45 @@
  * roll/pivot toss-up that made cornering inconsistent (user: "일관성 없음").
  * Measured split: plaza 46-50 vs corridor 36 -> 42 cm boundary. */
 #define TURN_ROLL_OPEN_SIDE_CM          42
+/* §5.57 (user spec: "롤링턴도 특정 각도까지 가면 그만 턴하게" — confirmed sound
+ * and applied): a roll's exit used the SAME axis/wide-open heuristics as a
+ * right-angle pivot (axis_aligned, wide_exit_course_ok, front-clear-strong-
+ * open) — those assume a clean 90 deg corridor to align to. A continuously
+ * curving corridor doesn't present that cleanly, so roll exit timing rode on
+ * whichever heuristic happened to fire, sometimes late (over-rotate into the
+ * outer wall) — IMG_3203's repeatable last-curve hit. Roll now gets its own
+ * fixed target and a tighter over-rotation slack, and skips the heuristic
+ * branch entirely (deterministic: run to this angle, stop). Equal to the
+ * hand-tuned pivot TARGET_DEG for now — tune independently from here. */
+#define TURN_ROLL_TARGET_DEG            65.0f
+#define TURN_ROLL_OVER_SLACK_DEG        12.0f
 
 #define TURN_TARGET_DEG                 65.0f
+/* §5.56 (user spec + traced bug, "마지막 방지턱 전 커브 항상 과회전"): that corner
+ * is the geometrically-symmetric tie (course-axis fallback, decide_turn_
+ * direction — sides read equal so there is nothing to aim a full pivot at).
+ * §5.54's roll-speed relaxation used a looser sign threshold (SIDE_HYST_CM,
+ * side_bias) than the actual roll commit gap (TURN_ROLL_GAP_CM) — sensor
+ * noise at this near-symmetric wide corridor crossed the loose threshold
+ * often enough to grant roll-level cruise speed while the corner almost
+ * always still fell through to the tied-pivot path (gap never reached the
+ * stricter roll threshold), so the pivot kept entering faster than tuned and
+ * overshooting past TARGET_DEG (fixed in centering_run's roll_likely, now
+ * gated on the SAME gap as the commit). On top of that fix, user's own
+ * diagnosis is applied structurally: a tie-broken pivot has no measured
+ * angle to aim for, so it turns decisively to this SHORTER target only, then
+ * cruise's course_axis_snap heading-hold finishes the alignment straight —
+ * "턴을 한번 하고 가면서 좌우를 맞추는" exactly as requested. Confidently
+ * decided pivots (clear L/R winner) keep the full TARGET_DEG unchanged. */
+/* §5.58 (IMG_3206, 간헐 역주행): course_axis_snap()은 heading을 가장 가까운
+ * 90° 배수로 반올림한다 — TARGET_TIE_DEG를 45°로 뒀던 건 정확히 0°/90° 반올림
+ * 경계(중간점)였다. 실제 exit heading은 IMU 필터 지연·스킵 관성 편차로 44~47°
+ * 사이 어디든 뜰 수 있고, 44° vs 46°는 반올림이 구축(0°, 원래축) vs 신축(90°,
+ * 새 축)으로 갈린다 — 코스 프레임이 실제 물리 회전과 반대로 기록되는 순간이
+ * "가끔" 나오는 원인. 반올림 경계에서 확실히 벗어난 값으로 상향(58°: 44~47
+ * 흔들림이 전부 90° 쪽으로 반올림되도록 여유 확보). 65°(일반 피벗) 보다는
+ * 여전히 짧아 "턴 한번+좌우는 가면서"(§5.56) 취지는 유지. */
+#define TURN_TARGET_TIE_DEG             58.0f
 #define TURN_MIN_DEG                    30.0f
 #define TURN_WRONG_DEG                  20.0f
 #define TURN_AXIS_ALIGN_DEG             10.0f
@@ -269,7 +312,7 @@
  * (0.45) and the 0.6° heading deadband, so this does NOT reopen §5.8 weaving
  * (that failure was a HEADING deadband swallowing the command, not this). */
 #define CENTER_DEADZONE_CM               1.5f
-#define CENTER_LATERAL_KP_DEG_PER_CM     0.64f  /* IMG_3188: 0.52→0.64 — 3cm deadzone 밖 오프센터 복귀력만 상향 */
+#define CENTER_LATERAL_KP_DEG_PER_CM     0.72f  /* IMG_3188: 0.52→0.64, §5.58: →0.72 — 데드존(1.5cm) 밖 좌우 밸런싱 강화. 데드존 안(사용자: 안 치우쳤으면 직진 유지)은 불변 */
 #define CENTER_LATERAL_KD_DEG_PER_CMS    0.045f
 #define CENTER_LATERAL_KNEE_CM          10.0f
 #define CENTER_LATERAL_KNEE_GAIN         1.0f
@@ -323,7 +366,7 @@
  * §5.32 랩타임 공략(21s→19s 목표): TOP 78→85. 램프 양끝(78cm 시작, 정지선
  * 도달속도)은 검증값 유지 — 중간 구간만 가팔라짐. 회귀 롤백 순서:
  * TOP 85→78→69 → FRONT_MIN 38→36. */
-#define SPEED_TOP_PCT                   88.0f  /* §5.51: 85→88 — 직선 상향 (아래 SLOW 34→36과 짝: 정지선 도달속도 유지) */
+#define SPEED_TOP_PCT                   90.0f  /* §5.51: 85→88, §5.54: →90 — 커브 진입 완화(FRONT_MIN_ROLL)로 확보한 여유만큼 소폭 추가 상향 */
 #define SPEED_MIN_PCT                   34.0f
 /* §5.35 (user spec): 전방 ~30cm대 진입 시 확실히 한 김 죽인다 — 바닥 도달을
  * 30→34cm로 당기고 바닥을 38→34%로. 85% 관성 때문에 30cm 시점 실속도가 높아
@@ -331,6 +374,18 @@
 #define SPEED_FRONT_FAST_CM             78.0f
 #define SPEED_FRONT_SLOW_CM             36.0f  /* §5.51: 34→36 — TOP +3% 관성 보상, 감속 바닥 2cm 선행 */
 #define SPEED_FRONT_MIN_PCT             34.0f
+/* §5.54 (IMG_3198: "부드러운 롤링턴인데 멈췄다 가는 느낌"): frame-diff motion
+ * check found no literal v=0 stop — the front-distance governor bleeds speed
+ * down to the 34% floor by the COMMIT line (both sit at ~36cm) regardless of
+ * what kind of corner is coming, then the roll's fixed 64% outer duty snaps
+ * back up. That crawl-then-surge at EVERY corner reads as stop-and-go. A
+ * corner that will actually roll (open flank + stable side_bias already
+ * proven while still cruising, same predicate as the roll commit) does not
+ * need the deep floor meant for a hard brake-and-pivot stop — it carries
+ * through into the arc. Only the front-distance cap gets the relaxed floor;
+ * side/heading/yaw caps and the narrow-corner (pivot) path are untouched, so
+ * the stop-line braking margin for non-roll corners is unaffected. */
+#define SPEED_FRONT_MIN_PCT_ROLL        54.0f
 #define SPEED_SIDE_MIN_PCT              34.0f
 /* §5.44 (IMG_3182/mappf_v4 긁기): the flank speed ramp used to start only at
  * SIDE_SOFT_CM(10) — §5.36 free-running raised typical flank-approach speeds,
