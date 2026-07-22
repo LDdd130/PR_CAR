@@ -62,6 +62,12 @@ typedef struct
     uint8_t entry_heading_valid;
     uint8_t flip_used;
     uint8_t roll_turn;
+    /* §5.56: set when decide_turn_direction() could not read a clear L/R
+     * winner (tied sides — the geometrically symmetric corner before the
+     * bump). That pivot uses a shorter target: turn decisively once, then
+     * let cruise's course-axis heading hold finish the alignment straight,
+     * instead of grinding a full-target pivot at high inertia. */
+    uint8_t tie_break_turn;
     /* §5.47: side-bias sign, stabilized over consecutive cruise frames — a
      * single-frame L<->R swap (VL53L0X glitch in the plaza) must not decide a
      * turn direction against the wall that has been open the whole approach. */
@@ -764,18 +770,34 @@ static void centering_run(const DriveInputs *in)
     steer = approach_f(d.previous_steer, steer, CENTER_STEER_SLEW_PCT_PER_S * dt);
     d.previous_steer = steer;
 
-    /* -- speed governor: lowest cap wins; front cap is the braking budget */
+    /* -- speed governor: lowest cap wins; front cap is the braking budget.
+     * §5.54: a corner that is already proven roll-eligible while still
+     * cruising (same open-flank + gap test as the roll commit) gets a
+     * shallower front floor — it will arc through, not brake-stop.
+     * §5.56: this must use the SAME gap threshold as the actual roll commit
+     * (TURN_ROLL_GAP_CM), not the looser side_bias sign (SIDE_HYST_CM) — a
+     * near-symmetric wide corridor (the tied corner before the bump) crossed
+     * the loose threshold on sensor noise often enough to grant roll-speed
+     * while the corner almost always still fell through to a tied PIVOT,
+     * entering that pivot faster than tuned and overshooting. */
+    uint8_t roll_gap_now = (uint8_t)(in->left_valid && in->right_valid
+        && (in->l > (uint16_t)(in->r + TURN_ROLL_GAP_CM)
+            || in->r > (uint16_t)(in->l + TURN_ROLL_GAP_CM)));
+    uint8_t roll_likely = (uint8_t)(in->imu_live
+        && in->left_valid && in->right_valid && d.side_bias != 0 && roll_gap_now
+        && (uint16_t)((in->l > in->r) ? in->l : in->r) >= TURN_ROLL_OPEN_SIDE_CM);
+    float front_min = roll_likely ? SPEED_FRONT_MIN_PCT_ROLL : SPEED_FRONT_MIN_PCT;
     float speed = SPEED_TOP_PCT;
     if (in->f_valid)
     {
         float cap;
         if ((float)in->f <= SPEED_FRONT_SLOW_CM)
-            cap = SPEED_FRONT_MIN_PCT;
+            cap = front_min;
         else if ((float)in->f >= SPEED_FRONT_FAST_CM)
             cap = SPEED_TOP_PCT;
         else
-            cap = SPEED_FRONT_MIN_PCT
-                + ((SPEED_TOP_PCT - SPEED_FRONT_MIN_PCT)
+            cap = front_min
+                + ((SPEED_TOP_PCT - front_min)
                    * ((float)in->f - SPEED_FRONT_SLOW_CM)
                    / (SPEED_FRONT_FAST_CM - SPEED_FRONT_SLOW_CM));
         if (speed > cap) speed = cap;
@@ -1001,6 +1023,7 @@ static void hold_enter(const DriveInputs *in)
  * the previous direction rather than inventing one from noise. */
 static void decide_turn_direction(const DriveInputs *in)
 {
+    d.tie_break_turn = 0U;
     int8_t continuation = roll_continuation_direction(in->now);
     if (continuation != 0)
     {
@@ -1012,6 +1035,11 @@ static void decide_turn_direction(const DriveInputs *in)
     {
         if (in->l > (uint16_t)(in->r + SIDE_HYST_CM)) { d.turn_right = 0U; return; }
         if (in->r > (uint16_t)(in->l + SIDE_HYST_CM)) { d.turn_right = 1U; return; }
+        /* §5.56: no clear winner — the sides are tied. Whichever branch below
+         * fires, the direction is a guess (course rule or "keep the old
+         * one"), not a measured asymmetry, so this episode gets the short
+         * tie-break target regardless. */
+        d.tie_break_turn = 1U;
         if (d.course_latched && in->imu_live)
         {
             float rel = drive_wrap180(in->heading - d.course_zero);
@@ -1155,6 +1183,7 @@ static void cruise_run(const DriveInputs *in)
                 && bias_ok)
             {
                 d.turn_right = (uint8_t)(roll_direction > 0);
+                d.tie_break_turn = 0U;   /* §5.56: a roll commit always has a confident gap — never a tie */
                 spin_begin(in, 0U, 1U);
                 return;
             }
@@ -1194,7 +1223,13 @@ static void spin_run(const DriveInputs *in)
             || (in->right_valid && in->r < (uint16_t)TURN_ROLL_SIDE_MIN_CM)))
     {
         d.roll_turn = 0U;
-        command_pivot(TURN_SPEED, TURN_INNER, in->now, 1U);
+        /* §5.57 (IMG_3203: "멈췄다 도는 구간"): this demotion used to command
+         * the pivot duties IMMEDIATELY (motion_command_immediate) — the inner
+         * wheel snaps in one frame from a mild roll drag (~-14) to a hard
+         * reverse (-36), an instant discontinuity that reads as a stutter
+         * mid-corner. Route it through the normal wheel slew instead: still
+         * fast (800%/s, §5.37) but continuous, not a snap. */
+        command_pivot(TURN_SPEED, TURN_INNER, in->now, 0U);
     }
 
     float progress = 0.0f;
@@ -1251,12 +1286,24 @@ static void spin_run(const DriveInputs *in)
      * (mapp_v3 28s). A truly jammed pivot freezes its rotation and the wedge
      * check above catches it in 400 ms; everything else finishes the sweep. */
 
+    /* §5.56: a tied-sides pivot has no measured angle to aim at — turn to a
+     * shorter target once, decisively, and let cruise's course-axis heading
+     * hold finish the alignment while driving straight (user spec). A
+     * confidently decided pivot (clear L/R winner) keeps the full, hand-tuned
+     * TURN_TARGET_DEG.
+     * §5.57 (user spec: "롤링턴도 특정 각도까지 가면 그만 턴하게"): a roll gets
+     * its OWN fixed angle cap, checked/tightened independently of the pivot
+     * knobs below. */
+    float target_deg = d.roll_turn ? TURN_ROLL_TARGET_DEG
+        : (d.tie_break_turn ? TURN_TARGET_TIE_DEG : TURN_TARGET_DEG);
+    float over_slack = d.roll_turn ? TURN_ROLL_OVER_SLACK_DEG : TURN_OVER_SLACK_DEG;
+
     /* §5.25 (user spec): the turn IS the heading change — reaching the
      * target completes it unconditionally, whatever the nose reads. A close
      * front after a finished 90 is cruise's job (it brakes and decides from
      * a stable pose); holding the exit hostage to "front open + axis pose"
      * is what ground past the target into reversals and wall hits. */
-    if (progress_valid && progress >= TURN_TARGET_DEG && exit_course_ok(in))
+    if (progress_valid && progress >= target_deg && exit_course_ok(in))
     {
         cruise_enter(in);
         return;
@@ -1270,7 +1317,7 @@ static void spin_run(const DriveInputs *in)
      * with an every-zone cap; the §5.16 true-reversal pocket now resolves
      * via the retry budget (3 chunks -> straight back + fresh decide). */
     if (progress_valid
-        && d.turn_leg > (TURN_TARGET_DEG + TURN_OVER_SLACK_DEG))
+        && d.turn_leg > (target_deg + over_slack))
     {
         back_enter(in, 1U);
         return;
@@ -1283,8 +1330,14 @@ static void spin_run(const DriveInputs *in)
      * a corner pocket the diagonal across the opening also reads "clear", and
      * exiting there 40 deg short punched the car into the outer wall
      * (mapp_v5 20-21s: exit at +143 vs axis 180 -> L45mm hit -> second
-     * pivot). Every non-axis exit keeps the tighter §5.22 course leash. */
-    if (progress_valid && progress >= TURN_MIN_DEG
+     * pivot). Every non-axis exit keeps the tighter §5.22 course leash.
+     * §5.57: ROLL SKIPS this branch entirely — these axis/wide-open heuristics
+     * are tuned for a right-angle corridor's geometry (a clean 90 to align
+     * to, or a corner pocket's diagonal reading "open"); a rolling arc through
+     * a continuous curve doesn't present that geometry cleanly, and letting
+     * roll grab an early or late exit through it is what made completion
+     * inconsistent. Roll uses ONLY the fixed angle cap above. */
+    if (!d.roll_turn && progress_valid && progress >= TURN_MIN_DEG
         && (axis_aligned(in->heading)
             || (sides_open_wide(in) && wide_exit_course_ok(in))
             || (front_open_at(in, FRONT_CLEAR_CM)
