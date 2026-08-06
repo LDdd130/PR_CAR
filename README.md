@@ -12,13 +12,13 @@
   <img src="https://img.shields.io/badge/Safety-IWDG%202.048s-B4232C?style=flat-square" alt="IWDG">
 </p>
 
-<!-- TODO: assets/ 폴더에 아래 이미지를 추가한 뒤 주석을 해제하세요.
+<!-- TODO: assets/ 폴더에 아래 이미지를 추가한 뒤 주석을 해제하세요. -->
 <p>
-  <img src="./assets/pr_car.png" width="58%" alt="PR_CAR">
+  <img src="./PR_CAR_working/asset/image.png" width="58%" alt="PR_CAR">
   &nbsp;&nbsp;
-  <img src="./assets/dashboard.png" width="35%" alt="Telemetry Dashboard">
+  <!-- <img src="./assets/dashboard.png" width="35%" alt="Telemetry Dashboard"> -->
 </p>
--->
+
 
 **전방 초음파 · 측면 ToF ×2 · 9축 IMU · 휠 엔코더 ×2를 융합해 복도형 트랙을 자율주행하는 STM32 + FreeRTOS 임베디드 프로젝트입니다.**
 
