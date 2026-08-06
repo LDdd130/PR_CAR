@@ -14,18 +14,17 @@
 
 <!-- TODO: assets/ 폴더에 아래 이미지를 추가한 뒤 주석을 해제하세요. -->
 <p>
-  <img src="./PR_CAR_working/asset/image.png" width="58%" alt="PR_CAR">
+  <img src="./PR_CAR_working/asset/image.png" width=250 alt="PR_CAR">
   &nbsp;&nbsp;
   <!-- <img src="./assets/dashboard.png" width="35%" alt="Telemetry Dashboard"> -->
 </p>
 
-
 **전방 초음파 · 측면 ToF ×2 · 9축 IMU · 휠 엔코더 ×2를 융합해 복도형 트랙을 자율주행하는 STM32 + FreeRTOS 임베디드 프로젝트입니다.**
 
-<!-- TODO: 주행 시연 영상 업로드 후 링크 추가
-[▶ 주행 시연 영상](https://...)
--->
+### :movie_camera: 시연 영상
 
+
+https://github.com/user-attachments/assets/8a7412c8-d69e-47a4-b9cc-b2d05f96503b
 </div>
 
 ---
