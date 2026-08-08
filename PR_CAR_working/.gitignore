@@ -5,9 +5,23 @@ build/
 # IDE 및 에디터 설정
 .vscode/
 .settings/
+.idea/
+
+# AI 에이전트 설정 폴더
 .claude/
 .codex/
 .codex-plugins/
+.agents/
+.cursor/
+.github/copilot-instructions.md
+
+# AI 에이전트 생성 문서 / 산출물
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+HANDOVER.md
+skills-lock.json
+graphify-out/
 
 # 미디어 파일 (대용량)
 *.mov

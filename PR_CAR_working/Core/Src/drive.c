@@ -371,10 +371,18 @@ static void turn_hint_reset(void)
 
 /* Direction evidence belongs to one approaching front facet only. The old
  * all-cruise latch survived previous corners indefinitely; IMG_3188 then
- * reused that stale sign at the next facet and reversed a right-hand curve. */
+ * reused that stale sign at the next facet and reversed a right-hand curve.
+ * §5.61 (user diagnosis, IMG_3217 wall graze ~75mm plus-minus): this used to
+ * arm at FRONT_TURN_CM(44) — only 4 cm above the roll COMMIT line (40). At
+ * roll approach speed that is ~1 sensor-refresh cycle, so TURN_DIR_STABLE_N's
+ * 3-frame confirm often had not latched by the time the commit window opened;
+ * the roll then committed a beat late and close, and the following lateral
+ * correction (steering back off the near wall) is what read as "over-turn".
+ * Arm from farther out so the sign has real distance to stabilize BEFORE the
+ * commit line, not during it. */
 static void turn_hint_update(const DriveInputs *in)
 {
-    if (!in->f_valid || in->f >= FRONT_TURN_CM)
+    if (!in->f_valid || in->f >= TURN_HINT_ARM_CM)
     {
         turn_hint_reset();
         return;

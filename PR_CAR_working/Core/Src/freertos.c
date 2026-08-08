@@ -28,6 +28,8 @@
 #include "iwdg.h"    /* hiwdg — MotorTask가 큐 수신 성공 시에만 refresh */
 #include "motor.h"
 #include "drive.h"   /* DriveInputs(큐 메시지 그대로 사용) + 튜닝 노브 */
+#include "drive_math.h" /* drive_wrap180 — heading 스파이크 게이트(§5.67) */
+#include <math.h>    /* fabsf */
 #include "debug.h"   /* DebugMonitor_t dbg (SWD 미러 통합) */
 #include "bno055.h"
 #include "ultra.h"
@@ -351,9 +353,19 @@ static uint8_t sensor_put_front_danger_event(uint16_t f,
  * 주의 1: drive.c 제어는 wrap180() 차분만 사용 → 오프셋 유무와 제어 거동 무관.
  * 주의 2: BNO055_Init()을 런타임에 재호출하는 코드를 추가하면 칩 내부 heading이
  *         0으로 리셋되므로 yaw_offset_latched도 함께 0으로 클리어할 것.
- * 부수 효과: 보정 후 heading이 항상 [0,360) 보장 → tel_h_x10 음수 캐스팅 위험 제거 */
+ * 부수 효과: 보정 후 heading이 항상 [0,360) 보장 → tel_h_x10 음수 캐스팅 위험 제거
+ * §5.67: 이 오프셋은 "부팅 자세" 기준 1회 보정이라 부팅 대비 누적회전이 ~180도인
+ * 지점(고정 코스라 매번 같은 구간)에서 재영점된 heading이 도로 0/360 경계에
+ * 앉는다. wrap180 차분 자체는 그 경계에서도 수학적으로 무해하지만, 칩의 Euler
+ * 융합 출력이 경계 부근에서 실제 스파이크를 내면 그 스파이크도 "진짜 회전"처럼
+ * wrap180을 통과한다 — 아래 HEADING_JUMP_MAX_DPS 게이트가 그 스파이크 샘플만
+ * 골라 버린다(전방 초음파 FRONT_STABLE_CM과 동일 철학: 물리적으로 불가능한
+ * 순간 변화율은 진짜 값이 아니라 튄 것으로 간주). */
 static float   initial_yaw_offset = 0.0f;   /* 부팅 후 첫 유효 Raw Yaw [deg] */
 static uint8_t yaw_offset_latched = 0U;     /* 1 = 영점 래치 완료 */
+static float   last_good_heading = 0.0f;    /* 스파이크 게이트 기준값 (보정 후) */
+static uint32_t last_good_heading_ms = 0U;
+static uint8_t last_good_heading_valid = 0U;
 
 static bool Sensor_ReadHeading(BNO055_Euler *e)
 {
@@ -370,6 +382,24 @@ static bool Sensor_ReadHeading(BNO055_Euler *e)
     float h = (e->heading - initial_yaw_offset) + 180.0f;
     if      (h >= 360.0f) h -= 360.0f;
     else if (h <    0.0f) h += 360.0f;
+
+    uint32_t now = HAL_GetTick();
+    if (last_good_heading_valid && now > last_good_heading_ms)
+    {
+        float dt_s = (float)(now - last_good_heading_ms) / 1000.0f;
+        float rate = fabsf(drive_wrap180(h - last_good_heading)) / dt_s;
+        if (rate > HEADING_JUMP_MAX_DPS)
+        {
+            /* 물리적으로 불가능한 순간 회전율 — 이 샘플만 버리고 직전값 유지.
+             * last_good_heading_ms는 갱신하지 않아, 다음 샘플이 진짜 값이면
+             * (더 큰 dt로) 자연히 rate가 낮아져 통과한다. */
+            e->heading = last_good_heading;
+            return true;
+        }
+    }
+    last_good_heading = h;
+    last_good_heading_ms = now;
+    last_good_heading_valid = 1U;
     e->heading = h;
     return true;
 }

@@ -2,101 +2,148 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>PR_CAR Console</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#0f1216; --panel:#171b21; --panel2:#1e242c; --line:#2a323c;
-    --text:#e6edf3; --dim:#8b98a5; --mute:#5c6875;
-    --live:#35c9d6; --ok:#4ec77a; --warn:#e0a83c; --danger:#e2554e;
+    --bg:#070a0e; --panel:#0d1218; --panel2:#141c25; --panel3:#1c2733;
+    --line:#1e2a35; --line2:#2c3d4c;
+    --text:#dbe7f1; --dim:#7c8fa1; --mute:#4d5e6d;
+    --live:#2ee6d6; --ok:#3ddc84; --warn:#f0b429; --danger:#ff5a4e;
+    --glow:0 0 14px rgba(46,230,214,.4);
     --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
-    --sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  html,body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans)}
-  body{max-width:460px;margin:0 auto;padding:12px 14px 28px;min-height:100vh}
-  .row{display:flex;gap:10px}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px}
-  .lbl{font-size:11px;letter-spacing:1px;color:var(--mute);text-transform:uppercase}
-  .num{font-family:var(--mono);font-weight:500;font-variant-numeric:tabular-nums}
+  html{height:100%}
+  body{
+    margin:0;height:100dvh;overflow:hidden;
+    display:flex;flex-direction:column;gap:6px;
+    padding:6px max(8px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));
+    color:var(--text);font-family:var(--mono);font-variant-numeric:tabular-nums;
+    background:
+      radial-gradient(ellipse 120% 70% at 50% -10%, #102530 0%, transparent 62%),
+      repeating-linear-gradient(0deg, transparent 0 3px, rgba(255,255,255,.014) 3px 4px),
+      var(--bg);
+  }
 
-  /* topbar */
-  .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
-  .brand{font-family:var(--mono);font-weight:700;font-size:16px;letter-spacing:1px}
-  .brand small{color:var(--live)}
-  .conn{display:flex;align-items:center;gap:8px}
-  .dot{width:8px;height:8px;border-radius:50%;background:var(--mute)}
-  .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}
-  .cstat{font-size:12px;color:var(--dim);font-family:var(--mono)}
-  button{font-family:var(--sans);font-size:14px;color:var(--text);background:var(--panel2);
-    border:1px solid var(--line);border-radius:10px;padding:8px 14px;cursor:pointer;transition:.12s}
-  button:hover{border-color:var(--dim)}
-  button:active{transform:scale(.97)}
-  button:disabled{opacity:.35;cursor:not-allowed}
-  .btn-conn{background:var(--live);color:#04252a;border:none;font-weight:600}
-  .btn-conn.busy{background:var(--danger);color:#2a0a08}
+  /* ---------- 패널 프레임 (계기 모듈) ---------- */
+  .p{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:6px;
+     display:flex;flex-direction:column;min-height:0}
+  .p::after{content:'';position:absolute;inset:0;border-radius:6px;pointer-events:none;
+     background:linear-gradient(180deg,rgba(255,255,255,.035),transparent 42%)}
+  .ph{display:flex;align-items:center;gap:6px;padding:5px 8px 2px;flex:0 0 auto;
+      font-size:9px;font-weight:600;letter-spacing:.16em;color:var(--mute);text-transform:uppercase}
+  .ph::before{content:'';width:3px;height:8px;background:var(--live);opacity:.75;border-radius:1px}
+  .ph em{margin-left:auto;font-style:normal;letter-spacing:.08em;color:var(--line2)}
+  .stale{opacity:.32;transition:opacity .2s}
 
-  /* heading dial */
-  .hero{display:flex;flex-direction:column;align-items:center;padding:6px 0 2px}
+  /* ---------- 상단바 ---------- */
+  .top{flex:0 0 auto;display:flex;align-items:center;gap:10px}
+  .brand{font-weight:700;font-size:13px;letter-spacing:.1em}
+  .brand span{color:var(--live);font-weight:400}
+  .rx{flex:1;min-width:0;font-size:9.5px;color:var(--mute);letter-spacing:.06em;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
+  .conn{display:flex;align-items:center;gap:7px;flex:0 0 auto}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--mute);flex:0 0 auto}
+  .dot.on{background:var(--ok);box-shadow:0 0 9px var(--ok)}
+  .cstat{font-size:10px;color:var(--dim);letter-spacing:.06em;max-width:88px;
+         overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  button{font-family:var(--mono);color:var(--text);cursor:pointer;transition:.1s}
+  .btn-conn{background:var(--live);color:#042a2e;border:none;border-radius:6px;
+            padding:7px 13px;font-size:11px;font-weight:700;letter-spacing:.08em}
+  .btn-conn.busy{background:var(--danger);color:#2c0906}
+  .btn-conn:active{transform:scale(.96)}
+
+  /* ---------- 3컬럼 (좌 조작 / 중앙 계기 / 우 조작) ---------- */
+  .main{flex:1;display:grid;grid-template-columns:1fr 1.32fr 1fr;gap:8px;min-height:0}
+  .col{display:flex;flex-direction:column;gap:8px;min-height:0}
+
+  /* 세그먼트 토글 */
+  .seg{flex:0 0 auto;display:flex;background:var(--panel);border:1px solid var(--line);
+       border-radius:6px;overflow:hidden}
+  .seg button{flex:1;border:0;background:transparent;color:var(--dim);
+              font-size:10.5px;font-weight:600;letter-spacing:.08em;padding:9px 0}
+  .seg button.sel{background:var(--panel3);color:var(--live);box-shadow:inset 0 -2px 0 var(--live)}
+  .seg.pw button.sel.on{color:var(--ok);box-shadow:inset 0 -2px 0 var(--ok)}
+
+  /* 방향 패드 — 두 버튼 가로 배치 */
+  .pad{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:8px;min-height:0}
+  .pad button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+              background:var(--panel2);border:1px solid var(--line2);border-radius:8px;
+              touch-action:none;user-select:none;padding:4px}
+  .pad button .ar{font-size:clamp(17px,4.6vh,27px);line-height:1;color:var(--live)}
+  .pad button .tx{font-size:9px;font-weight:600;letter-spacing:.14em;color:var(--dim)}
+  .pad button:active:not(:disabled){background:var(--live);border-color:var(--live);box-shadow:var(--glow)}
+  .pad button:active:not(:disabled) .ar,
+  .pad button:active:not(:disabled) .tx{color:#042a2e}
+  .pad button:disabled{opacity:.26}
+  body:not(.linked) .pad{opacity:.4}
+
+  /* ---------- 중앙: 헤딩 다이얼 ---------- */
+  .hero{flex:1;display:flex;align-items:center;justify-content:center;padding:2px;min-height:0}
+  .hero svg{height:100%;width:auto;max-width:100%}
   .needle{transition:transform .18s ease-out;transform-origin:100px 100px}
   @media (prefers-reduced-motion:reduce){.needle,.car{transition:none}}
 
-  /* corridor */
-  .corr{display:flex;align-items:center;gap:8px;height:34px;margin:2px 0}
-  .wall{width:7px;height:30px;background:var(--mute);border-radius:2px}
-  .track{position:relative;flex:1;height:6px;background:var(--panel2);border-radius:3px}
-  .center-tick{position:absolute;left:50%;top:-4px;width:1px;height:14px;background:var(--line)}
-  .car{position:absolute;top:50%;width:26px;height:16px;background:var(--live);border-radius:4px;
-    transform:translate(-50%,-50%);left:50%;transition:left .18s ease-out}
-  .corr-lbl{display:flex;justify-content:space-between;margin-top:6px;font-size:12px;color:var(--dim)}
+  /* 복도 중앙유지 */
+  .corr{display:flex;align-items:center;gap:7px;padding:2px 9px 0}
+  .wall{width:5px;height:20px;background:linear-gradient(var(--dim),var(--line2));border-radius:1px}
+  .track{position:relative;flex:1;height:5px;background:var(--panel3);border-radius:3px}
+  .center-tick{position:absolute;left:50%;top:-5px;width:1px;height:15px;background:var(--line2)}
+  .car{position:absolute;top:50%;left:50%;width:22px;height:13px;background:var(--live);
+       border-radius:3px;transform:translate(-50%,-50%);transition:left .18s ease-out;
+       box-shadow:0 0 10px rgba(46,230,214,.45)}
+  .corr-lbl{display:flex;justify-content:space-between;padding:5px 9px 7px;font-size:10px;color:var(--dim)}
+  .corr-lbl b{color:var(--text);font-weight:500}
 
-  /* metrics */
-  .metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:12px}
-  .metric{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center}
-  .metric .v{font-size:26px;margin-top:3px}
-  .metric .u{font-size:11px;color:var(--mute)}
+  /* 계기 수치 */
+  .mrow{flex:0 0 auto;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .m{align-items:center;padding-bottom:6px}
+  .m .v{font-size:clamp(19px,4.8vh,28px);font-weight:500;line-height:1.05}
+  .m .u{font-size:8.5px;color:var(--mute);letter-spacing:.1em;margin-top:3px;
+        max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-  /* state + flags */
-  .staterow{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:12px}
-  .badge{font-family:var(--mono);font-weight:700;font-size:13px;letter-spacing:2px;
-    padding:6px 18px;border-radius:999px;background:var(--panel2);color:var(--live);border:1px solid var(--line)}
-  .flags{display:flex;gap:6px}
-  .flag{font-size:10px;font-family:var(--mono);padding:3px 7px;border-radius:6px;
-    background:var(--panel2);color:var(--mute);border:1px solid var(--line)}
-  .flag.on{color:var(--ok);border-color:var(--ok)}
+  /* 상태 스트립 */
+  .st{flex:0 0 auto;display:flex;align-items:center;gap:7px;padding:5px 7px;
+      background:var(--panel);border:1px solid var(--line);border-radius:6px}
+  .badge{flex:1;text-align:center;font-size:11px;font-weight:700;letter-spacing:.16em;
+         padding:4px 0;border-radius:4px;background:var(--panel3);color:var(--live)}
+  .flag{font-size:8.5px;font-weight:600;letter-spacing:.08em;padding:4px 6px;border-radius:4px;
+        background:var(--panel2);color:var(--mute);border:1px solid var(--line)}
+  .flag.on{color:var(--ok);border-color:rgba(61,220,132,.55);background:rgba(61,220,132,.08)}
 
-  /* controls */
-  .ctrl{margin-top:16px}
-  .toggles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
-  .seg{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
-  .seg button{flex:1;border:none;border-radius:0;background:transparent;padding:10px 0;font-weight:500}
-  .seg button.sel{background:var(--panel2);color:var(--live)}
-  .seg.pw button.sel.on{color:var(--ok)}
-  .dpad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:260px;margin:0 auto}
-  .dpad .sp{visibility:hidden}
-  .dpad button{padding:16px 0;font-size:22px;font-family:var(--mono);touch-action:none;user-select:none}
-  .dpad button.stop{color:var(--danger);border-color:#4a2320}
-  .tune{display:flex;gap:8px;margin-top:14px;align-items:center}
-  .tune label{font-size:12px;color:var(--dim);white-space:nowrap}
-  .tune input{flex:1;font-family:var(--mono);background:var(--panel);color:var(--text);
-    border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:14px;min-width:0}
+  /* 하단 패킷 로그 */
+  .foot{flex:0 0 auto;font-size:9px;color:var(--mute);letter-spacing:.04em;
+        background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:4px 8px;
+        overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-  /* raw / hint */
-  .raw{margin-top:14px;font-family:var(--mono);font-size:11px;color:var(--mute);
-    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px;
-    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .hint{margin-top:14px;font-size:12px;color:var(--warn);background:#1e1810;
-    border:1px solid #3a2f16;border-radius:10px;padding:10px 12px;line-height:1.5;display:none}
+  /* 안내 오버레이 (레이아웃 밀지 않도록 absolute) */
+  .hint{position:fixed;left:10px;right:10px;top:8px;z-index:20;display:none;
+        font-size:11px;line-height:1.5;color:var(--warn);background:#1a1509;
+        border:1px solid #3d3113;border-radius:8px;padding:9px 12px;
+        box-shadow:0 8px 24px rgba(0,0,0,.55)}
   .hint.show{display:block}
+
+  /* ---------- 세로 모드 폴백 ---------- */
+  @media (orientation:portrait){
+    body{height:auto;min-height:100dvh;overflow:auto;max-width:460px;margin:0 auto}
+    .main{grid-template-columns:1fr;gap:10px}
+    .col-mon{order:-1}
+    .hero svg{height:auto;width:min(78%,240px)}
+    .pad{min-height:104px}
+  }
 </style>
 </head>
 <body>
 
+  <div class="hint" id="hint"></div>
+
   <div class="top">
-    <div class="brand">PR_CAR<small>·CONSOLE</small></div>
+    <div class="brand">PR_CAR<span>/CONSOLE</span></div>
+    <div class="rx" id="rxstat">RX — 미연결</div>
     <div class="conn">
       <span class="dot" id="dot"></span>
       <span class="cstat" id="cstat">미연결</span>
@@ -104,95 +151,90 @@
     </div>
   </div>
 
-  <div class="hint" id="hint"></div>
+  <div class="main">
 
-  <!-- 헤딩 나침반 (시그니처) — IMU 플래그 꺼지면 카드 흐림(값이 stale임을 표시) -->
-  <div class="card hero" id="heroCard">
-    <svg viewBox="0 0 200 200" width="180" height="180" role="img" aria-label="heading">
-      <circle cx="100" cy="100" r="88" fill="none" stroke="var(--line)" stroke-width="2"/>
-      <g id="ticks"></g>
-      <!-- 펌웨어가 시작 자세를 180°로 재영점 → UI는 '시작축 대비 편차'로 표시 (0=시작 방향, +우/−좌) -->
-      <text x="100" y="26" text-anchor="middle" font-size="12" fill="var(--mute)" font-family="var(--mono)">0</text>
-      <text x="180" y="105" text-anchor="middle" font-size="12" fill="var(--mute)" font-family="var(--mono)">+90</text>
-      <text x="100" y="184" text-anchor="middle" font-size="12" fill="var(--mute)" font-family="var(--mono)">±180</text>
-      <text x="20" y="105" text-anchor="middle" font-size="12" fill="var(--mute)" font-family="var(--mono)">-90</text>
-      <g class="needle" id="needle">
-        <line x1="100" y1="100" x2="100" y2="26" stroke="var(--live)" stroke-width="3" stroke-linecap="round"/>
-        <line x1="100" y1="100" x2="100" y2="140" stroke="var(--mute)" stroke-width="3" stroke-linecap="round"/>
-      </g>
-      <circle cx="100" cy="100" r="6" fill="var(--live)"/>
-      <text x="100" y="92" text-anchor="middle" font-size="34" font-weight="500" fill="var(--text)" font-family="var(--mono)" id="hdgTxt">--</text>
-      <text x="100" y="118" text-anchor="middle" font-size="11" fill="var(--mute)" letter-spacing="2" font-family="var(--mono)">Δ HEADING °</text>
-      <text x="100" y="134" text-anchor="middle" font-size="10" fill="var(--mute)" font-family="var(--mono)" id="hdgRaw">RAW --°</text>
-    </svg>
-  </div>
-
-  <!-- 복도 중앙유지 (시그니처 2) — SIDE 플래그 꺼지면 카드 흐림 -->
-  <div class="card" style="margin-top:12px" id="corrCard">
-    <div class="lbl" style="margin-bottom:8px">중앙 유지 (측면 ToF)</div>
-    <div class="corr">
-      <span class="wall"></span>
-      <div class="track"><span class="center-tick"></span><span class="car" id="car"></span></div>
-      <span class="wall"></span>
-    </div>
-    <div class="corr-lbl"><span>좌 <b class="num" id="lTxt">--</b> mm</span><span>우 <b class="num" id="rTxt">--</b> mm</span></div>
-  </div>
-
-  <!-- 전방 / 속도 (차체 속도 = (vL+vR)/2, 좌우 개별값은 캘리브용 보조 표기) -->
-  <div class="metrics">
-    <div class="metric"><div class="lbl">전방</div><div class="v num" id="fVal">--</div><div class="u">cm</div></div>
-    <div class="metric"><div class="lbl">속도</div><div class="v num" id="vVal">--</div><div class="u">cm/s · <span class="num" id="vlrTxt">L -- R --</span></div></div>
-  </div>
-
-  <!-- 상태 + 플래그 -->
-  <div class="staterow">
-    <span class="badge" id="stBadge">--</span>
-    <div class="flags">
-      <span class="flag" id="fl-imu">IMU</span>
-      <span class="flag" id="fl-side">SIDE</span>
-      <span class="flag" id="fl-front">FRONT</span>
-    </div>
-  </div>
-
-  <!-- 조작 -->
-  <div class="ctrl">
-    <div class="toggles">
+    <!-- 좌: 전원 + 전진/후진 -->
+    <div class="col">
       <div class="seg pw">
         <button id="pwOn">전원 ON</button>
         <button id="pwOff" class="sel">OFF</button>
       </div>
+      <div class="pad">
+        <button data-cmd="U" aria-label="전진"><span class="ar">▲</span><span class="tx">전진</span></button>
+        <button data-cmd="D" aria-label="후진"><span class="ar">▼</span><span class="tx">후진</span></button>
+      </div>
+    </div>
+
+    <!-- 중앙: 계기 -->
+    <div class="col col-mon">
+
+      <!-- 헤딩 나침반 — IMU 플래그 꺼지면 흐림(값이 stale임을 표시) -->
+      <div class="p" id="heroCard" style="flex:1">
+        <div class="ph">Heading<em>IMU</em></div>
+        <div class="hero">
+          <svg viewBox="0 0 200 200" role="img" aria-label="heading">
+            <circle cx="100" cy="100" r="88" fill="none" stroke="var(--line)" stroke-width="2"/>
+            <circle cx="100" cy="100" r="70" fill="none" stroke="var(--line)" stroke-width="1" opacity=".5"/>
+            <g id="ticks"></g>
+            <!-- 펌웨어가 시작 자세를 180°로 재영점 → UI는 '시작축 대비 편차'로 표시 (0=시작 방향, +우/−좌) -->
+            <text x="100" y="24" text-anchor="middle" font-size="11" fill="var(--mute)" font-family="var(--mono)">0</text>
+            <text x="181" y="104" text-anchor="middle" font-size="11" fill="var(--mute)" font-family="var(--mono)">+90</text>
+            <text x="100" y="185" text-anchor="middle" font-size="11" fill="var(--mute)" font-family="var(--mono)">±180</text>
+            <text x="19" y="104" text-anchor="middle" font-size="11" fill="var(--mute)" font-family="var(--mono)">-90</text>
+            <g class="needle" id="needle">
+              <line x1="100" y1="100" x2="100" y2="28" stroke="var(--live)" stroke-width="3" stroke-linecap="round"/>
+              <line x1="100" y1="100" x2="100" y2="138" stroke="var(--mute)" stroke-width="3" stroke-linecap="round"/>
+            </g>
+            <circle cx="100" cy="100" r="5.5" fill="var(--live)"/>
+            <text x="100" y="92" text-anchor="middle" font-size="33" font-weight="500" fill="var(--text)" font-family="var(--mono)" id="hdgTxt">--</text>
+            <text x="100" y="117" text-anchor="middle" font-size="10" fill="var(--mute)" letter-spacing="2.5" font-family="var(--mono)">Δ HEADING °</text>
+            <text x="100" y="133" text-anchor="middle" font-size="9" fill="var(--mute)" font-family="var(--mono)" id="hdgRaw">RAW --°</text>
+          </svg>
+        </div>
+      </div>
+
+      <!-- 복도 중앙유지 — SIDE 플래그 꺼지면 흐림 -->
+      <div class="p" id="corrCard">
+        <div class="ph">중앙 유지<em>ToF ×2</em></div>
+        <div class="corr">
+          <span class="wall"></span>
+          <div class="track"><span class="center-tick"></span><span class="car" id="car"></span></div>
+          <span class="wall"></span>
+        </div>
+        <div class="corr-lbl"><span>좌 <b id="lTxt">--</b> mm</span><span>우 <b id="rTxt">--</b> mm</span></div>
+      </div>
+
+      <!-- 전방 / 속도 (차체 속도 = (vL+vR)/2, 좌우 개별값은 캘리브용 보조 표기) -->
+      <div class="mrow">
+        <div class="p m"><div class="ph">전방<em>cm</em></div><div class="v" id="fVal">--</div><div class="u">ULTRASONIC</div></div>
+        <div class="p m"><div class="ph">속도<em>cm/s</em></div><div class="v" id="vVal">--</div><div class="u" id="vlrTxt">L -- R --</div></div>
+      </div>
+
+      <div class="st">
+        <span class="badge" id="stBadge">--</span>
+        <span class="flag" id="fl-imu">IMU</span>
+        <span class="flag" id="fl-side">SIDE</span>
+        <span class="flag" id="fl-front">FRONT</span>
+      </div>
+
+    </div>
+
+    <!-- 우: 모드 + 좌회전/우회전 -->
+    <div class="col">
       <div class="seg">
         <button id="mdAuto">AUTO</button>
         <button id="mdMan">MANUAL</button>
       </div>
+      <div class="pad">
+        <button data-cmd="L" aria-label="좌회전"><span class="ar">◀</span><span class="tx">좌</span></button>
+        <button data-cmd="R" aria-label="우회전"><span class="ar">▶</span><span class="tx">우</span></button>
+      </div>
     </div>
 
-    <div class="dpad" id="dpad">
-      <span class="sp"></span>
-      <button data-cmd="U" aria-label="전진">▲</button>
-      <span class="sp"></span>
-      <button data-cmd="L" aria-label="좌회전">◀</button>
-      <button data-cmd="S" class="stop" aria-label="정지">■</button>
-      <button data-cmd="R" aria-label="우회전">▶</button>
-      <span class="sp"></span>
-      <button data-cmd="D" aria-label="후진">▼</button>
-      <span class="sp"></span>
-    </div>
-
-    <!-- RAW 명령 = 펌웨어 '#KEY=VAL' 파서(BT_ParseLine) 직통 채널. 재플래시 없이:
-         #ML=35/#MR=35 (수동모드 좌/우 duty 개별 인가 — R2 속도 캘리브레이션),
-         #HZ=5 (텔레메트리 프레임레이트 1..20Hz), #TEL=0/1 (텔레메트리 정지/재개),
-         #VT=45 (목표속도 저장 — R4 속도 PI 예정, 현재 저장만) -->
-    <div class="tune">
-      <label>RAW 명령</label>
-      <input type="text" id="rawIn" placeholder="#ML=35  ·  #HZ=5  ·  #TEL=0" autocapitalize="off" autocomplete="off">
-      <button id="rawSend">전송</button>
-    </div>
   </div>
 
   <!-- 수신 진단: 패킷이 오는데 값이 정지 = 펌웨어/센서 문제, 패킷 자체가 없음 = BLE/링크 문제 -->
-  <div class="raw" id="rxstat">RX -- (미연결)</div>
-  <div class="raw" id="raw">최근 패킷: (없음)</div>
+  <div class="foot" id="raw">최근 패킷: (없음)</div>
 
 <script>
 /* ============================================================
@@ -202,7 +244,7 @@
    heading: 펌웨어가 부팅 첫 Yaw를 180°로 재영점 → 180 = 시작 방향.
             UI는 Δ = heading−180 (0=시작축, +우/−좌, ±180 랩)로 표시.
    속도:   차체 속도 = (vL+vR)/2 [cm/s] 메인 표시, L/R 개별값은 보조(캘리브용).
-   명령:  전원 1/0 · 모드 A/M · 수동 U/D/L/R/S · 튜닝 #VT=..\n
+   명령:  전원 1/0 · 모드 A/M · 수동 U/D/L/R (누르는 동안 이동, 떼면 S=정지)
    ============================================================ */
 
 /* ---- 필요 시 여기만 수정 ---- */
@@ -212,12 +254,13 @@ const NAME_PREFIXES = ['HM','BT','MLT','CC41'];  // 클론 대응: 모듈 이름
 const STATE_NAMES = ['CRUISE','BRAKE','SPIN','REVERSE','HOLD','SIDE_AVOID','CORNER','MANUAL'];
 
 const $ = id => document.getElementById(id);
+const padBtns = () => document.querySelectorAll('.pad button[data-cmd]');
 let bleChar = null, bleDevice = null, rxBuf = '';
 
 /* ---------- 나침반 눈금 생성 ---------- */
 (function(){let s='';for(let d=0;d<360;d+=30){const a=(d-90)*Math.PI/180;
   const r1=d%90===0?76:81, r2=88;
-  s+=`<line x1="${100+r1*Math.cos(a)}" y1="${100+r1*Math.sin(a)}" x2="${100+r2*Math.cos(a)}" y2="${100+r2*Math.sin(a)}" stroke="var(--line)" stroke-width="${d%90===0?2:1}"/>`;}
+  s+=`<line x1="${100+r1*Math.cos(a)}" y1="${100+r1*Math.sin(a)}" x2="${100+r2*Math.cos(a)}" y2="${100+r2*Math.sin(a)}" stroke="var(--line2)" stroke-width="${d%90===0?2:1}"/>`;}
   $('ticks').innerHTML=s;})();
 
 /* ---------- 연결 ---------- */
@@ -276,10 +319,10 @@ function parseFrame(line){
    (패킷 옴 + 값 정지 = 펌웨어/센서 · 패킷 없음 = BLE 링크/텔레메트리 OFF) */
 setInterval(()=>{
   const el = $('rxstat');
-  if(!bleChar){ el.textContent = 'RX -- (미연결)'; el.style.color = ''; return; }
+  if(!bleChar){ el.textContent = 'RX — 미연결'; el.style.color = ''; return; }
   const age = lastPktT ? (performance.now() - lastPktT) / 1000 : Infinity;
-  el.textContent = `RX ${pktN} pkt · 마지막 ${age === Infinity ? '수신 없음' : age.toFixed(1) + 's 전'}`
-                 + (parseErrN ? ` · 파싱실패 ${parseErrN}` : '');
+  el.textContent = `RX ${pktN} pkt · ${age === Infinity ? '수신 없음' : age.toFixed(1) + 's 전'}`
+                 + (parseErrN ? ` · ERR ${parseErrN}` : '');
   el.style.color = (age > 2) ? 'var(--danger)' : '';
 }, 500);
 
@@ -292,8 +335,8 @@ function updateUI(d){
   $('needle').style.transform = `rotate(${rel}deg)`;
   $('hdgTxt').textContent = (rel >= 0 ? '+' : '') + rel.toFixed(1);
   $('hdgRaw').textContent = 'RAW ' + d.hdg.toFixed(1) + '°';
-  $('heroCard').style.opacity = imuOk ? 1 : .4;
-  $('corrCard').style.opacity = sideOk ? 1 : .4;
+  $('heroCard').classList.toggle('stale', !imuOk);
+  $('corrCard').classList.toggle('stale', !sideOk);
   // 복도 중앙
   $('lTxt').textContent = d.L; $('rTxt').textContent = d.R;
   const tot = d.L + d.R;
@@ -305,7 +348,7 @@ function updateUI(d){
   fEl.style.color = d.f<20 ? 'var(--danger)' : d.f<35 ? 'var(--warn)' : 'var(--text)';
   // 속도: 차체 속도 = 좌우 평균 (부호 = 최근 구동 명령 방향)
   $('vVal').textContent = Math.round((d.vL + d.vR) / 2);
-  $('vlrTxt').textContent = `L ${d.vL} R ${d.vR} · steer ${d.steer}`;
+  $('vlrTxt').textContent = `L ${d.vL} R ${d.vR} · STEER ${d.steer}`;
   // 상태
   $('stBadge').textContent = STATE_NAMES[d.st] || '?';
   // 플래그  (b0 front, b1 side, b2 imu, b3 power, b4 mode)
@@ -333,13 +376,10 @@ $('pwOn').onclick  = () => send('1');
 $('pwOff').onclick = () => send('0');
 $('mdAuto').onclick= () => send('A');
 $('mdMan').onclick = () => send('M');
-$('rawSend').onclick= () => { const v=$('rawIn').value.trim(); if(v!=='') send(v+'\n'); };
-$('rawIn').addEventListener('keydown', e => { if(e.key==='Enter') $('rawSend').click(); });
 
-// D-pad: 누르는 동안 이동, 떼면 정지 (수동값이 래칭이라 hold-to-drive가 안전)
-$('dpad').querySelectorAll('button').forEach(b=>{
+// 방향 패드: 누르는 동안 이동, 떼면 정지 (수동값이 래칭이라 hold-to-drive가 안전)
+padBtns().forEach(b=>{
   const cmd = b.dataset.cmd;
-  if(cmd === 'S'){ b.onclick = () => send('S'); return; }
   const press = ev => { ev.preventDefault(); send(cmd); };
   const release = () => send('S');
   b.addEventListener('pointerdown', press);
@@ -353,7 +393,7 @@ function setConn(ok, name){
   $('dot').classList.toggle('on', ok);
   $('cstat').textContent = ok ? (name||'연결됨') : '미연결';
   const btn=$('connBtn'); btn.textContent = ok?'해제':'연결'; btn.classList.toggle('busy', ok);
-  $('dpad').style.opacity = ok?1:.5;
+  document.body.classList.toggle('linked', ok);
 }
 function reflectToggles(power, manual){
   $('pwOn').classList.toggle('sel', power);  $('pwOn').classList.toggle('on', power);
@@ -361,9 +401,7 @@ function reflectToggles(power, manual){
   $('mdAuto').classList.toggle('sel', power && !manual);
   $('mdMan').classList.toggle('sel', power && manual);
   // 수동일 때만 방향패드 활성
-  $('dpad').querySelectorAll('button[data-cmd]').forEach(b=>{
-    if(b.dataset.cmd!=='S') b.disabled = !manual;
-  });
+  padBtns().forEach(b => { b.disabled = !manual; });
 }
 function showHint(m){ const h=$('hint'); h.textContent=m; h.classList.add('show'); }
 function hideHint(){ $('hint').classList.remove('show'); }

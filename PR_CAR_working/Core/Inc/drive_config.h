@@ -39,9 +39,16 @@
  * DANGER < DECIDE < STOP < TURN < CLEAR, guarded below.
  * DECIDE 17 is a user-mandated spec (§5.9 20cm -> §5.24 16~17cm): a pivot
  * direction is only decided from a wall firmly confirmed at the decide line
- * by consecutive fresh AND stable samples. Turns start nowhere else. */
+ * by consecutive fresh AND stable samples. Turns start nowhere else.
+ * §5.65 (사용자 확인: 피벗/롤 코너 둘 다 "아직도 거의 벽에 다 와서 돈다"):
+ * §5.9~5.24가 16까지 좁힌 이유는 노이즈 오탐 방지(전방 확정 없이 turn 시작
+ * 금지)였지, "더 멀리서는 절대 안 된다"는 못은 아니었다. §5.23의 fresh+stable
+ * 안정성 게이트(FRONT_STABLE_CM)와 confirm 카운트가 이미 노이즈 방어를 맡고
+ * 있으므로, 결정선 자체를 살짝 물러도 오탐 방어력은 유지된다. 16→19로 소폭
+ * 완화 — 20(§5.9 원안)까지 전부 되돌리진 않음. 직선에서 헛턴 재발하면 즉시
+ * 16으로 원복(§5.24로 롤백, 그 밑 20 재시도는 §5.9 실패 이력 재확인 필요). */
 #define FRONT_DANGER_CM                 12
-#define FRONT_DECIDE_CM                 16
+#define FRONT_DECIDE_CM                 19  /* §5.65: 16→19 */
 #define FRONT_STOP_CM                   30    /* §5.27: 34→30 — 코너 접근 36cm 호버링이 만드는 경계선 브레이크(멈칫) 컷 */
 #define FRONT_TURN_CM                   44
 #define FRONT_CLEAR_CM                  52
@@ -53,8 +60,14 @@
 /* §5.23: confirm samples must also AGREE — a head-on wall closes a few cm
  * per frame, floor/bump echoes teleport (mapp_v2: 3->30->16). Consecutive
  * samples differing more than this restart the confirm chain. The danger
- * ladder (FRONT_DANGER_CM) stays ungated: safety beats phantom rejection. */
-#define FRONT_STABLE_CM                  4U
+ * ladder (FRONT_DANGER_CM) stays ungated: safety beats phantom rejection.
+ * §5.63 (전방인식 재점검): 이 게이트는 TOP 63%(§5.23 도입 시점) 기준으로 잡힌
+ * 값인데 이후 여러 차례 걸쳐 TOP이 94%까지 올라갔다 — 실제 벽으로 다가갈 때
+ * 프레임당 좁혀지는 거리(cm)도 그만큼 커져, 4cm 문턱이 정상적인 고속 접근조차
+ * 이따금 "불일치"로 끊어 confirm 체인을 재시작시킬 여지가 생김(반응 지연 → 그
+ * 만큼 브레이크/코너 판단이 늦어짐). 층/턱 텔레포트는 보통 수십 cm 단위라 5cm로
+ * 올려도 그 방어력과는 거리가 있음. */
+#define FRONT_STABLE_CM                  5U  /* §5.63: 4→5 — TOP 63→94 누적 상향에 맞춰 여유 확보 */
 #define CLEAR_CONFIRM_N                  3U
 
 /* ---- Side geometry (cm, perpendicular ToF). [REMEASURE] ------------------
@@ -127,6 +140,19 @@
  * VL53L0X L<->R swap. cruise_run stabilizes the open-flank sign over this many
  * consecutive frames; the roll commit uses that, not the raw instant. */
 #define TURN_DIR_STABLE_N                3U
+/* §5.61 (user diagnosis, IMG_3217 ~75mm 벽 그레이징): the sign-stabilization
+ * above used to arm at FRONT_TURN_CM(44) — only 4cm of lead before the roll
+ * COMMIT line (TURN_ROLL_COMMIT_CM=40). At roll approach speed that is about
+ * one sensor-refresh cycle, so the 3-frame confirm frequently had not latched
+ * yet when the commit window opened: the roll committed a beat late/close to
+ * the wall, and the lateral correction steering back off that near wall is
+ * what read as "over-turn" (user: "즉각즉각 안 하니까 긁으면서 도는 것"). Arm
+ * the sign tracker from farther out than the commit line so the direction is
+ * already confirmed BEFORE commit, not decided during it. Must stay above
+ * TURN_ROLL_COMMIT_CM with real margin (guarded below); narrow-corridor false
+ * starts are still rejected by the open_side>=TURN_ROLL_OPEN_SIDE_CM gate,
+ * which fires regardless of how far out this arms. */
+#define TURN_HINT_ARM_CM                60
 /* IMG_3188: the wide curve is made of consecutive facets. After one rolling
  * sweep, the next front facet can make the OUTSIDE flank look more open and
  * falsely request the opposite turn. Keep the proven rolling direction only
@@ -169,8 +195,12 @@
  * 중 프레임 소모)이 진행되는 동안 F가 MIN_F_CM(24) 바닥까지 빠르게 줄어
  * 커밋이 24~28cm 근처로 밀렸다 — 그게 "아슬아슬한 진입"의 실제 원인. 창을
  * 40cm로 넓혀 confirm이 더 먼 거리(대략 36~40cm)에서 끝나도록 여유 확보.
- * FRONT_TURN_CM(44) 미만 가드 유지 — 44에 너무 붙지 않도록 40에서 멈춤. */
-#define TURN_ROLL_COMMIT_CM             40
+ * FRONT_TURN_CM(44) 미만 가드 유지 — 44에 너무 붙지 않도록 40에서 멈춤.
+ * §5.65 (사용자 확인: 롤 코너도 "아직도 거의 벽에 다 와서 돈다"): 남은 헤드룸
+ * 안에서 한 걸음 더 — 40→42. FRONT_TURN_CM(44)과는 여전히 2cm 간격 유지(그
+ * 밑은 컴파일 가드가 막음). 이 이상은 §5.55가 우려한 "44에 너무 붙음" 구간이라
+ * 추가 여유가 필요하면 FRONT_TURN_CM 쪽 재검토가 먼저. */
+#define TURN_ROLL_COMMIT_CM             42  /* §5.65: 40→42 */
 /* §5.49 (user spec: "코너링에서도 딱 중앙쪽으로 안전하게"): mid-roll the flank
  * demotion used the repel-band SIDE_HARD_CM(7) — by the time a rolling arc is
  * 7 cm off a wall it is already scraping. Own threshold, set wider, so the
@@ -225,8 +255,16 @@
  * 새 축)으로 갈린다 — 코스 프레임이 실제 물리 회전과 반대로 기록되는 순간이
  * "가끔" 나오는 원인. 반올림 경계에서 확실히 벗어난 값으로 상향(58°: 44~47
  * 흔들림이 전부 90° 쪽으로 반올림되도록 여유 확보). 65°(일반 피벗) 보다는
- * 여전히 짧아 "턴 한번+좌우는 가면서"(§5.56) 취지는 유지. */
-#define TURN_TARGET_TIE_DEG             58.0f
+ * 여전히 짧아 "턴 한번+좌우는 가면서"(§5.56) 취지는 유지.
+ * §5.59 (방지턱 코너 잔여 과턴): §5.30 정책상 피벗은 테이퍼 없이 풀듀티로 돌다
+ * cutoff — 스킵 관성 리드가 목표각 위에 그대로 얹힌다(타이 피벗도 예외 아님).
+ * 45→58 상향으로 역주행은 잡았지만 그만큼 실제 완료각도 함께 밀려 올라가
+ * "과턴이 좀 남는다"는 호소로 재현. 목표 자체를 52로 낮춰 실제 완료각을
+ * 되돌린다 — 45° 반올림 경계와는 여전히 7° 이상 떨어져 있고, 관성 리드가 항상
+ * 양(+)의 방향(더 도는 쪽)으로만 얹히므로 실제 완료각은 52보다 더 커서 경계에서
+ * 오히려 더 멀어진다(역주행 재발 없음). 더 남으면 48, 여전히 부족하면 45+7=52가
+ * 하한선(그 밑은 §5.58 경계 재진입 위험). */
+#define TURN_TARGET_TIE_DEG             52.0f
 #define TURN_MIN_DEG                    30.0f
 #define TURN_WRONG_DEG                  20.0f
 #define TURN_AXIS_ALIGN_DEG             10.0f
@@ -273,7 +311,13 @@
  * and the car weaves between the repel zones. Knee gains add authority only
  * past the weave regime (§5.15). */
 #define CENTER_SENSOR_MAX_CM            80U
-#define CENTER_LPF_ALPHA                 0.45f
+/* §5.63 (사용자 명세: "좀더 안정적으로 좌우값 비슷하게"): §5.60/5.62에서 이미
+ * 두 번 KP/KNEE_GAIN 게인을 흔들었다 — 게인을 또 올리면 §5.58처럼 웨이브
+ * 재발과 종이 한 장 차이. 대신 게인이 반응하는 원본 신호(l_lp/r_lp)를 더
+ * 매끈하게 만들어 같은 게인으로도 더 안정된 출력이 나오게 함. 0.45→0.36 —
+ * 코너 전이(수백 ms~초 단위) 대비 지연 증가는 미미(τ 24→36ms), 센서 지터만
+ * 더 죽음. */
+#define CENTER_LPF_ALPHA                 0.36f  /* §5.63: 0.45→0.36 */
 #define CENTER_DERR_LPF_ALPHA            0.28f
 #define CENTER_DERR_MAX_CMS             35.0f
 #define CENTER_YAW_LPF_ALPHA             0.22f
@@ -312,10 +356,23 @@
  * (0.45) and the 0.6° heading deadband, so this does NOT reopen §5.8 weaving
  * (that failure was a HEADING deadband swallowing the command, not this). */
 #define CENTER_DEADZONE_CM               1.5f
-#define CENTER_LATERAL_KP_DEG_PER_CM     0.72f  /* IMG_3188: 0.52→0.64, §5.58: →0.72 — 데드존(1.5cm) 밖 좌우 밸런싱 강화. 데드존 안(사용자: 안 치우쳤으면 직진 유지)은 불변 */
+/* §5.60 (IMG_3217, "직진만 하면 되는데 왜 자꾸 도는지"): 0.72는 데드존 밖에서
+ * cm당 스티어 권한이 너무 커져 직선/완만 코너에서 좌우 미세오차마다 눈에 띄게
+ * 꺾는 웨이브로 체감됨 — §5.58 밸런싱 강화가 과했다. 직전 값(0.64, 여러 영상에서
+ * 검증됨)으로 되돌림. 밸런싱 자체는 데드존(1.5cm) 밖에서 여전히 작동, 다만 반응
+ * 강도만 원복. 다시 치우침이 심해지면 0.64→0.68 사이에서 재시도, 0.72는 금지.
+ * §5.62 (사용자 명세: "코스 중앙을 어지간하면 유지, 벽에 안 박게"): §5.60이 예고한
+ * 안전 상한(0.68)까지만 소폭 재상향 — 노이즈 대역(데드존 바로 밖, 수 cm)에서
+ * 웨이브를 재현했던 0.72와는 여전히 거리를 둠. 실질적인 "중앙 유지"는 아래
+ * KNEE_GAIN이 담당(진짜 드리프트에서만 크게 당김). */
+#define CENTER_LATERAL_KP_DEG_PER_CM     0.68f  /* §5.62: 0.64→0.68 */
 #define CENTER_LATERAL_KD_DEG_PER_CMS    0.045f
+/* §5.62: 위 KP는 노이즈 웨이브 재발을 피하려 저에러대에서 보수적으로 묶여
+ * 있다 — "중앙을 어지간하면 유지"하려면 큰 오프셋(진짜 드리프트, 벽 근접
+ * 위험)에서만 별도로 세게 당겨야 한다. 무릎(10cm) 너머 기울기를 1.0→1.8배로:
+ * 저에러(데드존~10cm) 거동은 그대로, 10cm 넘는 실드리프트만 훨씬 강하게 복귀. */
 #define CENTER_LATERAL_KNEE_CM          10.0f
-#define CENTER_LATERAL_KNEE_GAIN         1.0f
+#define CENTER_LATERAL_KNEE_GAIN         1.8f  /* §5.62: 1.0→1.8 */
 /* §5.19: the old 12 deg graze/entry band died with the 45-deg mount; the
  * bound is now the recovery authority vs SPEED_HDG_SLOW_DEG budget (the
  * governor is already at its floor before the lateral command saturates). */
@@ -331,7 +388,7 @@
 #define CENTER_YAW_DAMP_MAX_PCT          9.0f
 
 #define CENTER_SIDE_REPEL_KP             2.3f   /* §5.28: 1.9→2.3 — 커브 안쪽벽 조기 밀어내기 */
-#define CENTER_SINGLE_TARGET_CM         15.0f  /* §5.45: 13→15 — 곡선존 단일벽 추종 클리어런스 (7초 바깥벽 밀착). 좁은 복도는 pair라 무영향 */
+#define CENTER_SINGLE_TARGET_CM         17.0f  /* §5.45: 13→15, §5.66: →17 — IMG_3228 13.8/18.2/24.8s 단일벽 구간 밀착 잔존, 추종 클리어런스 추가 확보. 좁은 복도는 pair라 무영향 */
 #define CENTER_SINGLE_KP                 0.40f  /* §5.44: 0.22→0.40 — 단일벽 peel-off 권한 (긁기 방어, §5.42 예고분) */
 #define CENTER_SINGLE_MAX_CM            30.0f
 #define CENTER_SINGLE_HDG_BLEND          0.42f
@@ -366,12 +423,16 @@
  * §5.32 랩타임 공략(21s→19s 목표): TOP 78→85. 램프 양끝(78cm 시작, 정지선
  * 도달속도)은 검증값 유지 — 중간 구간만 가팔라짐. 회귀 롤백 순서:
  * TOP 85→78→69 → FRONT_MIN 38→36. */
-#define SPEED_TOP_PCT                   90.0f  /* §5.51: 85→88, §5.54: →90 — 커브 진입 완화(FRONT_MIN_ROLL)로 확보한 여유만큼 소폭 추가 상향 */
+#define SPEED_TOP_PCT                   94.0f  /* §5.51: 85→88, §5.54: →90, §5.59: →94 — 전체 속도 상향 요청. FRONT_SLOW/FRONT_MIN 등 제동 앵커는 불변이라 정지선 접근/코너 감속 프로파일은 그대로, 열린 직선 구간만 빨라짐 */
 #define SPEED_MIN_PCT                   34.0f
 /* §5.35 (user spec): 전방 ~30cm대 진입 시 확실히 한 김 죽인다 — 바닥 도달을
  * 30→34cm로 당기고 바닥을 38→34%로. 85% 관성 때문에 30cm 시점 실속도가 높아
  * 정지선을 뚫던 것 보정. 긴 직선(>60cm)은 영향 미미. */
-#define SPEED_FRONT_FAST_CM             78.0f
+/* §5.60 (좁은 트랙 특성상 직선 길이 대부분이 78cm 램프 구간 안에 들어옴 —
+ * "조금씩 멈추는 느낌"이 코너가 아니라 평범한 직선에서도 상시 재현되는 원인.
+ * 램프 시작점을 벽 쪽으로 당겨 짧은 직선은 최고속 구간이 늘어나게 함 — 벽
+ * 근접 시 캡(SLOW_CM/FRONT_MIN_PCT)은 불변이라 제동 여유는 그대로. */
+#define SPEED_FRONT_FAST_CM             60.0f  /* §5.60: 78→64, §5.66: →60 — 풀스피드 직선 구간 추가 연장. SLOW_CM(36)/바닥 불변 = 제동 앵커 그대로, 램프만 가팔라짐 */
 #define SPEED_FRONT_SLOW_CM             36.0f  /* §5.51: 34→36 — TOP +3% 관성 보상, 감속 바닥 2cm 선행 */
 #define SPEED_FRONT_MIN_PCT             34.0f
 /* §5.54 (IMG_3198: "부드러운 롤링턴인데 멈췄다 가는 느낌"): frame-diff motion
@@ -385,7 +446,7 @@
  * through into the arc. Only the front-distance cap gets the relaxed floor;
  * side/heading/yaw caps and the narrow-corner (pivot) path are untouched, so
  * the stop-line braking margin for non-roll corners is unaffected. */
-#define SPEED_FRONT_MIN_PCT_ROLL        54.0f
+#define SPEED_FRONT_MIN_PCT_ROLL        58.0f  /* §5.60: 54→58 — IMG_3217 와이드커브가 마진 있게 도는 걸 확인, 롤링 코너 캐리 속도 상향 */
 #define SPEED_SIDE_MIN_PCT              34.0f
 /* §5.44 (IMG_3182/mappf_v4 긁기): the flank speed ramp used to start only at
  * SIDE_SOFT_CM(10) — §5.36 free-running raised typical flank-approach speeds,
@@ -399,18 +460,25 @@
  * far flank; speed follows the wall distance so a slow convergence never
  * outruns the repel band (SIDE_SOFT..SLOW ramp). */
 #define SPEED_SINGLE_SLOW_CM            30.0f  /* §5.50: 25→30 — 곡선(단일벽) 감속을 더 일찍 시작 (거리 문턱이 아니라 속도 예산, §트랙기하 원칙 부합) */
-#define SPEED_SINGLE_MIN_PCT            44.0f
+#define SPEED_SINGLE_MIN_PCT            48.0f  /* §5.66: 44→48 — 단일벽 추종 타겟이 17cm로 물러난 만큼(§5.66 위) 곡선 캐리 속도 소폭 상향 */
 /* §5.27 직진 멈칫 완화: 주행 중 좌우 보정은 "가면서" 잡는다 — 보정 중 감속
  * 램프가 너무 일찍 물리면 매 보정마다 출렁임(멈칫). §5.19 조향 권한 상향이
- * 보정 자체를 빠르게 끝내므로 감속 개입은 더 큰 오차/요레이트로 미룬다. */
-#define SPEED_HDG_FAST_DEG               6.0f
+ * 보정 자체를 빠르게 끝내므로 감속 개입은 더 큰 오차/요레이트로 미룬다.
+ * §5.64 (사용자 재확인: "보정할 때 멈추지 말고 가면서 잡아야 하는데 안 된다"):
+ * §5.27 이후 §5.62가 KNEE_GAIN(10cm 초과 오프셋 복귀 기울기)을 1.0→1.8로 올려,
+ * 정상적인 재중앙 보정 한 번의 조향각/그로 인한 실제 헤딩 변화量이 커졌다 —
+ * hdg_err/yaw가 예전보다 쉽게 FAST_DEG/FAST_DPS 문턱을 넘어 "보정=감속"이 다시
+ * 살아난 것. 문턱을 그만큼 더 벌려 정상 보정의 헤딩 변화가 이 캡을 안 건드리게
+ * 하고, 진짜 큰 이탈(오정렬 회복·충돌 회피)만 걸리도록 함. SLOW/MIN(바닥)은
+ * 그대로라 실제 위험 상황의 감속 반응은 안 죽음. */
+#define SPEED_HDG_FAST_DEG              11.0f  /* §5.64: 6→11 */
 #define SPEED_HDG_SLOW_DEG              18.0f
 #define SPEED_HDG_MIN_PCT               48.0f   /* §5.32 */
-#define SPEED_YAW_FAST_DPS              15.0f
+#define SPEED_YAW_FAST_DPS              24.0f  /* §5.64: 15→24 */
 #define SPEED_YAW_SLOW_DPS              60.0f
 #define SPEED_YAW_MIN_PCT               48.0f   /* §5.32 */
 #define SPEED_SETTLE_MS                150U    /* §5.32: 250→200, §5.38: →150 — 턴 직후 직진 체결 단축 */
-#define SPEED_SETTLE_PCT                76.0f   /* §5.32: 62→66, §5.38: →72, §5.51: →76 (launch 듀티 겸용) */
+#define SPEED_SETTLE_PCT                80.0f   /* §5.32: 62→66, §5.38: →72, §5.51: →76, §5.59: →80 (launch 듀티 겸용, TOP 상향과 짝) */
 
 /* ---- Corridor classes (drive_math.h). [REMEASURE] */
 #define COURSE_CAR_WIDTH_CM             16.0f
@@ -426,6 +494,19 @@
 #define SIDE_FAIL_LIMIT                  3U
 #define IMU_FAIL_LIMIT                   5U
 #define IMU_RETRY_MS                   500U
+/* §5.67 (사용자 관찰: "마지막 구간에서 항상 급하게 튼다, 모니터링 보면 heading이
+ * 360 근처였다가 0으로 튄다"): 부팅 1회 180도 재영점(위 Sensor_ReadHeading)은
+ * 부팅 자세 기준으로만 0/360 경계를 피해준다 — 코스를 돌며 누적 회전이 부팅
+ * 대비 ~180도에 도달하면 재영점된 heading이 도로 그 경계 위에 앉는다(고정
+ * 코스라 매번 같은 구간에서 재현). drive.c 차분 계산은 전부 wrap180이라 이
+ * 경계 자체는 수학적으로 무해하지만(§5.30 주석 그대로), BNO055 Euler 융합
+ * 출력이 그 경계 부근에서 실제 순간 스파이크를 내면(모듈러 랩과는 다른, 칩
+ * 자체의 알려진 각도표현 불안정) wrap180이 "진짜처럼 보이는 큰 회전"을 만들어
+ * 넘겨버린다. 사용자 제안("경계 오면 heading을 180으로 강제")은 진짜 180도
+ * 부근 정상 주행까지 오염시켜 기각 — 대신 한 샘플의 회전율이 물리적으로 불가능한
+ * 수준이면 그 샘플만 버리고 직전값 유지(전방 초음파 FRONT_STABLE_CM과 동일
+ * 철학). 여유 있게 잡아 실제 전력 피벗도 걸리지 않게 함. */
+#define HEADING_JUMP_MAX_DPS           720.0f
 #define CALIB_POLL_MS                  500U
 #define MOTOR_TEST                       0
 
@@ -454,6 +535,10 @@
 
 #if !(FRONT_STOP_CM < TURN_ROLL_COMMIT_CM && TURN_ROLL_COMMIT_CM < FRONT_TURN_CM)
 #error "Roll commit window must sit between the stop line and the far-echo turn line"
+#endif
+
+#if !(TURN_ROLL_COMMIT_CM + 10 < TURN_HINT_ARM_CM)
+#error "Direction hint must arm with real margin above the roll commit line"
 #endif
 
 #if !(FRONT_DECIDE_CM < TURN_ROLL_MIN_F_CM && TURN_ROLL_MIN_F_CM < FRONT_STOP_CM)
