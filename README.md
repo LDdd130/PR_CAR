@@ -640,41 +640,49 @@ heading은 `×10` 정수로 보내 **float printf를 완전히 회피**했습니
 
 ```text
 PR_CAR/
-├── Core/
-│   ├── Inc/
-│   │   ├── drive.h            # DriveInputs 스냅샷, DriveState enum, 공개 API
-│   │   ├── drive_config.h     # 모든 튜닝 노브 + 컴파일 타임 불변식(#error)
-│   │   ├── drive_math.h       # wrap180, clamp, deadband, 복도 분류
-│   │   ├── ultra.h            # 전방 초음파 API, median_n
-│   │   ├── vl53l0x.h          # 경량 ToF 드라이버
-│   │   ├── bno055.h           # IMU 드라이버 (I2C 주소·모드 정의)
-│   │   ├── encoder.h          # 휠 엔코더 상수 및 API
-│   │   ├── motor.h            # L298N 차동 구동 프리미티브
-│   │   ├── debug.h            # DebugMonitor_t (SWD 미러 단일 구조체)
-│   │   ├── FreeRTOSConfig.h   # heap 15,360 B, tick 1 kHz
-│   │   └── iwdg.h / i2c.h / tim.h / usart.h / gpio.h / main.h
-│   └── Src/
-│       ├── main.c             # HAL·페리프 init + BNO055 pre-kernel init + 커널 기동
-│       ├── freertos.c         # 3태스크, driveQ/uartQ, ToF 듀얼 기동, 텔레메트리
-│       ├── drive.c            # 주행 상태머신 전체 (센터링·거버너·턴·복구)
-│       ├── motor.c            # L298N PWM/방향, shoot-through 방지 중립 구간
-│       ├── ultra.c            # TIM3 IC 전방 측정, osThreadFlags 통지, median_n
-│       ├── vl53l0x.c          # ToF 초기화·주소 재배치·연속측정 폴링
-│       ├── bno055.c           # IMU 초기화, Euler 읽기, I2C wedge 복구
-│       ├── encoder.c          # TIM2 32-bit IC 휠 주기 측정 + EMA 속도
-│       ├── iwdg.c             # 워치독 2.048 s 설정
-│       └── i2c.c / tim.c / usart.c / gpio.c / stm32f4xx_it.c ...
+├── README.md
+├── docs/                              # GitHub Pages 소스
+│   ├── index.html                     # 실시간 텔레메트리 대시보드
+│   └── ppt/
+│       ├── slides.md                  # 발표 자료 (Marp)
+│       └── marp-theme-prcar.md        # Marp 테마
 │
-├── docs/
-│   ├── index.html             # 실시간 텔레메트리 대시보드
-│   └── ppt/slides.md          # 발표 자료 (Marp)
-│
-├── PR_CAR_Phase1_Architecture.md  # 시스템 아키텍처 설계서 & 로드맵
-├── HANDOVER.md                    # 튜닝 이력 및 인수인계 문서
-├── testtrack.drawio               # 트랙 도면 (복도 폭 37~67 cm, 차체 16×27 cm)
-├── PR_CAR.ioc                     # STM32CubeMX 설정
-├── CMakeLists.txt / Makefile      # 빌드 (arm-none-eabi-gcc)
-└── README.md
+└── PR_CAR_working/                    # 펌웨어 프로젝트 루트 (CubeMX 생성 구조)
+    ├── Core/
+    │   ├── Inc/
+    │   │   ├── drive.h            # DriveInputs 스냅샷, DriveState enum, 공개 API
+    │   │   ├── drive_config.h     # 모든 튜닝 노브 + 컴파일 타임 불변식(#error)
+    │   │   ├── drive_math.h       # wrap180, clamp, deadband, 복도 분류
+    │   │   ├── ultra.h            # 전방 초음파 API, median_n
+    │   │   ├── vl53l0x.h          # 경량 ToF 드라이버
+    │   │   ├── bno055.h           # IMU 드라이버 (I2C 주소·모드 정의)
+    │   │   ├── encoder.h          # 휠 엔코더 상수 및 API
+    │   │   ├── motor.h            # L298N 차동 구동 프리미티브
+    │   │   ├── debug.h            # DebugMonitor_t (SWD 미러 단일 구조체)
+    │   │   ├── FreeRTOSConfig.h   # heap 15,360 B, tick 1 kHz
+    │   │   └── iwdg.h / i2c.h / tim.h / usart.h / gpio.h / main.h
+    │   └── Src/
+    │       ├── main.c             # HAL·페리프 init + BNO055 pre-kernel init + 커널 기동
+    │       ├── freertos.c         # 3태스크, driveQ/uartQ, ToF 듀얼 기동, 텔레메트리
+    │       ├── drive.c            # 주행 상태머신 전체 (센터링·거버너·턴·복구)
+    │       ├── motor.c            # L298N PWM/방향, shoot-through 방지 중립 구간
+    │       ├── ultra.c            # TIM3 IC 전방 측정, osThreadFlags 통지, median_n
+    │       ├── vl53l0x.c          # ToF 초기화·주소 재배치·연속측정 폴링
+    │       ├── bno055.c           # IMU 초기화, Euler 읽기, I2C wedge 복구
+    │       ├── encoder.c          # TIM2 32-bit IC 휠 주기 측정 + EMA 속도
+    │       ├── iwdg.c             # 워치독 2.048 s 설정
+    │       └── i2c.c / tim.c / usart.c / gpio.c / stm32f4xx_it.c ...
+    │
+    ├── Drivers/                   # STM32F4 HAL + CMSIS (CubeMX 생성)
+    ├── Middlewares/               # FreeRTOS 커널
+    ├── cmake/                     # arm-none-eabi 툴체인 정의
+    ├── asset/image.png            # 차체 사진
+    │
+    ├── PR_CAR_Phase1_Architecture.md  # 시스템 아키텍처 설계서 & 로드맵
+    ├── testtrack.drawio               # 트랙 도면 (복도 폭 37~67 cm, 차체 16×27 cm)
+    ├── PR_CAR.ioc                     # STM32CubeMX 설정
+    ├── CMakeLists.txt / CMakePresets.json / Makefile   # 빌드
+    └── STM32F411XX_FLASH.ld / startup_stm32f411xe.s    # 링커 스크립트 / 스타트업
 ```
 
 ---
@@ -683,23 +691,24 @@ PR_CAR/
 
 | File | Description |
 |---|---|
-| [`Core/Src/drive.c`](./Core/Src/drive.c) | 7상태 주행 FSM, 센터링 PD, 속도 거버너, 피벗·롤링턴, 복구 |
-| [`Core/Inc/drive_config.h`](./Core/Inc/drive_config.h) | 모든 튜닝 파라미터 + 컴파일 타임 불변식 검증 |
-| [`Core/Src/freertos.c`](./Core/Src/freertos.c) | 3태스크 정의, 큐 IPC, ToF 듀얼 기동, 게이트 판정, 텔레메트리 |
-| [`Core/Src/motor.c`](./Core/Src/motor.c) | L298N 채널 추상화, 방향 전환 중립 구간, 능동 제동 |
-| [`Core/Src/ultra.c`](./Core/Src/ultra.c) | TIM3 IC 전방 측정, wrap-safe 환산, `median_n` |
-| [`Core/Src/vl53l0x.c`](./Core/Src/vl53l0x.c) | 경량 ToF 드라이버, 주소 재배치, 연속측정 |
-| [`Core/Src/bno055.c`](./Core/Src/bno055.c) | IMU 모드 초기화, Euler 읽기, I²C wedge 복구 |
-| [`Core/Src/encoder.c`](./Core/Src/encoder.c) | TIM2 32-bit IC 휠 주기 측정, EMA 속도, 0속 타임아웃 |
-| [`Core/Src/main.c`](./Core/Src/main.c) | 초기화 순서 설계 (IWDG 예산 고려한 pre-kernel IMU init) |
-| [`PR_CAR_Phase1_Architecture.md`](./PR_CAR_Phase1_Architecture.md) | 핀맵 근거, 태스크 설계, 데이터 흐름 불변식 |
-| [`HANDOVER.md`](./HANDOVER.md) | 실주행 튜닝 이력과 각 파라미터의 결정 근거 |
+| [`Core/Src/drive.c`](./PR_CAR_working/Core/Src/drive.c) | 7상태 주행 FSM, 센터링 PD, 속도 거버너, 피벗·롤링턴, 복구 |
+| [`Core/Inc/drive_config.h`](./PR_CAR_working/Core/Inc/drive_config.h) | 모든 튜닝 파라미터 + 컴파일 타임 불변식 검증 |
+| [`Core/Src/freertos.c`](./PR_CAR_working/Core/Src/freertos.c) | 3태스크 정의, 큐 IPC, ToF 듀얼 기동, 게이트 판정, 텔레메트리 |
+| [`Core/Src/motor.c`](./PR_CAR_working/Core/Src/motor.c) | L298N 채널 추상화, 방향 전환 중립 구간, 능동 제동 |
+| [`Core/Src/ultra.c`](./PR_CAR_working/Core/Src/ultra.c) | TIM3 IC 전방 측정, wrap-safe 환산, `median_n` |
+| [`Core/Src/vl53l0x.c`](./PR_CAR_working/Core/Src/vl53l0x.c) | 경량 ToF 드라이버, 주소 재배치, 연속측정 |
+| [`Core/Src/bno055.c`](./PR_CAR_working/Core/Src/bno055.c) | IMU 모드 초기화, Euler 읽기, I²C wedge 복구 |
+| [`Core/Src/encoder.c`](./PR_CAR_working/Core/Src/encoder.c) | TIM2 32-bit IC 휠 주기 측정, EMA 속도, 0속 타임아웃 |
+| [`Core/Src/main.c`](./PR_CAR_working/Core/Src/main.c) | 초기화 순서 설계 (IWDG 예산 고려한 pre-kernel IMU init) |
+| [`PR_CAR_Phase1_Architecture.md`](./PR_CAR_working/PR_CAR_Phase1_Architecture.md) | 핀맵 근거, 태스크 설계, 데이터 흐름 불변식 |
 
 ---
 
 ## 15. Build
 
 ```bash
+cd PR_CAR_working        # 펌웨어 프로젝트 루트
+
 # CMake
 cmake --preset Debug
 cmake --build --preset Debug
